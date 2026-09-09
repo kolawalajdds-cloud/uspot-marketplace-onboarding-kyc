@@ -1,0 +1,6 @@
+{
+  "name": "USPOT Marketplace Onboarding & KYC",
+  "description": "Multi-role marketplace platform with seeded logins for Superadmin, Business, Customer, and Specialist, featuring Super Admin profile dashboard and KYC lifecycle.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
