@@ -62,6 +62,7 @@ import { BusinessWizard } from './BusinessWizard';
 import { BusinessMultiStepPage, DEFAULT_FORM_DATA } from './multistep/BusinessMultiStepPage';
 import { BusinessFormData, MultiStepTab } from './multistep/types';
 import { W9TaxCertification } from './W9TaxCertification';
+import { BusinessDetailsView } from './BusinessDetailsView';
 
 type BusinessPortalTab =
   | 'dashboard'
@@ -160,6 +161,7 @@ export const BusinessPortal: React.FC = () => {
   const [selectedBusinessId, setSelectedBusinessId] = useState<string>(
     state.businesses[0]?.id || ''
   );
+  const [viewingBusinessId, setViewingBusinessId] = useState<string | null>(null);
   const [businessSearchFilter, setBusinessSearchFilter] = useState('');
   const [businessStatusFilter, setBusinessStatusFilter] = useState<string>('All');
   const [isPayoutModalOpen, setIsPayoutModalOpen] = useState(false);
@@ -942,9 +944,10 @@ export const BusinessPortal: React.FC = () => {
                     onClick={() => {
                       setActiveTab('my-businesses');
                       setMultistepMode(null);
+                      setViewingBusinessId(null);
                     }}
                     className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition-colors cursor-pointer flex items-center gap-2 ${
-                      activeTab === 'my-businesses'
+                      activeTab === 'my-businesses' && !viewingBusinessId
                         ? 'text-white font-bold bg-slate-800'
                         : 'text-slate-400 hover:text-slate-200'
                     }`}
@@ -955,9 +958,12 @@ export const BusinessPortal: React.FC = () => {
 
                   <button
                     id="sidebar-subtab-business-details"
-                    onClick={() => setActiveTab('business-details')}
+                    onClick={() => {
+                      setActiveTab('business-details');
+                      setMultistepMode(null);
+                    }}
                     className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition-colors cursor-pointer flex items-center gap-2 ${
-                      activeTab === 'business-details'
+                      activeTab === 'business-details' || (activeTab === 'my-businesses' && Boolean(viewingBusinessId))
                         ? 'text-white font-bold bg-slate-800'
                         : 'text-slate-400 hover:text-slate-200'
                     }`}
@@ -1762,6 +1768,20 @@ export const BusinessPortal: React.FC = () => {
                   handleOpenPaymentForBusiness(bizId);
                 }}
               />
+            ) : viewingBusinessId ? (
+              <BusinessDetailsView
+                business={state.businesses.find((b) => b.id === viewingBusinessId) || selectedBusiness}
+                onBack={() => setViewingBusinessId(null)}
+                onOpenW9={() => {
+                  const target = state.businesses.find((b) => b.id === viewingBusinessId) || selectedBusiness;
+                  setSelectedBusinessId(target.id);
+                  setActiveTab('w9-form');
+                }}
+                onEdit={() => {
+                  const target = state.businesses.find((b) => b.id === viewingBusinessId) || selectedBusiness;
+                  handleOpenEditMultiStep(target);
+                }}
+              />
             ) : (
             <div className="space-y-6 animate-in fade-in duration-150">
               {/* Top Header matching Image 1 & Image 2 */}
@@ -1773,24 +1793,6 @@ export const BusinessPortal: React.FC = () => {
                   </p>
                 </div>
                 <div className="flex items-center gap-2.5 self-start sm:self-auto flex-wrap">
-                  <button
-                    id="open-w9-form-btn"
-                    onClick={() => setActiveTab('w9-form')}
-                    className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold px-4 py-2.5 rounded-xl transition-colors cursor-pointer shadow-2xs flex items-center gap-2"
-                  >
-                    <FileText className="w-4 h-4 text-slate-600" />
-                    <span>W9 Form</span>
-                    {selectedBusiness?.w9?.status === 'Submitted' || selectedBusiness?.w9?.status === 'Certified' ? (
-                      <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">
-                        Submitted
-                      </span>
-                    ) : selectedBusiness?.w9?.status === 'Draft' ? (
-                      <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200">
-                        Draft
-                      </span>
-                    ) : null}
-                  </button>
-
                   <button
                     id="create-new-business-btn"
                     onClick={() => {
@@ -2068,7 +2070,11 @@ export const BusinessPortal: React.FC = () => {
                               {biz.isAwaitingPayment ? (
                                 <div className="flex items-center gap-2.5">
                                   <button
-                                    onClick={() => setViewingBiz(biz)}
+                                    id={`view-biz-btn-${biz.id}`}
+                                    onClick={() => {
+                                      setSelectedBusinessId(biz.id);
+                                      setViewingBusinessId(biz.id);
+                                    }}
                                     className="text-slate-400 hover:text-slate-700 transition-colors cursor-pointer p-1 rounded-md hover:bg-slate-100"
                                     title="View Details"
                                   >
@@ -2087,7 +2093,11 @@ export const BusinessPortal: React.FC = () => {
                               ) : (
                                 <div className="flex items-center gap-3">
                                   <button
-                                    onClick={() => setViewingBiz(biz)}
+                                    id={`view-biz-btn-${biz.id}`}
+                                    onClick={() => {
+                                      setSelectedBusinessId(biz.id);
+                                      setViewingBusinessId(biz.id);
+                                    }}
                                     className="text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
                                     title="View Details"
                                   >
@@ -2252,7 +2262,11 @@ export const BusinessPortal: React.FC = () => {
                         {biz.isAwaitingPayment ? (
                           <div className="flex items-center justify-between w-full">
                             <button
-                              onClick={() => setViewingBiz(biz)}
+                              id={`grid-view-biz-btn-${biz.id}`}
+                              onClick={() => {
+                                setSelectedBusinessId(biz.id);
+                                setViewingBusinessId(biz.id);
+                              }}
                               className="text-slate-400 hover:text-slate-700 transition-colors cursor-pointer p-1 rounded-md hover:bg-slate-100 flex items-center gap-1 text-xs font-semibold"
                               title="View Details"
                             >
@@ -2273,7 +2287,11 @@ export const BusinessPortal: React.FC = () => {
                           <>
                             <div className="flex items-center gap-2.5">
                               <button
-                                onClick={() => setViewingBiz(biz)}
+                                id={`grid-view-biz-btn-${biz.id}`}
+                                onClick={() => {
+                                  setSelectedBusinessId(biz.id);
+                                  setViewingBusinessId(biz.id);
+                                }}
                                 className="text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
                                 title="View Details"
                               >
@@ -2401,184 +2419,19 @@ export const BusinessPortal: React.FC = () => {
               </div>
             </div>
             )
-          )}
-
-          {/* =================================================================== */}
+          )}          {/* =================================================================== */}
           {/* VIEW 3B: BUSINESSES -> BUSINESS DETAILS                             */}
           {/* =================================================================== */}
           {activeTab === 'business-details' && (
-            <div className="space-y-6 animate-in fade-in duration-150 max-w-5xl mx-auto">
-              {/* Header with Switcher Dropdown */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200">
-                <div>
-                  <div className="text-xs text-slate-400 font-medium mb-1 flex items-center gap-1.5">
-                    <span>Businesses</span>
-                    <span>›</span>
-                    <span className="text-slate-600 font-semibold">Business Details</span>
-                  </div>
-                  <h1 className="text-2xl font-black text-slate-900 tracking-tight">
-                    {selectedBusiness.coreDetails.businessName}
-                  </h1>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Legal Entity: <strong className="text-slate-700">{selectedBusiness.coreDetails.legalEntityName}</strong>
-                  </p>
-                </div>
-
-                {/* Switch between owned businesses */}
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-slate-500 font-medium">Select Business:</span>
-                  <div className="relative">
-                    <select
-                      value={selectedBusinessId}
-                      onChange={(e) => setSelectedBusinessId(e.target.value)}
-                      className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 appearance-none pr-8 focus:outline-none focus:ring-2 focus:ring-slate-900 cursor-pointer shadow-2xs"
-                    >
-                      {state.businesses.map((b) => (
-                        <option key={b.id} value={b.id}>
-                          {b.coreDetails.businessName} ({b.status})
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown className="w-4 h-4 text-slate-400 absolute right-2.5 top-2.5 pointer-events-none" />
-                  </div>
-                </div>
-              </div>
-
-              {/* Status & Quick Stats Header */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-2xs flex items-center justify-between">
-                  <div>
-                    <span className="text-[11px] font-bold uppercase text-slate-400">Marketplace Status</span>
-                    <p className="text-sm font-black text-slate-900 mt-0.5">{selectedBusiness.status}</p>
-                  </div>
-                  <span
-                    className={`px-2.5 py-1 rounded-full text-xs font-bold ${
-                      selectedBusiness.status === 'Live'
-                        ? 'bg-emerald-100 text-emerald-800'
-                        : selectedBusiness.status === 'Pending KYC Review'
-                        ? 'bg-amber-100 text-amber-800'
-                        : 'bg-slate-100 text-slate-700'
-                    }`}
-                  >
-                    {selectedBusiness.status}
-                  </span>
-                </div>
-
-                <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-2xs flex items-center justify-between">
-                  <div>
-                    <span className="text-[11px] font-bold uppercase text-slate-400">Current Plan</span>
-                    <p className="text-sm font-black text-slate-900 mt-0.5">{selectedBusiness.payment.planSelected}</p>
-                  </div>
-                  <span className="text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 px-2.5 py-1 rounded-full">
-                    Active Tier
-                  </span>
-                </div>
-
-                <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-2xs flex items-center justify-between">
-                  <div>
-                    <span className="text-[11px] font-bold uppercase text-slate-400">KYC Risk Tier</span>
-                    <p className="text-sm font-black text-slate-900 mt-0.5">{selectedBusiness.verification.riskTier} Risk</p>
-                  </div>
-                  <ShieldCheck className="w-5 h-5 text-emerald-600" />
-                </div>
-              </div>
-
-              {/* Core Details & Location */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Left: Entity & General Info */}
-                <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-6 space-y-4">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 pb-2 border-b border-slate-100">
-                    Registration & Commercial Info
-                  </h3>
-                  <div className="divide-y divide-slate-100 text-xs">
-                    <div className="py-2.5 flex justify-between">
-                      <span className="text-slate-500">Business Name</span>
-                      <strong className="text-slate-900 font-bold">{selectedBusiness.coreDetails.businessName}</strong>
-                    </div>
-                    <div className="py-2.5 flex justify-between">
-                      <span className="text-slate-500">Legal Entity</span>
-                      <span className="font-semibold text-slate-800">{selectedBusiness.coreDetails.legalEntityName}</span>
-                    </div>
-                    <div className="py-2.5 flex justify-between">
-                      <span className="text-slate-500">Category</span>
-                      <span className="font-semibold text-indigo-600">{selectedBusiness.coreDetails.category}</span>
-                    </div>
-                    <div className="py-2.5 flex justify-between">
-                      <span className="text-slate-500">EIN / TIN</span>
-                      <span className="font-mono text-slate-800">{selectedBusiness.verification.einVerification.einEntered}</span>
-                    </div>
-                    <div className="py-2.5 flex justify-between">
-                      <span className="text-slate-500">TIN Match Status</span>
-                      <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
-                        {selectedBusiness.verification.einVerification.tinMatchStatus}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Right: Location & Address */}
-                <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-6 space-y-4">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 pb-2 border-b border-slate-100">
-                    Location & Contact Details
-                  </h3>
-                  <div className="divide-y divide-slate-100 text-xs">
-                    <div className="py-2.5 flex justify-between">
-                      <span className="text-slate-500">Street Address</span>
-                      <strong className="text-slate-900 font-semibold">{selectedBusiness.coreDetails.streetAddress}</strong>
-                    </div>
-                    <div className="py-2.5 flex justify-between">
-                      <span className="text-slate-500">City & State</span>
-                      <span className="text-slate-800">{selectedBusiness.coreDetails.city}, {selectedBusiness.coreDetails.state} {selectedBusiness.coreDetails.zipCode}</span>
-                    </div>
-                    <div className="py-2.5 flex justify-between">
-                      <span className="text-slate-500">Bank Verification</span>
-                      <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
-                        {selectedBusiness.verification.bankAccount.verified ? 'Verified & Linked' : 'Pending'}
-                      </span>
-                    </div>
-                    <div className="py-2.5 flex justify-between">
-                      <span className="text-slate-500">Account Masked</span>
-                      <span className="font-mono text-slate-700">{selectedBusiness.verification.bankAccount.accountNumberMasked}</span>
-                    </div>
-                  </div>
-
-                  <div className="pt-2">
-                    <button
-                      onClick={() => selectBusinessForVendor(selectedBusiness.id, 'Core Details')}
-                      className="w-full py-2.5 bg-black hover:bg-slate-800 text-white font-bold text-xs rounded-xl transition-colors cursor-pointer shadow-xs text-center"
-                    >
-                      Open Full Setup Wizard
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Operating Hours Summary */}
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-6">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
-                  Operating Hours Schedule
-                </h3>
-                <div className="grid grid-cols-2 sm:grid-cols-7 gap-2 text-center text-xs">
-                  {selectedBusiness.operatingHours.map((h) => (
-                    <div
-                      key={h.day}
-                      className={`p-3 rounded-xl border ${
-                        h.isOpen ? 'bg-slate-50 border-slate-200' : 'bg-slate-100/60 border-slate-200/60 text-slate-400'
-                      }`}
-                    >
-                      <strong className="block text-slate-900 mb-1">{h.day.slice(0, 3)}</strong>
-                      {h.isOpen ? (
-                        <span className="text-[11px] font-mono text-slate-600">
-                          {h.openTime} - {h.closeTime}
-                        </span>
-                      ) : (
-                        <span className="text-[11px] text-slate-400">Closed</span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
+            <BusinessDetailsView
+              business={selectedBusiness}
+              onBack={() => {
+                setActiveTab('my-businesses');
+                setViewingBusinessId(null);
+              }}
+              onOpenW9={() => setActiveTab('w9-form')}
+              onEdit={() => handleOpenEditMultiStep(selectedBusiness)}
+            />
           )}
 
           {/* =================================================================== */}

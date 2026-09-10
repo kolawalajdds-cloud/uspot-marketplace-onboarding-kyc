@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   CheckCircle2,
   Building2,
@@ -19,10 +19,15 @@ import {
   Eye,
   EyeOff,
   AlertCircle,
+  RotateCcw,
+  PenTool,
+  FileCheck,
 } from 'lucide-react';
 import { Business, TinType, TinVerificationStatus, W9Data } from '../../types';
 import { DynamicTinInput, maskTinDisplay, formatTinDisplay } from './DynamicTinInput';
 import { PaymentModal } from './PaymentModal';
+import { W9TermsModal } from './multistep/W9TermsModal';
+import jsPDF from 'jspdf';
 
 interface W9TaxCertificationProps {
   business: Business;
@@ -168,7 +173,7 @@ export const W9TaxCertification: React.FC<W9TaxCertificationProps> = ({
     business.w9?.certifications?.fatcaCorrect ?? true
   );
 
-  // Electronic Signature
+  // Electronic Signature & Canvas State
   const [signatureName, setSignatureName] = useState(
     business.w9?.signatureName ||
       business.verification?.beneficialOwner?.fullName ||
@@ -177,6 +182,18 @@ export const W9TaxCertification: React.FC<W9TaxCertificationProps> = ({
   const [agreedPerjury, setAgreedPerjury] = useState(
     business.w9?.agreedPerjury ?? true
   );
+
+  const [showTermsModal, setShowTermsModal] = useState(false);
+  const [signatureImage, setSignatureImage] = useState<string>(
+    business.w9?.signatureImage || (business.w9 as any)?.signature || business.verification?.signature || ''
+  );
+  const [hasSignature, setHasSignature] = useState<boolean>(
+    Boolean(business.w9?.signatureImage || (business.w9 as any)?.signature || business.verification?.signature)
+  );
+  const [isDrawing, setIsDrawing] = useState(false);
+  const isDrawingRef = useRef(false);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const loadedSigRef = useRef<string | null>(null);
 
   // Status & Submit Handling
   const [isSubmitted, setIsSubmitted] = useState(
@@ -188,6 +205,101 @@ export const W9TaxCertification: React.FC<W9TaxCertificationProps> = ({
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 4000);
+  };
+
+  // Load existing signature on canvas when available and not submitted
+  useEffect(() => {
+    if (isSubmitted) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    if (signatureImage && loadedSigRef.current !== signatureImage) {
+      const img = new Image();
+      img.onload = () => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0);
+        setHasSignature(true);
+        loadedSigRef.current = signatureImage;
+      };
+      img.src = signatureImage;
+    }
+  }, [signatureImage, isSubmitted]);
+
+  // Drawing event handlers
+  const getCoordinates = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    return {
+      x: (e.clientX - rect.left) * scaleX,
+      y: (e.clientY - rect.top) * scaleY,
+    };
+  };
+
+  const startDrawing = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (isSubmitted) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    try {
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    isDrawingRef.current = true;
+    setIsDrawing(true);
+    const coords = getCoordinates(e);
+    ctx.beginPath();
+    ctx.moveTo(coords.x, coords.y);
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#0f172a'; // slate-900
+  };
+
+  const draw = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!isDrawingRef.current || isSubmitted) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const coords = getCoordinates(e);
+    ctx.lineTo(coords.x, coords.y);
+    ctx.stroke();
+    setHasSignature(true);
+  };
+
+  const stopDrawing = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!isDrawingRef.current) return;
+    isDrawingRef.current = false;
+    setIsDrawing(false);
+    try {
+      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const dataUrl = canvas.toDataURL('image/png');
+      setSignatureImage(dataUrl);
+    }
+  };
+
+  const handleClearSignature = () => {
+    if (isSubmitted) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    setHasSignature(false);
+    setSignatureImage('');
+    loadedSigRef.current = null;
   };
 
   // Check if current TIN is same as verified eKYC TIN (Rule 17)
@@ -246,6 +358,9 @@ export const W9TaxCertification: React.FC<W9TaxCertificationProps> = ({
     if (!agreedPerjury) {
       errors.push('You must agree to electronically sign under penalties of perjury.');
     }
+    if (!signatureImage && !hasSignature) {
+      errors.push('Please draw your electronic signature on the canvas (Card 7).');
+    }
 
     setValidationErrors(errors);
     return errors.length === 0;
@@ -253,6 +368,14 @@ export const W9TaxCertification: React.FC<W9TaxCertificationProps> = ({
 
   const handleSaveDraft = (e: React.FormEvent) => {
     e.preventDefault();
+    let currentSig = signatureImage;
+    if (!currentSig && canvasRef.current && hasSignature) {
+      try {
+        currentSig = canvasRef.current.toDataURL('image/png');
+      } catch {
+        // ignore
+      }
+    }
     const draftPayload: Partial<W9Data> = {
       businessId: business.id,
       legalName,
@@ -280,6 +403,7 @@ export const W9TaxCertification: React.FC<W9TaxCertificationProps> = ({
         fatcaCorrect: certFatcaCorrect,
       },
       signatureName,
+      signatureImage: currentSig,
       agreedPerjury,
       status: 'draft',
       updatedAt: new Date().toISOString(),
@@ -294,6 +418,15 @@ export const W9TaxCertification: React.FC<W9TaxCertificationProps> = ({
     if (!validateForm()) {
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
+    }
+
+    let finalSig = signatureImage;
+    if (!finalSig && canvasRef.current) {
+      try {
+        finalSig = canvasRef.current.toDataURL('image/png');
+      } catch {
+        // ignore
+      }
     }
 
     // Capture backend audit information automatically (Rule 20)
@@ -325,6 +458,7 @@ export const W9TaxCertification: React.FC<W9TaxCertificationProps> = ({
         fatcaCorrect: certFatcaCorrect,
       },
       signatureName,
+      signatureImage: finalSig,
       agreedPerjury: true,
       status: 'verified',
       signedAt: now,
@@ -335,71 +469,281 @@ export const W9TaxCertification: React.FC<W9TaxCertificationProps> = ({
     };
 
     await onSubmitW9(fullPayload);
+    setSignatureImage(finalSig);
     setIsSubmitted(true);
     showToast('✓ W-9 Form successfully certified and submitted!');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleDownloadPdf = () => {
-    const formattedDate = new Date().toLocaleDateString('en-US', {
-      month: 'long',
-      day: 'numeric',
-      year: 'numeric',
-    });
+    try {
+      const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'pt',
+        format: 'letter', // 612 x 792 pt
+      });
 
-    const content = `
-FORM W-9 (REV. 2026) - SUBSTITUTE TAXPAYER CERTIFICATION
-=========================================================
-UrSpot Marketplace Platform Services
+      const pageWidth = 612;
+      const margin = 36; // 0.5 inch margins
+      const contentWidth = pageWidth - margin * 2; // 540 pt
+      let currentY = 36;
 
-PART I - TAXPAYER IDENTIFICATION
-Name as shown on tax return: ${legalName}
-Business / Disregarded Entity: ${businessName || 'N/A'}
-Federal Tax Classification: ${taxClassification} ${
-      taxClassification.includes('LLC') ? `(Treatment: ${llcTaxClassification})` : ''
+      // Header Top Border Box
+      doc.setDrawColor(0, 0, 0);
+      doc.setLineWidth(1.5);
+      doc.line(margin, currentY, margin + contentWidth, currentY);
+
+      // Header Columns
+      currentY += 14;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.text('Form', margin, currentY);
+      doc.setFontSize(24);
+      doc.text('W-9', margin, currentY + 22);
+      doc.setFontSize(6.5);
+      doc.setFont('helvetica', 'normal');
+      doc.text('(Rev. March 2024)', margin, currentY + 31);
+      doc.text('Department of the Treasury', margin, currentY + 38);
+      doc.text('Internal Revenue Service', margin, currentY + 45);
+
+      // Center title
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(13);
+      doc.text('Request for Taxpayer', margin + 85, currentY + 8);
+      doc.text('Identification Number and Certification', margin + 85, currentY + 22);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.text('Go to www.irs.gov/FormW9 for instructions and the latest information.', margin + 85, currentY + 34);
+
+      // Right box
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.text('Give Form to the', margin + 390, currentY + 12);
+      doc.text('requester. Do not', margin + 390, currentY + 22);
+      doc.text('send to the IRS.', margin + 390, currentY + 32);
+
+      currentY += 52;
+      doc.setLineWidth(1.5);
+      doc.line(margin, currentY, margin + contentWidth, currentY);
+
+      // Helper function to draw a field row
+      const drawFieldRow = (label: string, value: string, height: number) => {
+        doc.setLineWidth(0.5);
+        doc.setDrawColor(180, 180, 180);
+        doc.rect(margin, currentY, contentWidth, height);
+        
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7);
+        doc.setTextColor(80, 80, 80);
+        doc.text(label, margin + 5, currentY + 9);
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.5);
+        doc.setTextColor(15, 23, 42);
+        doc.text(value || '—', margin + 5, currentY + 22);
+
+        currentY += height;
+      };
+
+      // Line 1: Name
+      drawFieldRow('1 Name of entity/individual (as shown on your income tax return). Name is required on this line; do not leave blank.', legalName, 28);
+
+      // Line 2: Business name / disregarded entity name
+      drawFieldRow('2 Business name/disregarded entity name, if different from above', businessName || 'None', 28);
+
+      // Line 3: Federal Tax Classification
+      let taxClassText = taxClassification;
+      if (taxClassification.includes('LLC') && llcTaxClassification) {
+        taxClassText += ` (LLC Tax Treatment: ${llcTaxClassification})`;
+      }
+      if (otherClassificationDetail) {
+        taxClassText += ` - ${otherClassificationDetail}`;
+      }
+      drawFieldRow('3a Check appropriate box for federal tax classification of the person whose name is entered on line 1', `[ X ]  ${taxClassText}`, 28);
+
+      // Line 4: Exemptions
+      const exemptionStr = `Exempt Payee Code: ${exemptPayeeCode || 'None'}    |    Exemption from FATCA reporting code: ${fatcaCode || 'None'}`;
+      drawFieldRow('4 Exemptions (codes apply only to certain entities, not individuals; see instructions)', exemptionStr, 26);
+
+      // Line 5: Street Address
+      drawFieldRow('5 Address (number, street, and apt. or suite no.). See instructions.', streetAddress, 26);
+
+      // Line 6: City, State, ZIP
+      drawFieldRow('6 City, state, and ZIP code', `${city}, ${stateCode} ${zipCode}`, 26);
+
+      // Line 7: Account Numbers & Requester
+      const line7Str = `Account number(s): ${accountNumber || 'None'}    |    Requester: UrSpot Marketplace Platform Services (Compliance)`;
+      drawFieldRow('7 List account number(s) here (optional) & Requester Info', line7Str, 26);
+
+      currentY += 6;
+
+      // PART I: TAXPAYER IDENTIFICATION NUMBER (TIN)
+      doc.setFillColor(15, 23, 42); // slate-900
+      doc.rect(margin, currentY, contentWidth, 16, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(255, 255, 255);
+      doc.text('Part I   Taxpayer Identification Number (TIN)', margin + 6, currentY + 11);
+      currentY += 16;
+
+      // TIN Box
+      doc.setLineWidth(0.5);
+      doc.setDrawColor(180, 180, 180);
+      doc.rect(margin, currentY, contentWidth, 38);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7);
+      doc.setTextColor(70, 70, 70);
+      doc.text('Enter your TIN in the appropriate box. For individuals, this is your SSN. For other entities, it is your EIN.', margin + 6, currentY + 11);
+      doc.text('The TIN provided matches IRS records and business registration.', margin + 6, currentY + 21);
+
+      // Right box inside TIN showing Masked TIN
+      doc.setDrawColor(15, 23, 42);
+      doc.setLineWidth(1);
+      doc.rect(margin + 340, currentY + 6, 190, 26);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7);
+      doc.setTextColor(100, 100, 100);
+      doc.text(tinType === 'EIN' ? 'Employer ID Number (EIN)' : 'Social Security Number (SSN)', margin + 346, currentY + 15);
+      doc.setFont('courier', 'bold');
+      doc.setFontSize(11);
+      doc.setTextColor(15, 23, 42);
+      doc.text(maskedTinDisplay, margin + 346, currentY + 27);
+
+      currentY += 44;
+
+      // PART II: CERTIFICATION
+      doc.setFillColor(15, 23, 42);
+      doc.rect(margin, currentY, contentWidth, 16, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(255, 255, 255);
+      doc.text('Part II  Certification', margin + 6, currentY + 11);
+      currentY += 16;
+
+      doc.setLineWidth(0.5);
+      doc.setDrawColor(180, 180, 180);
+      doc.rect(margin, currentY, contentWidth, 108);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(15, 23, 42);
+      doc.text('Under penalties of perjury, I certify that:', margin + 6, currentY + 11);
+
+      const certs = [
+        '1. The number shown on this form is my correct taxpayer identification number (or I am waiting for a number to be issued to me); and',
+        '2. I am not subject to backup withholding because: (a) I am exempt from backup withholding, or (b) I have not been notified by the IRS that I am subject to backup withholding as a result of a failure to report all interest or dividends, or (c) the IRS has notified me that I am no longer subject to backup withholding; and',
+        '3. I am a U.S. citizen or other U.S. person (defined in IRS Form W-9 instructions); and',
+        '4. The FATCA code(s) entered on this form (if any) indicating that I am exempt from FATCA reporting is correct.',
+      ];
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(6.8);
+      doc.setTextColor(50, 50, 50);
+
+      let certY = currentY + 22;
+      certs.forEach((item) => {
+        const splitLines = doc.splitTextToSize(item, contentWidth - 14);
+        doc.text(splitLines, margin + 6, certY);
+        certY += splitLines.length * 8.5;
+      });
+
+      // Certification instructions note
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(6);
+      doc.setTextColor(100, 100, 100);
+      doc.text('Certification instructions: You must cross out item 2 above if you have been notified by the IRS that you are subject to backup withholding.', margin + 6, certY + 3);
+
+      currentY += 114;
+
+      // SIGNATURE SECTION
+      doc.setLineWidth(1);
+      doc.setDrawColor(15, 23, 42);
+      doc.rect(margin, currentY, contentWidth, 80);
+
+      // Left column: Sign Here
+      doc.setFillColor(248, 250, 252);
+      doc.rect(margin, currentY, 65, 80, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.setTextColor(15, 23, 42);
+      doc.text('Sign', margin + 18, currentY + 36);
+      doc.text('Here', margin + 18, currentY + 49);
+
+      // Right area: Signature Image & Date
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(100, 100, 100);
+      doc.text('Signature of', margin + 74, currentY + 14);
+      doc.text('U.S. person  ›', margin + 74, currentY + 23);
+
+      // Date on far right
+      const formattedDate = new Date().toLocaleDateString('en-US', {
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric',
+      });
+      doc.text('Date  ›  ' + (business.w9?.signedAt ? new Date(business.w9.signedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : formattedDate), margin + 380, currentY + 23);
+
+      // Render actual electronic signature image onto the PDF if available
+      let sigDrawn = false;
+      const effectiveSig = signatureImage || (canvasRef.current && hasSignature ? canvasRef.current.toDataURL('image/png') : '');
+      if (effectiveSig) {
+        try {
+          doc.addImage(effectiveSig, 'PNG', margin + 130, currentY + 6, 210, 50);
+          sigDrawn = true;
+        } catch {
+          sigDrawn = false;
+        }
+      }
+
+      if (!sigDrawn) {
+        doc.setFont('courier', 'bolditalic');
+        doc.setFontSize(13);
+        doc.setTextColor(15, 23, 42);
+        doc.text(signatureName || 'Digital Electronic Signature', margin + 130, currentY + 38);
+      }
+
+      // Bottom baseline inside signature box
+      doc.setLineWidth(0.5);
+      doc.setDrawColor(200, 200, 200);
+      doc.line(margin + 130, currentY + 58, margin + 530, currentY + 58);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7);
+      doc.setTextColor(80, 80, 80);
+      doc.text(`Electronically certified under penalties of perjury by: ${signatureName || 'Authorized Signer'}`, margin + 130, currentY + 70);
+
+      currentY += 88;
+
+      // Compliance & Audit Trail Footer Box
+      doc.setFillColor(241, 245, 249); // slate-100
+      doc.rect(margin, currentY, contentWidth, 38, 'F');
+      doc.setLineWidth(0.5);
+      doc.setDrawColor(203, 213, 225);
+      doc.rect(margin, currentY, contentWidth, 38);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7);
+      doc.setTextColor(30, 41, 59);
+      doc.text('OFFICIAL URPOT COMPLIANCE AUDIT TRAIL • IRS SUBSTITUTE FORM W-9', margin + 8, currentY + 11);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(6.5);
+      doc.setTextColor(71, 85, 105);
+      const auditLine1 = `Document Status: ${isSubmitted ? 'VERIFIED & CERTIFIED WITH IRS' : 'IN-PROGRESS / DRAFT'}    |    Signer IP: 198.51.100.42    |    Hash ID: W9-${business.id.slice(0, 8).toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;
+      const auditLine2 = `Security Verification: 256-bit Encrypted compliance record stored in UrSpot Vault. Substitute form pursuant to Treasury Reg. § 31.3406(h)-3(c).`;
+      doc.text(auditLine1, margin + 8, currentY + 21);
+      doc.text(auditLine2, margin + 8, currentY + 30);
+
+      // Save PDF file
+      const safeFileName = `W9_${legalName.replace(/[^a-zA-Z0-9]/g, '_')}_signed.pdf`;
+      doc.save(safeFileName);
+      showToast(`✓ Form W-9 exported successfully as "${safeFileName}".`);
+    } catch (err) {
+      console.error('Failed to generate PDF:', err);
+      showToast('Error generating Form W-9 PDF. Please try again.');
     }
-Exempt Payee Code: ${exemptPayeeCode || 'None'}
-FATCA Exemption Code: ${fatcaCode || 'None'}
-Account Number(s): ${accountNumber || 'None'}
-
-PART II - ADDRESS
-Address: ${streetAddress}
-City, State, Zip: ${city}, ${stateCode} ${zipCode}
-Country: United States
-
-PART III - TAXPAYER IDENTIFICATION NUMBER (TIN)
-TIN Type: ${tinType}
-Masked TIN: ${maskedTinDisplay}
-Verification Status: MATCHED WITH IRS (via Middesk Integration)
-
-PART IV - CERTIFICATIONS (UNDER PENALTIES OF PERJURY)
-Under penalties of perjury, I certify that:
-[X] 1. The number shown on this form is my correct taxpayer identification number (or I am waiting for a number to be issued to me); and
-[X] 2. I am not subject to backup withholding because (a) I am exempt from backup withholding, or (b) I have not been notified by the Internal Revenue Service (IRS) that I am subject to backup withholding as a result of a failure to report all interest or dividends, or (c) the IRS has notified me that I am no longer subject to backup withholding; and
-[X] 3. I am a U.S. citizen or other U.S. person (defined below); and
-[X] 4. The FATCA code(s) entered on this form (if any) indicating that I am exempt from FATCA reporting is correct.
-
-Certification instructions: You must cross out item 2 above if you have been notified by the IRS that you are currently subject to backup withholding because you have failed to report all interest and dividends on your tax return. For real estate transactions, item 2 does not apply. For mortgage interest paid, acquisition or abandonment of secured property, cancellation of debt, contributions to an individual retirement arrangement (IRA), and, generally, payments other than interest and dividends, you are not required to sign the certification, but you must provide your correct TIN. See the instructions for Part II, later.
-
-PART V - ELECTRONIC SIGNATURE AUDIT TRAIL
-Signer Full Legal Name: ${signatureName}
-Electronically Signed: ${formattedDate}
-Audit Verification: Perjury declaration acknowledged
-Signer IP Address: 198.51.100.42
-Security Status: Encrypted & Stored in UrSpot Compliance Vault
-=========================================================
-`;
-
-    const blob = new Blob([content], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `W9_Signed_${legalName.replace(/\s+/g, '_')}.txt`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    showToast('Downloaded signed Form W-9 record.');
   };
 
   return (
@@ -415,9 +759,21 @@ Security Status: Encrypted & Stored in UrSpot Compliance Vault
       {/* Header: Title, Subtitle, and Top-Right 3-Step Progress Stepper matching Image 1 */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-            W-9 Tax Certification
-          </h1>
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+              W-9 Tax Certification
+            </h1>
+            <button
+              type="button"
+              id="btn-header-export-w9-pdf"
+              onClick={handleDownloadPdf}
+              className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 transition-colors cursor-pointer shadow-2xs flex items-center gap-1.5 active:scale-95"
+              title="Export Form W-9 in PDF format"
+            >
+              <Download className="w-3.5 h-3.5 text-slate-600" />
+              <span>Export PDF</span>
+            </button>
+          </div>
           <p className="text-xs sm:text-sm text-slate-500 mt-1 font-medium">
             Complete and certify your tax information to receive payouts.
           </p>
@@ -1195,18 +1551,39 @@ Security Status: Encrypted & Stored in UrSpot Compliance Vault
           </div>
         </div>
 
-        {/* Card 7: 7. Electronic Signature matching Image 1 */}
+        {/* Card 7: 7. Electronic Signature & Compliance Certification */}
         <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-200/90 shadow-2xs p-6 sm:p-7 space-y-4">
-          <div className="flex items-center gap-2.5 pb-2 border-b border-slate-100">
-            <span className="w-6 h-6 rounded-md bg-blue-600 text-white text-xs font-black flex items-center justify-center">
-              7
-            </span>
-            <div>
-              <h2 className="font-bold text-sm text-slate-900">Electronic Signature</h2>
-              <p className="text-xs text-slate-400 font-normal">
-                By signing below, you are electronically signing this Form W-9 under penalties of perjury.
-              </p>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-100">
+            <div className="flex items-center gap-2.5">
+              <span className="w-6 h-6 rounded-md bg-blue-600 text-white text-xs font-black flex items-center justify-center">
+                7
+              </span>
+              <div>
+                <h2 className="font-bold text-sm text-slate-900">Electronic Signature & Compliance Certification</h2>
+                <p className="text-xs text-slate-400 font-normal">
+                  {isSubmitted
+                    ? 'This electronic signature has been officially certified and submitted with Form W-9. Once submitted, it is locked.'
+                    : 'By signing below, you are electronically signing this Form W-9 under penalties of perjury.'}
+                </p>
+              </div>
             </div>
+
+            {isSubmitted ? (
+              <span
+                id="w9-signature-locked-status-pill"
+                className="text-xs text-slate-600 font-bold flex items-center gap-1.5 px-2.5 py-1 bg-slate-100 rounded-lg border border-slate-200 shadow-2xs self-start sm:self-auto"
+              >
+                <Lock className="w-3.5 h-3.5 text-slate-500" /> Signature Submitted & Locked
+              </span>
+            ) : (hasSignature || signatureImage) ? (
+              <span className="text-xs text-emerald-600 font-bold flex items-center gap-1 self-start sm:self-auto">
+                <CheckCircle2 className="w-3.5 h-3.5" /> Signature Captured ✓
+              </span>
+            ) : (
+              <span className="text-xs text-amber-600 font-bold flex items-center gap-1 self-start sm:self-auto">
+                <AlertTriangle className="w-3.5 h-3.5" /> Signature Required *
+              </span>
+            )}
           </div>
 
           <div className="space-y-4">
@@ -1218,11 +1595,12 @@ Security Status: Encrypted & Stored in UrSpot Compliance Vault
                 <input
                   type="text"
                   required
+                  disabled={isSubmitted}
                   id="w9-electronic-signature-input"
                   value={signatureName}
                   onChange={(e) => setSignatureName(e.target.value)}
                   placeholder="e.g. Alex Vance"
-                  className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 font-semibold focus:outline-none focus:ring-2 focus:ring-slate-900"
+                  className="w-full px-3.5 py-2.5 bg-white disabled:bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-semibold focus:outline-none focus:ring-2 focus:ring-slate-900 disabled:cursor-not-allowed"
                 />
               </div>
 
@@ -1231,8 +1609,9 @@ Security Status: Encrypted & Stored in UrSpot Compliance Vault
                   type="checkbox"
                   id="w9-perjury-agreement-checkbox"
                   checked={agreedPerjury}
+                  disabled={isSubmitted}
                   onChange={(e) => setAgreedPerjury(e.target.checked)}
-                  className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-600 cursor-pointer w-4 h-4"
+                  className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-600 cursor-pointer w-4 h-4 disabled:cursor-not-allowed"
                 />
                 <label htmlFor="w9-perjury-agreement-checkbox" className="text-xs text-slate-800 cursor-pointer select-none leading-relaxed font-semibold">
                   I agree to electronically sign this Form W-9 under penalties of perjury.
@@ -1240,6 +1619,126 @@ Security Status: Encrypted & Stored in UrSpot Compliance Vault
                     By checking this box and submitting, I confirm that the information provided is true, correct, and complete to the best of my knowledge.
                   </span>
                 </label>
+              </div>
+            </div>
+
+            {/* Signature Canvas / Locked Signature Card */}
+            <div className="space-y-3 pt-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-700">
+                  Authorized Signer: <span className="text-slate-900 font-semibold">{signatureName || 'Authorized Signer'}</span>
+                </span>
+                {isSubmitted ? (
+                  <span
+                    id="w9-signature-locked-badge"
+                    className="text-xs font-bold text-slate-500 flex items-center gap-1.5 px-2.5 py-1 bg-slate-100 rounded-lg border border-slate-200 shadow-2xs"
+                  >
+                    <Lock className="w-3 h-3 text-slate-500" />
+                    <span>Non-Editable (Form W-9 Submitted)</span>
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    id="btn-clear-w9-signature"
+                    onClick={handleClearSignature}
+                    className="text-xs font-semibold text-slate-500 hover:text-rose-600 transition-colors cursor-pointer flex items-center gap-1"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>Clear Signature</span>
+                  </button>
+                )}
+              </div>
+
+              {isSubmitted ? (
+                <div
+                  id="w9-signature-locked-card"
+                  className="relative rounded-2xl border-2 border-slate-200 bg-slate-50/85 p-6 overflow-hidden flex flex-col items-center justify-center min-h-[170px] shadow-2xs"
+                >
+                  {/* Official Record Badge */}
+                  <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-white/95 border border-slate-200 px-2.5 py-1 rounded-lg text-[10px] font-extrabold text-slate-700 shadow-2xs">
+                    <Lock className="w-3 h-3 text-slate-500" />
+                    <span>OFFICIAL SIGNATURE RECORD</span>
+                  </div>
+
+                  {signatureImage ? (
+                    <div className="w-full flex flex-col items-center justify-center py-2">
+                      <img
+                        id="w9-submitted-signature-image"
+                        src={signatureImage}
+                        alt="Submitted Electronic Signature"
+                        className="max-h-24 max-w-full object-contain pointer-events-none select-none my-1"
+                      />
+                    </div>
+                  ) : (
+                    <div className="py-6 text-center space-y-1">
+                      <CheckCircle2 className="w-6 h-6 text-emerald-600 mx-auto" />
+                      <p className="text-xs font-bold text-slate-800">
+                        Signature Certified by {signatureName || 'Authorized Signer'}
+                      </p>
+                      <p className="text-[11px] text-slate-500">
+                        Digital electronic signature locked and archived with Form W-9 certification.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Certified baseline info */}
+                  <div className="w-full border-t border-slate-300 pt-2.5 mt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[11px] text-slate-500">
+                    <span className="font-semibold text-slate-700 flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      Certified under penalties of perjury by {signatureName || 'Authorized Signer'}
+                    </span>
+                    <span className="font-mono text-[10px] text-slate-400">
+                      Certified: {business.w9?.signedAt ? new Date(business.w9.signedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Archived with submission'}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="relative rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50/70 overflow-hidden hover:border-slate-400 transition-colors">
+                  <canvas
+                    id="w9-signature-canvas"
+                    ref={canvasRef}
+                    width={700}
+                    height={170}
+                    onPointerDown={startDrawing}
+                    onPointerMove={draw}
+                    onPointerUp={stopDrawing}
+                    onPointerCancel={stopDrawing}
+                    style={{ touchAction: 'none' }}
+                    className="w-full h-40 touch-none cursor-crosshair block bg-transparent select-none"
+                  />
+
+                  {/* Baseline guideline */}
+                  <div className="absolute left-6 right-6 bottom-8 pointer-events-none border-b border-slate-300 flex items-center justify-between text-[10px] text-slate-400 pb-1">
+                    <span className="font-mono text-slate-400">✕ Sign on the line above</span>
+                    <span className="font-semibold text-slate-500">
+                      Date: {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    </span>
+                  </div>
+
+                  {!hasSignature && !isDrawing && (
+                    <div className="absolute inset-0 pointer-events-none flex items-center justify-center text-slate-400 text-xs font-medium">
+                      <div className="flex items-center gap-1.5 bg-white/80 px-3 py-1.5 rounded-lg border border-slate-200 shadow-2xs">
+                        <PenTool className="w-3.5 h-3.5 text-slate-500" />
+                        <span>Click or touch to sign here</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Terms and conditions link directly below canvas */}
+              <div className="pt-1 flex items-center gap-1.5 text-xs text-slate-600 flex-wrap">
+                <FileCheck className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <span>By signing above, you certify under penalties of perjury and agree to the</span>
+                <button
+                  type="button"
+                  id="btn-open-w9-terms"
+                  onClick={() => setShowTermsModal(true)}
+                  className="text-blue-600 hover:text-blue-800 underline font-bold cursor-pointer transition-colors"
+                >
+                  Terms and Conditions
+                </button>
+                <span>(IRS Form W-9 Instructions & Certifications).</span>
               </div>
             </div>
 
@@ -1251,28 +1750,61 @@ Security Status: Encrypted & Stored in UrSpot Compliance Vault
           </div>
         </div>
 
-        {/* Action Buttons matching Image 1 */}
+        {/* Action Buttons */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
-          <button
-            type="button"
-            onClick={handleSaveDraft}
-            className="px-6 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 transition-colors cursor-pointer shadow-2xs"
-          >
-            Save as Draft
-          </button>
+          {isSubmitted ? (
+            <div className="w-full flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={handleDownloadPdf}
+                className="px-6 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 transition-colors cursor-pointer shadow-2xs flex items-center justify-center gap-2"
+              >
+                <Download className="w-4 h-4 text-slate-600" />
+                <span>Download Certified Form W-9</span>
+              </button>
 
-          <button
-            type="submit"
-            id="btn-sign-and-submit-w9"
-            disabled={!isKycApproved || !isPlanSelected}
-            className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center justify-center gap-2"
-          >
-            <span>Sign & Submit W-9</span>
-            <ArrowRight className="w-4 h-4" />
-          </button>
+              <div className="px-5 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center justify-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                <span>Form W-9 Certified & Submitted</span>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <button
+                  type="button"
+                  onClick={handleSaveDraft}
+                  className="px-5 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 transition-colors cursor-pointer shadow-2xs"
+                >
+                  Save as Draft
+                </button>
+
+                <button
+                  type="button"
+                  id="btn-export-w9-pdf"
+                  onClick={handleDownloadPdf}
+                  className="px-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 transition-colors cursor-pointer shadow-2xs flex items-center justify-center gap-1.5 active:scale-95"
+                  title="Export Form W-9 as PDF"
+                >
+                  <Download className="w-4 h-4 text-slate-600" />
+                  <span>Export PDF</span>
+                </button>
+              </div>
+
+              <button
+                type="submit"
+                id="btn-sign-and-submit-w9"
+                disabled={!isKycApproved || !isPlanSelected}
+                className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center justify-center gap-2"
+              >
+                <span>Sign & Submit W-9</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </>
+          )}
         </div>
 
-        {/* Bottom Card / Footer Notice matching Image 1 */}
+        {/* Bottom Card / Footer Notice */}
         <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-200/90 shadow-2xs p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-start gap-3">
             <FileText className="w-5 h-5 text-slate-700 shrink-0 mt-0.5" />
@@ -1293,6 +1825,12 @@ Security Status: Encrypted & Stored in UrSpot Compliance Vault
           </div>
         </div>
       </form>
+
+      {/* Terms & Conditions Modal with complete Form W-9 details */}
+      <W9TermsModal
+        isOpen={showTermsModal}
+        onClose={() => setShowTermsModal(false)}
+      />
     </div>
   );
 };

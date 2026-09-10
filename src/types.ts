@@ -89,6 +89,7 @@ export interface W9Data {
   signerUserAgent?: string;
   pdfGeneratedUrl?: string | null;
   updatedAt?: string;
+  signatureImage?: string;
 }
 
 export interface OperatingDay {

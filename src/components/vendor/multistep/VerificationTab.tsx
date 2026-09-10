@@ -1,9 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import {
   UploadCloud,
   CheckCircle2,
   AlertTriangle,
-  FileCheck,
   ShieldAlert,
   Loader2,
   Calendar,
@@ -15,14 +14,11 @@ import {
   ChevronDown,
   ChevronUp,
   CreditCard,
-  RotateCcw,
-  PenTool,
   Building2,
 } from 'lucide-react';
 import { BusinessFormData } from './types';
 import { DynamicTinInput, formatTinDisplay, maskTinDisplay } from '../DynamicTinInput';
 import { TinType, TinVerificationStatus } from '../../../types';
-import { W9TermsModal } from './W9TermsModal';
 
 interface VerificationTabProps {
   data: BusinessFormData;
@@ -53,7 +49,6 @@ export const VerificationTab: React.FC<VerificationTabProps> = ({ data, onChange
   const [isScreeningSanctions, setIsScreeningSanctions] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
-  const [showTermsModal, setShowTermsModal] = useState(false);
 
   const isRejected =
     data.kycStatus === 'Rejected' ||
@@ -71,144 +66,6 @@ export const VerificationTab: React.FC<VerificationTabProps> = ({ data, onChange
     (data.kycStatus === 'Pending Review' ||
       data.status === 'Pending KYC Review' ||
       Boolean(data.kycSubmitted));
-
-  // The signature is locked once submitted (pending review, verified, or live)
-  const isSubmitted = !isRejected && Boolean(data.kycSubmitted || isPendingReview || isVerified);
-
-  // Signature Canvas state and ref
-  const [isDrawing, setIsDrawing] = useState(false);
-  const isDrawingRef = useRef(false);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [hasSignature, setHasSignature] = useState(Boolean(data.signature));
-  const loadedSigRef = useRef<string>('');
-
-  // Keep hasSignature synchronized with data.signature
-  useEffect(() => {
-    setHasSignature(Boolean(data.signature));
-  }, [data.signature]);
-
-  // Load existing signature onto canvas when data.signature changes externally or on mount
-  useEffect(() => {
-    if (isSubmitted) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    if (data.signature) {
-      if (loadedSigRef.current === data.signature) return;
-      const img = new Image();
-      img.onload = () => {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        setHasSignature(true);
-        loadedSigRef.current = data.signature || '';
-      };
-      img.src = data.signature;
-    } else {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      setHasSignature(false);
-      loadedSigRef.current = '';
-    }
-  }, [data.signature, isSubmitted]);
-
-  const getCoordinates = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return { x: 0, y: 0 };
-    const rect = canvas.getBoundingClientRect();
-    if (!rect.width || !rect.height) return { x: 0, y: 0 };
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-
-    return {
-      x: (e.clientX - rect.left) * scaleX,
-      y: (e.clientY - rect.top) * scaleY,
-    };
-  };
-
-  const startDrawing = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (isSubmitted) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    try {
-      e.currentTarget.setPointerCapture(e.pointerId);
-    } catch {
-      // ignore
-    }
-
-    const { x, y } = getCoordinates(e);
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.strokeStyle = '#0f172a';
-    ctx.lineWidth = 2.5;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.lineTo(x, y);
-    ctx.stroke();
-
-    isDrawingRef.current = true;
-    setIsDrawing(true);
-    setHasSignature(true);
-  };
-
-  const draw = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (isSubmitted || !isDrawingRef.current) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const { x, y } = getCoordinates(e);
-    ctx.lineTo(x, y);
-    ctx.stroke();
-  };
-
-  const stopDrawing = (e?: React.PointerEvent<HTMLCanvasElement>) => {
-    if (isSubmitted) return;
-    if (!isDrawingRef.current) return;
-    isDrawingRef.current = false;
-    setIsDrawing(false);
-
-    if (e) {
-      try {
-        e.currentTarget.releasePointerCapture(e.pointerId);
-      } catch {
-        // ignore
-      }
-    }
-
-    const canvas = canvasRef.current;
-    if (canvas) {
-      const dataUrl = canvas.toDataURL('image/png');
-      loadedSigRef.current = dataUrl;
-      setHasSignature(true);
-      const now = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-      onChange({
-        signature: dataUrl,
-        signatureDate: now,
-      });
-    }
-  };
-
-  const handleClearSignature = () => {
-    if (isSubmitted) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    isDrawingRef.current = false;
-    setIsDrawing(false);
-    setHasSignature(false);
-    loadedSigRef.current = '';
-    onChange({
-      signature: '',
-      signatureDate: '',
-    });
-  };
 
   // Determine dynamic TIN Type based on entity and taxpayer configuration (Rule 3)
   const getEffectiveTinType = (): TinType => {
@@ -249,7 +106,6 @@ export const VerificationTab: React.FC<VerificationTabProps> = ({ data, onChange
   if (!data.govIdUploaded) missingList.push('Upload Government ID (Section D)');
   if (!data.selfieUploaded) missingList.push('Upload Liveness Selfie (Section D)');
   if (!data.sanctionsClear) missingList.push('Complete OFAC Sanctions Screening (Section E)');
-  if (!data.signature && !hasSignature) missingList.push('Draw and apply your electronic signature (Section F)');
 
   const canSubmit = missingList.length === 0;
 
@@ -304,12 +160,6 @@ export const VerificationTab: React.FC<VerificationTabProps> = ({ data, onChange
       ' at ' +
       new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-    const finalSig =
-      data.signature || (canvasRef.current ? canvasRef.current.toDataURL('image/png') : '');
-    const finalSigDate =
-      data.signatureDate ||
-      new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-
     onChange({
       kycSubmitted: true,
       kycStatus: 'Pending Review',
@@ -320,8 +170,6 @@ export const VerificationTab: React.FC<VerificationTabProps> = ({ data, onChange
       rejectionReason: null,
       tinType: effectiveTinType,
       tinMasked: data.tinMasked || maskTinDisplay(currentTinRaw, effectiveTinType),
-      signature: finalSig,
-      signatureDate: finalSigDate,
     });
     setSubmitSuccess(true);
     setTimeout(() => setSubmitSuccess(false), 4000);
@@ -494,77 +342,13 @@ export const VerificationTab: React.FC<VerificationTabProps> = ({ data, onChange
             )}
           </div>
           <p className="text-xs text-slate-500 leading-relaxed max-w-2xl">
-            Complete all 6 regulatory sub-checks below to enable submission for Super-Admin review. Required for payout activation and marketplace listing.
+            Complete all 5 regulatory sub-checks below (Sections A–E) to enable submission for Super-Admin review. Required for payout activation and marketplace listing.
           </p>
         </div>
       </div>
 
       {/* Regulatory Sections */}
       <div className="space-y-6">
-        {/* Business Identity & Location Information (Read-Only) */}
-        <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-200/80 shadow-2xs p-6 sm:p-7 space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-slate-100 border border-slate-200 text-slate-800 flex items-center justify-center shrink-0">
-                <Building2 className="w-4 h-4" />
-              </div>
-              <div>
-                <h3 className="text-xs font-black uppercase tracking-wider text-slate-900">
-                  BUSINESS IDENTITY & LOCATION DETAILS
-                </h3>
-                <p className="text-[11px] text-slate-500 mt-0.5">
-                  Registered platform information (View-Only / Non-Editable)
-                </p>
-              </div>
-            </div>
-            <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200 flex items-center gap-1 shadow-2xs">
-              <Lock className="w-3 h-3 text-slate-500" /> View Only
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-1">
-            {/* Business Name */}
-            <div className="p-3.5 bg-slate-50/80 rounded-xl border border-slate-200/80 space-y-1.5">
-              <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">
-                Business Name
-              </span>
-              <p className="text-sm font-black text-slate-900 truncate" title={data.businessName}>
-                {data.businessName || '—'}
-              </p>
-            </div>
-
-            {/* City */}
-            <div className="p-3.5 bg-slate-50/80 rounded-xl border border-slate-200/80 space-y-1.5">
-              <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">
-                City
-              </span>
-              <p className="text-sm font-bold text-slate-800 truncate" title={data.city}>
-                {data.city || '—'}
-              </p>
-            </div>
-
-            {/* State */}
-            <div className="p-3.5 bg-slate-50/80 rounded-xl border border-slate-200/80 space-y-1.5">
-              <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">
-                State
-              </span>
-              <p className="text-sm font-bold text-slate-800 truncate" title={data.state}>
-                {data.state || '—'}
-              </p>
-            </div>
-
-            {/* Zip code */}
-            <div className="p-3.5 bg-slate-50/80 rounded-xl border border-slate-200/80 space-y-1.5">
-              <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">
-                Zip Code
-              </span>
-              <p className="text-sm font-mono font-bold text-slate-800 tracking-wider">
-                {data.zipCode || '—'}
-              </p>
-            </div>
-          </div>
-        </div>
-
         {/* Section A: Legal Entity Structure */}
         <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-200/80 shadow-2xs p-6 sm:p-7 space-y-4">
           <div className="flex items-center justify-between">
@@ -975,157 +759,66 @@ export const VerificationTab: React.FC<VerificationTabProps> = ({ data, onChange
           </div>
         </div>
 
-        {/* Section F: Electronic Signature & Compliance Certification */}
+        {/* Business Identity & Location Information (Read-Only) - Last Section */}
         <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-200/80 shadow-2xs p-6 sm:p-7 space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <span className="w-6 h-6 rounded-md bg-slate-900 text-white text-xs font-black flex items-center justify-center">
-                F
-              </span>
-              <h3 className="text-xs font-black uppercase tracking-wider text-slate-900">
-                ELECTRONIC SIGNATURE & COMPLIANCE CERTIFICATION
-              </h3>
+              <div className="w-8 h-8 rounded-xl bg-slate-100 border border-slate-200 text-slate-800 flex items-center justify-center shrink-0">
+                <Building2 className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="text-xs font-black uppercase tracking-wider text-slate-900">
+                  BUSINESS IDENTITY & LOCATION DETAILS
+                </h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Registered platform information (View-Only / Non-Editable)
+                </p>
+              </div>
             </div>
-            {isSubmitted ? (
-              <span
-                id="signature-status-submitted-locked"
-                className="text-xs text-slate-700 font-extrabold px-2.5 py-1 rounded-full bg-slate-100 border border-slate-300 flex items-center gap-1.5 shadow-2xs"
-              >
-                <Lock className="w-3.5 h-3.5 text-slate-500" /> Signature Submitted & Locked
-              </span>
-            ) : hasSignature ? (
-              <span className="text-xs text-emerald-600 font-bold flex items-center gap-1">
-                <CheckCircle2 className="w-3.5 h-3.5" /> Signature Captured ✓
-              </span>
-            ) : (
-              <span className="text-xs text-amber-600 font-bold flex items-center gap-1">
-                <AlertTriangle className="w-3.5 h-3.5" /> Signature Required *
-              </span>
-            )}
+            <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200 flex items-center gap-1 shadow-2xs">
+              <Lock className="w-3 h-3 text-slate-500" /> View Only
+            </span>
           </div>
 
-          <p className="text-xs text-slate-500">
-            {isSubmitted
-              ? 'This electronic signature has been officially certified and submitted with your KYC compliance package. Once submitted, it is locked and cannot be changed or cleared.'
-              : 'Please sign using your mouse or touchscreen inside the signature canvas below to certify your KYC/KYB identity declarations and substitute Form W-9 under penalties of perjury.'}
-          </p>
-
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-700">
-                Authorized Signer: <span className="text-slate-900 font-semibold">{data.uboFullName || 'Primary Business Owner'}</span>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-1">
+            {/* Business Name */}
+            <div className="p-3.5 bg-slate-50/80 rounded-xl border border-slate-200/80 space-y-1.5">
+              <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">
+                Business Name
               </span>
-              {isSubmitted ? (
-                <span
-                  id="signature-locked-badge"
-                  className="text-xs font-bold text-slate-500 flex items-center gap-1.5 px-2.5 py-1 bg-slate-100 rounded-lg border border-slate-200 shadow-2xs"
-                >
-                  <Lock className="w-3 h-3 text-slate-500" />
-                  <span>Non-Editable (Application Submitted)</span>
-                </span>
-              ) : (
-                <button
-                  type="button"
-                  id="btn-clear-signature"
-                  onClick={handleClearSignature}
-                  className="text-xs font-semibold text-slate-500 hover:text-rose-600 transition-colors cursor-pointer flex items-center gap-1"
-                >
-                  <RotateCcw className="w-3 h-3" />
-                  <span>Clear Signature</span>
-                </button>
-              )}
+              <p className="text-sm font-black text-slate-900 truncate" title={data.businessName}>
+                {data.businessName || '—'}
+              </p>
             </div>
 
-            {isSubmitted ? (
-              <div
-                id="verification-signature-locked-card"
-                className="relative rounded-2xl border-2 border-slate-200 bg-slate-50/85 p-6 overflow-hidden flex flex-col items-center justify-center min-h-[170px] shadow-2xs"
-              >
-                {/* Official Record Badge */}
-                <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-white/95 border border-slate-200 px-2.5 py-1 rounded-lg text-[10px] font-extrabold text-slate-700 shadow-2xs">
-                  <Lock className="w-3 h-3 text-slate-500" />
-                  <span>OFFICIAL SIGNATURE RECORD</span>
-                </div>
+            {/* City */}
+            <div className="p-3.5 bg-slate-50/80 rounded-xl border border-slate-200/80 space-y-1.5">
+              <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">
+                City
+              </span>
+              <p className="text-sm font-bold text-slate-800 truncate" title={data.city}>
+                {data.city || '—'}
+              </p>
+            </div>
 
-                {data.signature ? (
-                  <div className="w-full flex flex-col items-center justify-center py-2">
-                    <img
-                      id="submitted-signature-image"
-                      src={data.signature}
-                      alt="Submitted Electronic Signature"
-                      className="max-h-24 max-w-full object-contain pointer-events-none select-none my-1"
-                    />
-                  </div>
-                ) : (
-                  <div className="py-6 text-center space-y-1">
-                    <CheckCircle2 className="w-6 h-6 text-emerald-600 mx-auto" />
-                    <p className="text-xs font-bold text-slate-800">
-                      Signature Certified by {data.uboFullName || 'Authorized Signer'}
-                    </p>
-                    <p className="text-[11px] text-slate-500">
-                      Digital electronic signature locked and archived with KYC compliance package.
-                    </p>
-                  </div>
-                )}
+            {/* State */}
+            <div className="p-3.5 bg-slate-50/80 rounded-xl border border-slate-200/80 space-y-1.5">
+              <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">
+                State
+              </span>
+              <p className="text-sm font-bold text-slate-800 truncate" title={data.state}>
+                {data.state || '—'}
+              </p>
+            </div>
 
-                {/* Certified baseline info */}
-                <div className="w-full border-t border-slate-300 pt-2.5 mt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[11px] text-slate-500">
-                  <span className="font-semibold text-slate-700 flex items-center gap-1">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                    Certified under penalties of perjury by {data.uboFullName || 'Authorized Signer'}
-                  </span>
-                  <span className="font-mono text-[10px] text-slate-400">
-                    Certified: {data.signatureDate || 'Archived with submission'}
-                  </span>
-                </div>
-              </div>
-            ) : (
-              <div className="relative rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50/70 overflow-hidden hover:border-slate-400 transition-colors">
-                <canvas
-                  id="verification-signature-canvas"
-                  ref={canvasRef}
-                  width={700}
-                  height={170}
-                  onPointerDown={startDrawing}
-                  onPointerMove={draw}
-                  onPointerUp={stopDrawing}
-                  onPointerCancel={stopDrawing}
-                  style={{ touchAction: 'none' }}
-                  className="w-full h-40 touch-none cursor-crosshair block bg-transparent select-none"
-                />
-
-                {/* Baseline guideline */}
-                <div className="absolute left-6 right-6 bottom-8 pointer-events-none border-b border-slate-300 flex items-center justify-between text-[10px] text-slate-400 pb-1">
-                  <span className="font-mono text-slate-400">✕ Sign on the line above</span>
-                  {data.signatureDate && (
-                    <span className="font-semibold text-slate-500">Certified: {data.signatureDate}</span>
-                  )}
-                </div>
-
-                {!hasSignature && !isDrawing && (
-                  <div className="absolute inset-0 pointer-events-none flex items-center justify-center text-slate-400 text-xs font-medium">
-                    <div className="flex items-center gap-1.5 bg-white/80 px-3 py-1.5 rounded-lg border border-slate-200 shadow-2xs">
-                      <PenTool className="w-3.5 h-3.5 text-slate-500" />
-                      <span>Click or touch to sign here</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Terms and conditions link directly below canvas */}
-            <div className="pt-1 flex items-center gap-1.5 text-xs text-slate-600 flex-wrap">
-              <FileCheck className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-              <span>By signing above, you certify under penalties of perjury and agree to the</span>
-              <button
-                type="button"
-                id="btn-open-kyc-w9-terms"
-                onClick={() => setShowTermsModal(true)}
-                className="text-blue-600 hover:text-blue-800 underline font-bold cursor-pointer transition-colors"
-              >
-                Terms and Conditions
-              </button>
-              <span>(IRS Form W-9 Instructions & Certifications).</span>
+            {/* Zip code */}
+            <div className="p-3.5 bg-slate-50/80 rounded-xl border border-slate-200/80 space-y-1.5">
+              <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">
+                Zip Code
+              </span>
+              <p className="text-sm font-mono font-bold text-slate-800 tracking-wider">
+                {data.zipCode || '—'}
+              </p>
             </div>
           </div>
         </div>
@@ -1274,12 +967,6 @@ export const VerificationTab: React.FC<VerificationTabProps> = ({ data, onChange
           </div>
         </div>
       </div>
-
-      {/* Terms & Conditions Modal with complete Form W-9 details */}
-      <W9TermsModal
-        isOpen={showTermsModal}
-        onClose={() => setShowTermsModal(false)}
-      />
     </div>
   );
 };
