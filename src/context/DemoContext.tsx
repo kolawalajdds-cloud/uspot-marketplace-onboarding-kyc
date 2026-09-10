@@ -1263,6 +1263,8 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
           ? formData.resubmittedAt
           : (existing?.verification.resubmittedAt || existing?.resubmittedAt || null),
       kycSubmitted: kycSub,
+      signature: formData.signature || existing?.verification?.signature || (existing as any)?.signature || undefined,
+      signatureDate: formData.signatureDate || existing?.verification?.signatureDate || (existing as any)?.signatureDate || undefined,
     };
 
     let resultBiz: Business;
@@ -1290,16 +1292,22 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const computedStatus: BusinessStatus = formData.status
       ? (formData.status as BusinessStatus)
+      : (formData.kycStatus === 'Verified' || existing?.status === 'KYC Approved' || existing?.status === 'Live')
+      ? (existing?.status === 'Live' ? 'Live' : 'KYC Approved')
+      : (formData.kycStatus === 'Rejected' || existing?.status === 'KYC Rejected')
+      ? 'KYC Rejected'
       : (formData.kycStatus === 'Pending Review' || kycSub)
       ? 'Pending KYC Review'
       : (existing?.status || initialStatus);
 
     const computedSubTab = formData.subTab
       ? formData.subTab
+      : (computedStatus === 'KYC Approved' || computedStatus === 'Live')
+      ? 'approved'
+      : computedStatus === 'KYC Rejected'
+      ? 'rejected'
       : (computedStatus === 'Pending KYC Review' || kycSub)
       ? 'kyc-requests'
-      : computedStatus === 'KYC Approved' || computedStatus === 'Live'
-      ? 'approved'
       : (existing?.subTab || 'non-subscription');
 
     if (existing) {
@@ -1323,6 +1331,8 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
         phone: formData.phone || existing.phone,
         email: formData.email || existing.email,
         website: formData.website || existing.website,
+        signature: verification.signature,
+        signatureDate: verification.signatureDate,
       };
       setState((prev) => ({
         ...prev,
@@ -1380,6 +1390,8 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
         date: formattedDate,
         rejectionCount: 0,
         rejectionHistory: [],
+        signature: verification.signature,
+        signatureDate: verification.signatureDate,
       };
       setState((prev) => ({
         ...prev,

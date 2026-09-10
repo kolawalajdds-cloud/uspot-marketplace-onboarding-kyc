@@ -120,4 +120,6 @@ export interface BusinessFormData {
   rejectionCount?: number;
   rejectionHistory?: Array<{ date: string; reason: string; rejectedBy?: string }>;
   resubmittedAt?: string | null;
+  signature?: string;
+  signatureDate?: string;
 }

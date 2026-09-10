@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ChevronRight, Check, AlertCircle, CreditCard, CheckCircle2 } from 'lucide-react';
 import { MultiStepTab, BusinessFormData } from './types';
 import { BusinessSetupTab } from './BusinessSetupTab';
@@ -159,6 +159,8 @@ export const DEFAULT_FORM_DATA: BusinessFormData = {
   selfieUploaded: false,
   sanctionsClear: true,
   kycSubmitted: false,
+  signature: '',
+  signatureDate: '',
 };
 
 export const BusinessMultiStepPage: React.FC<BusinessMultiStepPageProps> = ({
@@ -176,6 +178,8 @@ export const BusinessMultiStepPage: React.FC<BusinessMultiStepPageProps> = ({
   });
   const [lastSavedText, setLastSavedText] = useState('Last saved just now');
   const [showSavedToast, setShowSavedToast] = useState(false);
+  const formDataRef = useRef<BusinessFormData>(formData);
+  formDataRef.current = formData;
 
   useEffect(() => {
     if (initialTab) {
@@ -185,17 +189,24 @@ export const BusinessMultiStepPage: React.FC<BusinessMultiStepPageProps> = ({
 
   useEffect(() => {
     if (initialData) {
-      setFormData((prev) => ({
-        ...prev,
-        ...initialData,
-        images: initialData.images !== undefined ? initialData.images : prev.images,
-      }));
+      setFormData((prev) => {
+        const next = {
+          ...prev,
+          ...initialData,
+          images: initialData.images !== undefined ? initialData.images : prev.images,
+          signature: initialData.signature || prev.signature,
+          signatureDate: initialData.signatureDate || prev.signatureDate,
+        };
+        formDataRef.current = next;
+        return next;
+      });
     }
   }, [initialData]);
 
   const updateFormData = (updates: Partial<BusinessFormData>) => {
     setFormData((prev) => {
       const next = { ...prev, ...updates };
+      formDataRef.current = next;
       if (updates.kycSubmitted) {
         onSave(next);
       }
@@ -207,7 +218,7 @@ export const BusinessMultiStepPage: React.FC<BusinessMultiStepPageProps> = ({
   const currentTabMeta = TABS.find((t) => t.id === activeTab) || TABS[0];
 
   const handleSave = () => {
-    onSave(formData);
+    onSave(formDataRef.current);
     setLastSavedText('Last saved just now');
     setShowSavedToast(true);
     setTimeout(() => setShowSavedToast(false), 2500);
@@ -335,20 +346,24 @@ export const BusinessMultiStepPage: React.FC<BusinessMultiStepPageProps> = ({
           {TABS.map((tab) => {
             const isActive = activeTab === tab.id;
             const isTabVerification = tab.id === 'verification';
+            const isTabVerified =
+              isTabVerification &&
+              (formData.kycStatus === 'Verified' ||
+                formData.status === 'KYC Approved' ||
+                formData.status === 'Live');
             const isTabRejected =
               isTabVerification &&
+              !isTabVerified &&
               (formData.kycStatus === 'Rejected' ||
                 formData.status === 'KYC Rejected' ||
-                Boolean(formData.rejectionReason && formData.kycStatus !== 'Verified'));
+                Boolean(formData.rejectionReason));
             const isTabPending =
               isTabVerification &&
+              !isTabVerified &&
               !isTabRejected &&
               (formData.kycStatus === 'Pending Review' ||
                 formData.status === 'Pending KYC Review' ||
-                formData.kycSubmitted);
-            const isTabVerified =
-              isTabVerification &&
-              (formData.kycStatus === 'Verified' || formData.status === 'KYC Approved');
+                Boolean(formData.kycSubmitted));
 
             return (
               <button
@@ -374,7 +389,7 @@ export const BusinessMultiStepPage: React.FC<BusinessMultiStepPageProps> = ({
                   </span>
                 )}
                 {isTabVerified && (
-                  <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                  <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
                     ✓
                   </span>
                 )}

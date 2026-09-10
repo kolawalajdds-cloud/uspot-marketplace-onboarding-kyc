@@ -221,6 +221,8 @@ export interface VerificationData {
   rejectionHistory?: VerificationRejectionLog[];
   resubmittedAt?: string | null;
   kycSubmitted?: boolean;
+  signature?: string;
+  signatureDate?: string;
 }
 
 export interface PaymentData {
@@ -268,6 +270,8 @@ export interface Business {
   rejectionHistory?: VerificationRejectionLog[];
   resubmittedAt?: string | null;
   avatarChar?: string;
+  signature?: string;
+  signatureDate?: string;
 }
 
 export interface DemoAppState {

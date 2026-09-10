@@ -39,6 +39,7 @@ import {
   Heart,
   Filter,
   ArrowRight,
+  ArrowLeft,
   ExternalLink,
   ShieldCheck,
   Clock,
@@ -483,7 +484,7 @@ export const BusinessPortal: React.FC = () => {
       sanctionsClear: b.verification?.sanctionsScreening?.status === 'Clear',
       kycSubmitted:
         b.status === 'Pending KYC Review' ||
-        (b.status !== 'KYC Rejected' && Boolean(b.verification?.kycSubmitted)),
+        (b.status !== 'KYC Rejected' && b.status !== 'KYC Approved' && b.status !== 'Live' && Boolean(b.verification?.kycSubmitted)),
       kycStatus:
         b.status === 'KYC Approved' || b.status === 'Live'
           ? 'Verified'
@@ -501,6 +502,8 @@ export const BusinessPortal: React.FC = () => {
         rejectedBy: rh.rejectedBy || 'Super Admin',
       })),
       resubmittedAt: b.resubmittedAt ?? b.verification?.resubmittedAt ?? undefined,
+      signature: b.verification?.signature || (b as any).signature || '',
+      signatureDate: b.verification?.signatureDate || (b as any).signatureDate || '',
     };
   };
 
@@ -619,6 +622,19 @@ export const BusinessPortal: React.FC = () => {
 
     if (contextBiz) {
       const converted = convertBusinessToFormData(contextBiz);
+      const effectiveSig =
+        existingStore?.signature ||
+        contextBiz.verification?.signature ||
+        (contextBiz as any).signature ||
+        converted.signature ||
+        '';
+      const effectiveSigDate =
+        existingStore?.signatureDate ||
+        contextBiz.verification?.signatureDate ||
+        (contextBiz as any).signatureDate ||
+        converted.signatureDate ||
+        '';
+
       setMultistepInitialData({
         ...DEFAULT_FORM_DATA,
         ...(existingStore || {}),
@@ -627,6 +643,8 @@ export const BusinessPortal: React.FC = () => {
         businessName: biz.name || contextBiz.coreDetails.businessName,
         category: biz.category || contextBiz.coreDetails.category,
         city: biz.city || contextBiz.coreDetails.city,
+        signature: effectiveSig,
+        signatureDate: effectiveSigDate,
       });
     } else if (existingStore) {
       setMultistepInitialData({
@@ -636,6 +654,8 @@ export const BusinessPortal: React.FC = () => {
         businessName: biz.name,
         category: biz.category,
         city: biz.city,
+        signature: existingStore.signature || '',
+        signatureDate: existingStore.signatureDate || '',
       });
     } else {
       setMultistepInitialData({
@@ -883,36 +903,7 @@ export const BusinessPortal: React.FC = () => {
               {!isSidebarCollapsed && <span>Dashboard</span>}
             </button>
 
-            {/* 2. W9 Form */}
-            <button
-              id="sidebar-tab-w9-form"
-              onClick={() => setActiveTab('w9-form')}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                activeTab === 'w9-form'
-                  ? 'bg-slate-800/90 text-white font-bold shadow-xs'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
-              }`}
-            >
-              <FileText className="w-4 h-4 shrink-0" />
-              {!isSidebarCollapsed && (
-                <div className="flex-1 flex items-center justify-between">
-                  <span>W9 Form</span>
-                  {selectedBusiness?.w9?.status === 'Submitted' || selectedBusiness?.w9?.status === 'Certified' ? (
-                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                      Submitted
-                    </span>
-                  ) : selectedBusiness?.w9?.status === 'Draft' ? (
-                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">
-                      Draft
-                    </span>
-                  ) : (
-                    <span className="w-2 h-2 rounded-full bg-amber-400" />
-                  )}
-                </div>
-              )}
-            </button>
-
-            {/* 3. Businesses (Dropdown with 3 sub-options) */}
+            {/* 2. Businesses (Dropdown with 3 sub-options) */}
             <div>
               <button
                 id="sidebar-tab-businesses-toggle"
@@ -1712,6 +1703,16 @@ export const BusinessPortal: React.FC = () => {
           {/* =================================================================== */}
           {activeTab === 'w9-form' && (
             <div className="max-w-5xl mx-auto space-y-6 animate-in fade-in duration-150 pb-20">
+              <div className="flex items-center justify-between">
+                <button
+                  id="btn-back-to-my-businesses"
+                  onClick={() => setActiveTab('my-businesses')}
+                  className="flex items-center gap-1.5 text-xs font-bold text-slate-700 hover:text-slate-900 transition-colors cursor-pointer bg-white hover:bg-slate-50 px-3.5 py-2 rounded-xl border border-slate-200 shadow-2xs"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Back to My Businesses</span>
+                </button>
+              </div>
               <W9TaxCertification
                 business={selectedBusiness}
                 onSaveDraft={(w9Data) => {
@@ -1771,17 +1772,37 @@ export const BusinessPortal: React.FC = () => {
                     Manage and monitor your multi-location business ecosystem.
                   </p>
                 </div>
-                <button
-                  id="create-new-business-btn"
-                  onClick={() => {
-                    setMultistepInitialData(undefined);
-                    setMultistepMode('create');
-                  }}
-                  className="bg-black hover:bg-slate-800 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-colors cursor-pointer shadow-xs flex items-center gap-1.5 self-start sm:self-auto"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>+ Create Business</span>
-                </button>
+                <div className="flex items-center gap-2.5 self-start sm:self-auto flex-wrap">
+                  <button
+                    id="open-w9-form-btn"
+                    onClick={() => setActiveTab('w9-form')}
+                    className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold px-4 py-2.5 rounded-xl transition-colors cursor-pointer shadow-2xs flex items-center gap-2"
+                  >
+                    <FileText className="w-4 h-4 text-slate-600" />
+                    <span>W9 Form</span>
+                    {selectedBusiness?.w9?.status === 'Submitted' || selectedBusiness?.w9?.status === 'Certified' ? (
+                      <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">
+                        Submitted
+                      </span>
+                    ) : selectedBusiness?.w9?.status === 'Draft' ? (
+                      <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200">
+                        Draft
+                      </span>
+                    ) : null}
+                  </button>
+
+                  <button
+                    id="create-new-business-btn"
+                    onClick={() => {
+                      setMultistepInitialData(undefined);
+                      setMultistepMode('create');
+                    }}
+                    className="bg-black hover:bg-slate-800 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-colors cursor-pointer shadow-xs flex items-center gap-1.5"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>+ Create Business</span>
+                  </button>
+                </div>
               </div>
 
               {/* Controls Bar matching Image 1 & Image 2 */}

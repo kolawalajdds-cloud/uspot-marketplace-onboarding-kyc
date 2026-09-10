@@ -38,6 +38,7 @@ const FEDERAL_TAX_CLASSIFICATION_OPTIONS = [
   'S Corporation',
   'Partnership',
   'Limited Liability Company (LLC)',
+  'LLC. Enter the tax classification (C = C corporation, S = S corporation, P = Partnership)',
   'Trust / Estate',
   'Other',
 ];
@@ -372,10 +373,13 @@ Masked TIN: ${maskedTinDisplay}
 Verification Status: MATCHED WITH IRS (via Middesk Integration)
 
 PART IV - CERTIFICATIONS (UNDER PENALTIES OF PERJURY)
-[X] 1. The number shown on this form is my correct taxpayer identification number.
-[X] 2. I am not subject to backup withholding.
-[X] 3. I am a U.S. citizen or other U.S. person.
-[X] 4. The FATCA code(s) entered (if any) are correct.
+Under penalties of perjury, I certify that:
+[X] 1. The number shown on this form is my correct taxpayer identification number (or I am waiting for a number to be issued to me); and
+[X] 2. I am not subject to backup withholding because (a) I am exempt from backup withholding, or (b) I have not been notified by the Internal Revenue Service (IRS) that I am subject to backup withholding as a result of a failure to report all interest or dividends, or (c) the IRS has notified me that I am no longer subject to backup withholding; and
+[X] 3. I am a U.S. citizen or other U.S. person (defined below); and
+[X] 4. The FATCA code(s) entered on this form (if any) indicating that I am exempt from FATCA reporting is correct.
+
+Certification instructions: You must cross out item 2 above if you have been notified by the IRS that you are currently subject to backup withholding because you have failed to report all interest and dividends on your tax return. For real estate transactions, item 2 does not apply. For mortgage interest paid, acquisition or abandonment of secured property, cancellation of debt, contributions to an individual retirement arrangement (IRA), and, generally, payments other than interest and dividends, you are not required to sign the certification, but you must provide your correct TIN. See the instructions for Part II, later.
 
 PART V - ELECTRONIC SIGNATURE AUDIT TRAIL
 Signer Full Legal Name: ${signatureName}
@@ -1118,56 +1122,76 @@ Security Status: Encrypted & Stored in UrSpot Compliance Vault
             </div>
           </div>
 
-          <div className="space-y-3.5 pt-1">
-            {/* 1. Correct TIN */}
-            <label className="flex items-start gap-3 text-xs text-slate-800 cursor-pointer select-none leading-relaxed">
-              <input
-                type="checkbox"
-                id="w9-cert-correct-tin"
-                checked={certCorrectTin}
-                onChange={(e) => setCertCorrectTin(e.target.checked)}
-                className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-600 cursor-pointer w-4 h-4"
-              />
-              <span>I certify that the TIN provided is correct (or I am waiting for a number to be issued).</span>
-            </label>
+          <div className="space-y-4 pt-1">
+            <p className="text-xs font-bold text-slate-900 leading-relaxed">
+              Under penalties of perjury, I certify that:
+            </p>
 
-            {/* 2. Backup Withholding */}
-            <label className="flex items-start gap-3 text-xs text-slate-800 cursor-pointer select-none leading-relaxed">
-              <input
-                type="checkbox"
-                id="w9-cert-backup-withholding"
-                checked={certNoBackupWithholding}
-                onChange={(e) => setCertNoBackupWithholding(e.target.checked)}
-                className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-600 cursor-pointer w-4 h-4"
-              />
-              <span>
-                I am not subject to backup withholding because: (a) I am exempt from backup withholding, or (b) I have not been notified by the IRS that I am subject to backup withholding.
-              </span>
-            </label>
+            <div className="space-y-3.5 pl-1">
+              {/* 1. Correct TIN */}
+              <label className="flex items-start gap-3 text-xs text-slate-800 cursor-pointer select-none leading-relaxed">
+                <input
+                  type="checkbox"
+                  id="w9-cert-correct-tin"
+                  checked={certCorrectTin}
+                  onChange={(e) => setCertCorrectTin(e.target.checked)}
+                  className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-600 cursor-pointer w-4 h-4 shrink-0"
+                />
+                <span>
+                  <strong>1.</strong> The number shown on this form is my correct taxpayer identification number (or I am waiting for a number to be issued to me); and
+                </span>
+              </label>
 
-            {/* 3. U.S. Person */}
-            <label className="flex items-start gap-3 text-xs text-slate-800 cursor-pointer select-none leading-relaxed">
-              <input
-                type="checkbox"
-                id="w9-cert-us-person"
-                checked={certUsPerson}
-                onChange={(e) => setCertUsPerson(e.target.checked)}
-                className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-600 cursor-pointer w-4 h-4"
-              />
-              <span>I am a U.S. person (including a U.S. resident alien).</span>
-            </label>
+              {/* 2. Backup Withholding */}
+              <label className="flex items-start gap-3 text-xs text-slate-800 cursor-pointer select-none leading-relaxed">
+                <input
+                  type="checkbox"
+                  id="w9-cert-backup-withholding"
+                  checked={certNoBackupWithholding}
+                  onChange={(e) => setCertNoBackupWithholding(e.target.checked)}
+                  className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-600 cursor-pointer w-4 h-4 shrink-0"
+                />
+                <span>
+                  <strong>2.</strong> I am not subject to backup withholding because (a) I am exempt from backup withholding, or (b) I have not been notified by the Internal Revenue Service (IRS) that I am subject to backup withholding as a result of a failure to report all interest or dividends, or (c) the IRS has notified me that I am no longer subject to backup withholding; and
+                </span>
+              </label>
 
-            {/* 4. FATCA */}
-            <label className="flex items-start gap-3 text-xs text-slate-800 cursor-pointer select-none leading-relaxed">
-              <input
-                type="checkbox"
-                id="w9-cert-fatca"
-                checked={certFatcaCorrect}
-                onChange={(e) => setCertFatcaCorrect(e.target.checked)}
-                className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-600 cursor-pointer w-4 h-4"
-              />
-              <span>The FATCA code(s) entered (if any) indicating that I am exempt from FATCA reporting is correct.</span>
-            </label>
+              {/* 3. U.S. Person */}
+              <label className="flex items-start gap-3 text-xs text-slate-800 cursor-pointer select-none leading-relaxed">
+                <input
+                  type="checkbox"
+                  id="w9-cert-us-person"
+                  checked={certUsPerson}
+                  onChange={(e) => setCertUsPerson(e.target.checked)}
+                  className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-600 cursor-pointer w-4 h-4 shrink-0"
+                />
+                <span>
+                  <strong>3.</strong> I am a U.S. citizen or other U.S. person (defined below); and
+                </span>
+              </label>
+
+              {/* 4. FATCA */}
+              <label className="flex items-start gap-3 text-xs text-slate-800 cursor-pointer select-none leading-relaxed">
+                <input
+                  type="checkbox"
+                  id="w9-cert-fatca"
+                  checked={certFatcaCorrect}
+                  onChange={(e) => setCertFatcaCorrect(e.target.checked)}
+                  className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-600 cursor-pointer w-4 h-4 shrink-0"
+                />
+                <span>
+                  <strong>4.</strong> The FATCA code(s) entered on this form (if any) indicating that I am exempt from FATCA reporting is correct.
+                </span>
+              </label>
+            </div>
+
+            {/* Certification Instructions */}
+            <div className="p-4 bg-slate-50/90 rounded-2xl border border-slate-200 text-xs text-slate-700 leading-relaxed space-y-1.5">
+              <span className="font-bold text-slate-900 block">Certification instructions.</span>
+              <p className="text-slate-600">
+                You must cross out item 2 above if you have been notified by the IRS that you are currently subject to backup withholding because you have failed to report all interest and dividends on your tax return. For real estate transactions, item 2 does not apply. For mortgage interest paid, acquisition or abandonment of secured property, cancellation of debt, contributions to an individual retirement arrangement (IRA), and, generally, payments other than interest and dividends, you are not required to sign the certification, but you must provide your correct TIN. See the instructions for Part II, later.
+              </p>
+            </div>
           </div>
         </div>
 
