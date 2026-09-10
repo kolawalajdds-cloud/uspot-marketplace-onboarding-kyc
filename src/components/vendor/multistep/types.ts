@@ -72,6 +72,15 @@ export interface BusinessFormData {
   depositPercentage: number;
   byobAllowed: boolean;
   petFriendly: boolean;
+  petFriendlyPolicy?: string;
+  customRules?: {
+    id: string;
+    category: string;
+    title: string;
+    description: string;
+    value: string;
+    active?: boolean;
+  }[];
 
   // Step 6: Fees & Tax
   taxId: string;

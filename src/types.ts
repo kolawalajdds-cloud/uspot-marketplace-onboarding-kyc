@@ -47,7 +47,7 @@ export type TinMatchStatus = 'Not Started' | 'Matched' | 'Mismatch' | TinVerific
 export type StateRegistryStatus = 'Not Checked' | 'Active/Good Standing' | 'Not Found';
 export type SanctionsStatus = 'Not Started' | 'Clear' | 'Flagged';
 export type RiskTier = 'Low' | 'Medium' | 'High';
-export type PlanTier = 'Starter' | 'Pro' | 'Premium' | 'Enterprise' | 'Professional';
+export type PlanTier = 'Essential' | 'Starter' | 'Pro' | 'Premium' | 'Enterprise' | 'Professional';
 export type FeeType = 'Fixed' | 'Percentage';
 
 export type W9Status = 'draft' | 'submitted' | 'verified' | 'rejected';

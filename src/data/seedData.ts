@@ -217,9 +217,9 @@ export function getSeedBusinesses(): Business[] {
         rejectionReason: null,
       },
       payment: {
-        planSelected: 'Pro',
-        amount: 79,
-        paidAt: '2026-09-02T16:40:00Z',
+        planSelected: 'Professional',
+        amount: 49.99,
+        paidAt: null,
       },
       notifications: [
         {

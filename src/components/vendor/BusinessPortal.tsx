@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useDemo } from '../../context/DemoContext';
-import { Business, UserProfile } from '../../types';
+import { Business, UserProfile, PlanTier } from '../../types';
 import {
   LayoutDashboard,
   FileText,
@@ -28,6 +28,7 @@ import {
   Eye,
   EyeOff,
   UploadCloud,
+  Check,
   CheckCircle2,
   X,
   Info,
@@ -173,6 +174,66 @@ export const BusinessPortal: React.FC = () => {
   const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState('All');
 
+  // Payment Flow & Plan Confirmation State (Matching Image 2)
+  const [payingBusinessId, setPayingBusinessId] = useState<string | null>(null);
+  const [subscriptionViewMode, setSubscriptionViewMode] = useState<'card' | 'table'>('card');
+  const [isPlanConfirmModalOpen, setIsPlanConfirmModalOpen] = useState(false);
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [selectedPlanForConfirmation, setSelectedPlanForConfirmation] = useState<{
+    plan: PlanTier;
+    name: string;
+    price: number;
+    billing: string;
+    features: string[];
+  } | null>(null);
+
+  const handleOpenPaymentForBusiness = (bizId: string) => {
+    setPayingBusinessId(bizId);
+    setSelectedBusinessId(bizId);
+    setActiveTab('subscriptions');
+  };
+
+  const handleSelectPlan = (
+    plan: PlanTier,
+    price: number,
+    features: string[]
+  ) => {
+    setSelectedPlanForConfirmation({
+      plan,
+      name: plan,
+      price,
+      billing: 'Monthly',
+      features,
+    });
+    setIsPlanConfirmModalOpen(true);
+  };
+
+  const handleConfirmPlanPayment = async () => {
+    if (!selectedPlanForConfirmation) return;
+    const targetId = payingBusinessId || selectedBusinessId;
+    const targetBiz = state.businesses.find((b) => b.id === targetId);
+    if (!targetBiz) return;
+
+    setIsProcessingPayment(true);
+    try {
+      await processPayment(
+        targetBiz.id,
+        selectedPlanForConfirmation.plan,
+        selectedPlanForConfirmation.price
+      );
+      showToast(`🎉 Payment confirmed! "${targetBiz.coreDetails.businessName}" is now active and Live.`);
+      setIsPlanConfirmModalOpen(false);
+      setSelectedPlanForConfirmation(null);
+      setPayingBusinessId(null);
+      setActiveTab('my-businesses');
+    } catch (err) {
+      console.error(err);
+      showToast('Payment processing failed. Please try again.');
+    } finally {
+      setIsProcessingPayment(false);
+    }
+  };
+
   // Synchronized directly with DemoContext so changes in Business User reflect in Super Admin and vice versa!
   const myBusinessesList = useMemo(() => {
     return state.businesses.map((b) => {
@@ -185,12 +246,25 @@ export const BusinessPortal: React.FC = () => {
         status = 'Active';
       }
 
-      const isKycRejected =
-        b.status === 'KYC Rejected' ||
-        b.verification?.status === 'Rejected' ||
-        Boolean(b.rejectionReason || b.verification?.rejectionReason);
+      const isKycApproved =
+        b.status === 'KYC Approved' ||
+        b.subTab === 'approved' ||
+        b.verification?.status === 'Approved' ||
+        (b.status === 'Active' && !b.payment?.paidAt && Boolean(b.verification?.reviewedBy));
 
-      const rejectionReason = b.rejectionReason || b.verification?.rejectionReason;
+      const hasPaid = Boolean(b.payment?.paidAt);
+      const isAwaitingPayment = isKycApproved && !hasPaid;
+
+      const isKycRejected =
+        !isKycApproved &&
+        b.status !== 'Live' &&
+        (b.status === 'KYC Rejected' ||
+          b.verification?.status === 'Rejected' ||
+          Boolean(b.rejectionReason || b.verification?.rejectionReason));
+
+      const rejectionReason = isKycRejected
+        ? (b.rejectionReason || b.verification?.rejectionReason || null)
+        : null;
       const rejectionCount = b.rejectionCount ?? b.verification?.rejectionCount ?? 0;
 
       return {
@@ -201,11 +275,13 @@ export const BusinessPortal: React.FC = () => {
         status,
         rawStatus: b.status,
         isKycRejected,
+        isAwaitingPayment,
+        payment: b.payment,
         rejectionReason,
         rejectionCount,
         services: b.servicesCount ?? 8,
         workers: b.workersCount ?? 4,
-        isActive: b.status === 'KYC Approved' || b.status === 'Live',
+        isActive: b.status === 'Live' || (b.status === 'KYC Approved' && hasPaid),
         avatarChar: b.avatarChar || (b.coreDetails.businessName || 'B').charAt(0).toUpperCase(),
       };
     });
@@ -718,6 +794,10 @@ export const BusinessPortal: React.FC = () => {
 
   const selectedBusiness =
     state.businesses.find((b) => b.id === selectedBusinessId) || state.businesses[0];
+
+  const payingBiz = payingBusinessId
+    ? state.businesses.find((b) => b.id === payingBusinessId)
+    : selectedBusiness;
 
   const filteredBusinesses = state.businesses.filter((b) => {
     const matchesSearch =
@@ -1676,6 +1756,10 @@ export const BusinessPortal: React.FC = () => {
                 initialTab={multistepInitialTab}
                 onSave={handleSaveMultiStepBusiness}
                 onDiscard={() => setMultistepMode(null)}
+                onNavigateToPayment={(bizId) => {
+                  setMultistepMode(null);
+                  handleOpenPaymentForBusiness(bizId);
+                }}
               />
             ) : (
             <div className="space-y-6 animate-in fade-in duration-150">
@@ -1919,6 +2003,11 @@ export const BusinessPortal: React.FC = () => {
                                   <span className="w-1.5 h-1.5 rounded-full bg-rose-600 animate-pulse" />
                                   <span>KYC Rejected</span>
                                 </span>
+                              ) : biz.isAwaitingPayment ? (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/60">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                  <span>KYC Approved</span>
+                                </span>
                               ) : (
                                 <span
                                   className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold ${
@@ -1953,53 +2042,74 @@ export const BusinessPortal: React.FC = () => {
                               {biz.workers}
                             </td>
 
-                            {/* Actions (Eye, Pencil, Trash2, Toggle Switch) */}
+                            {/* Actions (Eye, Pencil, Trash2, Toggle Switch OR Eye + Pay Now) */}
                             <td className="py-4 px-6">
-                              <div className="flex items-center gap-3">
-                                <button
-                                  onClick={() => setViewingBiz(biz)}
-                                  className="text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
-                                  title="View Details"
-                                >
-                                  <Eye className="w-4 h-4" />
-                                </button>
-                                <button
-                                  onClick={() => handleOpenEditMultiStep(biz)}
-                                  className="text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
-                                  title="Edit Business"
-                                >
-                                  <Pencil className="w-4 h-4" />
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteBusiness(biz.id)}
-                                  className="text-slate-400 hover:text-red-500 transition-colors cursor-pointer"
-                                  title="Delete Business"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
+                              {biz.isAwaitingPayment ? (
+                                <div className="flex items-center gap-2.5">
+                                  <button
+                                    onClick={() => setViewingBiz(biz)}
+                                    className="text-slate-400 hover:text-slate-700 transition-colors cursor-pointer p-1 rounded-md hover:bg-slate-100"
+                                    title="View Details"
+                                  >
+                                    <Eye className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    id={`pay-now-btn-${biz.id}`}
+                                    onClick={() => handleOpenPaymentForBusiness(biz.id)}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-black text-white hover:bg-slate-800 transition-all shadow-xs cursor-pointer active:scale-95"
+                                    title="Pay Now to activate your business"
+                                  >
+                                    <CreditCard className="w-3.5 h-3.5 text-emerald-400" />
+                                    <span>Pay Now</span>
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-3">
+                                  <button
+                                    onClick={() => setViewingBiz(biz)}
+                                    className="text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
+                                    title="View Details"
+                                  >
+                                    <Eye className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleOpenEditMultiStep(biz)}
+                                    className="text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
+                                    title="Edit Business"
+                                  >
+                                    <Pencil className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteBusiness(biz.id)}
+                                    className="text-slate-400 hover:text-red-500 transition-colors cursor-pointer"
+                                    title="Delete Business"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
 
-                                {/* Interactive Toggle Switch */}
-                                <button
-                                  type="button"
-                                  role="switch"
-                                  aria-checked={biz.isActive}
-                                  onClick={() => toggleBusinessActive(biz.id)}
-                                  title={
-                                    biz.isActive
-                                      ? 'Active - click to pause'
-                                      : 'Inactive - click to activate'
-                                  }
-                                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                                    biz.isActive ? 'bg-black' : 'bg-slate-300'
-                                  }`}
-                                >
-                                  <span
-                                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out ${
-                                      biz.isActive ? 'translate-x-4' : 'translate-x-0'
+                                  {/* Interactive Toggle Switch */}
+                                  <button
+                                    type="button"
+                                    role="switch"
+                                    aria-checked={biz.isActive}
+                                    onClick={() => toggleBusinessActive(biz.id)}
+                                    title={
+                                      biz.isActive
+                                        ? 'Active - click to pause'
+                                        : 'Inactive - click to activate'
+                                    }
+                                    className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                      biz.isActive ? 'bg-black' : 'bg-slate-300'
                                     }`}
-                                  />
-                                </button>
-                              </div>
+                                  >
+                                    <span
+                                      className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out ${
+                                        biz.isActive ? 'translate-x-4' : 'translate-x-0'
+                                      }`}
+                                    />
+                                  </button>
+                                </div>
+                              )}
                             </td>
                           </tr>
                         ))}
@@ -2039,6 +2149,11 @@ export const BusinessPortal: React.FC = () => {
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-rose-100 text-rose-700 border border-rose-200 shrink-0">
                               <span className="w-1.5 h-1.5 rounded-full bg-rose-600 animate-pulse" />
                               <span>KYC Rejected</span>
+                            </span>
+                          ) : biz.isAwaitingPayment ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold shrink-0 bg-emerald-50 text-emerald-700 border border-emerald-200/60">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                              <span>KYC Approved</span>
                             </span>
                           ) : (
                             <span
@@ -2111,53 +2226,77 @@ export const BusinessPortal: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* Bottom Row: Actions (Eye, Pencil, Trash) & Toggle Switch */}
+                      {/* Bottom Row: Actions (Eye + Pay Now OR Eye, Pencil, Trash & Toggle Switch) */}
                       <div className="flex items-center justify-between pt-1 border-t border-slate-100">
-                        <div className="flex items-center gap-2.5">
-                          <button
-                            onClick={() => setViewingBiz(biz)}
-                            className="text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
-                            title="View Details"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleOpenEditMultiStep(biz)}
-                            className="text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
-                            title="Edit Business"
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteBusiness(biz.id)}
-                            className="text-slate-400 hover:text-red-500 transition-colors cursor-pointer"
-                            title="Delete Business"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
+                        {biz.isAwaitingPayment ? (
+                          <div className="flex items-center justify-between w-full">
+                            <button
+                              onClick={() => setViewingBiz(biz)}
+                              className="text-slate-400 hover:text-slate-700 transition-colors cursor-pointer p-1 rounded-md hover:bg-slate-100 flex items-center gap-1 text-xs font-semibold"
+                              title="View Details"
+                            >
+                              <Eye className="w-4 h-4" />
+                              <span>View</span>
+                            </button>
+                            <button
+                              id={`grid-pay-now-btn-${biz.id}`}
+                              onClick={() => handleOpenPaymentForBusiness(biz.id)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-black text-white hover:bg-slate-800 transition-all shadow-xs cursor-pointer active:scale-95"
+                              title="Pay Now to activate your business"
+                            >
+                              <CreditCard className="w-3.5 h-3.5 text-emerald-400" />
+                              <span>Pay Now</span>
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex items-center gap-2.5">
+                              <button
+                                onClick={() => setViewingBiz(biz)}
+                                className="text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
+                                title="View Details"
+                              >
+                                <Eye className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleOpenEditMultiStep(biz)}
+                                className="text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
+                                title="Edit Business"
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteBusiness(biz.id)}
+                                className="text-slate-400 hover:text-red-500 transition-colors cursor-pointer"
+                                title="Delete Business"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
 
-                        {/* Toggle Switch */}
-                        <button
-                          type="button"
-                          role="switch"
-                          aria-checked={biz.isActive}
-                          onClick={() => toggleBusinessActive(biz.id)}
-                          title={
-                            biz.isActive
-                              ? 'Active - click to deactivate'
-                              : 'Inactive - click to activate'
-                          }
-                          className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                            biz.isActive ? 'bg-black' : 'bg-slate-300'
-                          }`}
-                        >
-                          <span
-                            className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out ${
-                              biz.isActive ? 'translate-x-4' : 'translate-x-0'
-                            }`}
-                          />
-                        </button>
+                            {/* Toggle Switch */}
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={biz.isActive}
+                              onClick={() => toggleBusinessActive(biz.id)}
+                              title={
+                                biz.isActive
+                                  ? 'Active - click to deactivate'
+                                  : 'Inactive - click to activate'
+                              }
+                              className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                biz.isActive ? 'bg-black' : 'bg-slate-300'
+                              }`}
+                            >
+                              <span
+                                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out ${
+                                  biz.isActive ? 'translate-x-4' : 'translate-x-0'
+                                }`}
+                              />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -2697,8 +2836,357 @@ export const BusinessPortal: React.FC = () => {
             </div>
           )}
 
+          {/* =================================================================== */}
+          {/* VIEW: SUBSCRIPTION PLANS (Matching Image 2)                         */}
+          {/* =================================================================== */}
+          {activeTab === 'subscriptions' && (
+            <div className="space-y-6 animate-in fade-in duration-150 pb-16">
+              {/* Context banner if opened for a specific KYC Approved business */}
+              {payingBiz && (
+                <div className="bg-slate-900 text-white p-4 sm:p-5 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-md border border-slate-800">
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center font-black text-sm text-emerald-400 shrink-0">
+                      {payingBiz.avatarChar || payingBiz.coreDetails.businessName.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-extrabold text-sm sm:text-base text-white">
+                          {payingBiz.coreDetails.businessName}
+                        </span>
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                          KYC Approved
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {payingBiz.coreDetails.category} • {payingBiz.coreDetails.city} • Select a tier below to activate and go live on the marketplace.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setPayingBusinessId(null);
+                      setActiveTab('my-businesses');
+                    }}
+                    className="text-xs text-slate-300 hover:text-white font-medium underline cursor-pointer shrink-0"
+                  >
+                    ← Back to My Businesses
+                  </button>
+                </div>
+              )}
+
+              {/* Main Top Header matching Image 2 */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+                    Subscription Plans
+                  </h1>
+                  <p className="text-xs sm:text-sm text-slate-500 mt-1 font-medium">
+                    Configure and manage tier-based access for service providers.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-3 self-start sm:self-auto">
+                  {/* Segmented View Mode Toggle: Card vs Table matching Image 2 */}
+                  <div className="flex items-center border border-slate-200 rounded-xl p-1 bg-white shadow-2xs">
+                    <button
+                      id="sub-view-card-btn"
+                      onClick={() => setSubscriptionViewMode('card')}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        subscriptionViewMode === 'card'
+                          ? 'bg-black text-white shadow-xs'
+                          : 'text-slate-500 hover:text-slate-900'
+                      }`}
+                    >
+                      <LayoutGrid className="w-3.5 h-3.5" />
+                      <span>Card</span>
+                    </button>
+                    <button
+                      id="sub-view-table-btn"
+                      onClick={() => setSubscriptionViewMode('table')}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        subscriptionViewMode === 'table'
+                          ? 'bg-black text-white shadow-xs'
+                          : 'text-slate-500 hover:text-slate-900'
+                      }`}
+                    >
+                      <List className="w-3.5 h-3.5" />
+                      <span>Table</span>
+                    </button>
+                  </div>
+
+                  {/* Button matching Image 2 top right */}
+                  <button
+                    id="create-plan-btn"
+                    onClick={() => {
+                      if (payingBusinessId) {
+                        setPayingBusinessId(null);
+                        setActiveTab('my-businesses');
+                      } else {
+                        showToast('Custom tier request received! An account executive will follow up.');
+                      }
+                    }}
+                    className="bg-black hover:bg-slate-800 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-colors cursor-pointer shadow-xs flex items-center gap-1.5"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Create New Plan</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* CARD VIEW: 3 Tier Cards matching Image 2 */}
+              {subscriptionViewMode === 'card' && (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch pt-2">
+                  {/* 1. Essential Card */}
+                  <div className="bg-white rounded-3xl border border-slate-200/90 p-7 flex flex-col justify-between shadow-2xs hover:shadow-md transition-shadow relative">
+                    <div>
+                      {/* Top Badges */}
+                      <div className="flex items-center justify-between">
+                        <span className="px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-600">
+                          BASIC TIER
+                        </span>
+                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-700">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                          <span>Active</span>
+                        </span>
+                      </div>
+
+                      {/* Title & Price */}
+                      <h3 className="text-2xl sm:text-3xl font-black text-slate-900 mt-5 tracking-tight">
+                        Essential
+                      </h3>
+                      <div className="flex items-baseline mt-2">
+                        <span className="text-4xl font-black text-slate-900 tracking-tight">$19.99</span>
+                        <span className="text-xs sm:text-sm font-medium text-slate-500 ml-1.5">/month</span>
+                      </div>
+
+                      {/* Feature Checklist matching Image 2 */}
+                      <div className="space-y-4 my-8 text-xs sm:text-sm">
+                        <div className="flex items-center gap-2.5 text-slate-800 font-medium">
+                          <Check className="w-4 h-4 text-slate-900 shrink-0" />
+                          <span>Max Workers: <strong className="text-slate-900 font-bold">3</strong></span>
+                        </div>
+                        <div className="flex items-center gap-2.5 text-slate-800 font-medium">
+                          <Check className="w-4 h-4 text-slate-900 shrink-0" />
+                          <span>Unlimited Bookings</span>
+                        </div>
+                        <div className="flex items-center gap-2.5 text-slate-400 font-medium">
+                          <X className="w-4 h-4 text-slate-400 shrink-0" />
+                          <span>Allow Cash Payment</span>
+                        </div>
+                        <div className="flex items-center gap-2.5 text-slate-400 font-medium">
+                          <X className="w-4 h-4 text-slate-400 shrink-0" />
+                          <span>Custom Branding</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      id="select-plan-essential-btn"
+                      onClick={() => handleSelectPlan('Essential', 19.99, ['Max Workers: 3', 'Unlimited Bookings'])}
+                      className="w-full py-3.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-900 font-bold text-xs shadow-xs transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-[0.98]"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Select Plan</span>
+                    </button>
+                  </div>
+
+                  {/* 2. Professional Card (MOST POPULAR - Dark Card matching Image 2) */}
+                  <div className="bg-[#0B0F19] text-white rounded-3xl border border-slate-800 p-7 flex flex-col justify-between shadow-2xl relative ring-1 ring-white/10 lg:-translate-y-2">
+                    <div>
+                      {/* Top Badges */}
+                      <div className="flex items-center justify-between">
+                        <span className="px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider bg-slate-800 text-slate-200 border border-slate-700">
+                          MOST POPULAR
+                        </span>
+                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-300">
+                          <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                          <span>Active</span>
+                        </span>
+                      </div>
+
+                      {/* Title & Price */}
+                      <h3 className="text-2xl sm:text-3xl font-black text-white mt-5 tracking-tight">
+                        Professional
+                      </h3>
+                      <div className="flex items-baseline mt-2">
+                        <span className="text-4xl font-black text-white tracking-tight">$49.99</span>
+                        <span className="text-xs sm:text-sm font-medium text-slate-400 ml-1.5">/month</span>
+                      </div>
+
+                      {/* Feature Checklist matching Image 2 */}
+                      <div className="space-y-4 my-8 text-xs sm:text-sm">
+                        <div className="flex items-center gap-2.5 text-slate-200 font-medium">
+                          <Check className="w-4 h-4 text-white shrink-0" />
+                          <span>Max Workers: <strong className="text-white font-bold">15</strong></span>
+                        </div>
+                        <div className="flex items-center gap-2.5 text-slate-200 font-medium">
+                          <Check className="w-4 h-4 text-white shrink-0" />
+                          <span>Unlimited Bookings</span>
+                        </div>
+                        <div className="flex items-center gap-2.5 text-slate-200 font-medium">
+                          <Check className="w-4 h-4 text-white shrink-0" />
+                          <span>Allow Cash Payment</span>
+                        </div>
+                        <div className="flex items-center gap-2.5 text-slate-500 font-medium">
+                          <X className="w-4 h-4 text-slate-500 shrink-0" />
+                          <span>Custom Branding</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      id="select-plan-professional-btn"
+                      onClick={() => handleSelectPlan('Professional', 49.99, ['Max Workers: 15', 'Unlimited Bookings', 'Allow Cash Payment'])}
+                      className="w-full py-3.5 rounded-xl bg-white hover:bg-slate-100 text-slate-950 font-black text-xs shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2 hover:shadow-white/20 active:scale-[0.98]"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-slate-900" />
+                      <span>Select Plan</span>
+                    </button>
+                  </div>
+
+                  {/* 3. Enterprise Card */}
+                  <div className="bg-white rounded-3xl border border-slate-200/90 p-7 flex flex-col justify-between shadow-2xs hover:shadow-md transition-shadow relative">
+                    <div>
+                      {/* Top Badges */}
+                      <div className="flex items-center justify-between">
+                        <span className="px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-600">
+                          CORPORATE
+                        </span>
+                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-700">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                          <span>Active</span>
+                        </span>
+                      </div>
+
+                      {/* Title & Price */}
+                      <h3 className="text-2xl sm:text-3xl font-black text-slate-900 mt-5 tracking-tight">
+                        Enterprise
+                      </h3>
+                      <div className="flex items-baseline mt-2">
+                        <span className="text-4xl font-black text-slate-900 tracking-tight">$149.99</span>
+                        <span className="text-xs sm:text-sm font-medium text-slate-500 ml-1.5">/month</span>
+                      </div>
+
+                      {/* Feature Checklist matching Image 2 */}
+                      <div className="space-y-4 my-8 text-xs sm:text-sm">
+                        <div className="flex items-center gap-2.5 text-slate-800 font-medium">
+                          <Check className="w-4 h-4 text-slate-900 shrink-0" />
+                          <span>Max Workers: <strong className="text-slate-900 font-bold">Unlimited</strong></span>
+                        </div>
+                        <div className="flex items-center gap-2.5 text-slate-800 font-medium">
+                          <Check className="w-4 h-4 text-slate-900 shrink-0" />
+                          <span>Allow Cash Payment</span>
+                        </div>
+                        <div className="flex items-center gap-2.5 text-slate-800 font-medium">
+                          <Check className="w-4 h-4 text-slate-900 shrink-0" />
+                          <span>White-label Portal</span>
+                        </div>
+                        <div className="flex items-center gap-2.5 text-slate-800 font-medium">
+                          <Check className="w-4 h-4 text-slate-900 shrink-0" />
+                          <span>Dedicated Account Manager</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      id="select-plan-enterprise-btn"
+                      onClick={() => handleSelectPlan('Enterprise', 149.99, ['Max Workers: Unlimited', 'Allow Cash Payment', 'White-label Portal', 'Dedicated Account Manager'])}
+                      className="w-full py-3.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-900 font-bold text-xs shadow-xs transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-[0.98]"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Select Plan</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* TABLE VIEW: Comparison View */}
+              {subscriptionViewMode === 'table' && (
+                <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="border-b border-slate-100 text-[11px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50/50">
+                          <th className="py-4 px-6">PLAN FEATURES</th>
+                          <th className="py-4 px-6">ESSENTIAL ($19.99/mo)</th>
+                          <th className="py-4 px-6 bg-slate-900 text-white">PROFESSIONAL ($49.99/mo)</th>
+                          <th className="py-4 px-6">ENTERPRISE ($149.99/mo)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-xs">
+                        <tr>
+                          <td className="py-3.5 px-6 font-semibold text-slate-900">Max Workers</td>
+                          <td className="py-3.5 px-6 font-medium text-slate-600">3 Workers</td>
+                          <td className="py-3.5 px-6 font-bold text-slate-900 bg-slate-50">15 Workers</td>
+                          <td className="py-3.5 px-6 font-medium text-slate-600">Unlimited</td>
+                        </tr>
+                        <tr>
+                          <td className="py-3.5 px-6 font-semibold text-slate-900">Bookings</td>
+                          <td className="py-3.5 px-6 font-medium text-emerald-600">Unlimited</td>
+                          <td className="py-3.5 px-6 font-bold text-emerald-600 bg-slate-50">Unlimited</td>
+                          <td className="py-3.5 px-6 font-medium text-emerald-600">Unlimited</td>
+                        </tr>
+                        <tr>
+                          <td className="py-3.5 px-6 font-semibold text-slate-900">Allow Cash Payment</td>
+                          <td className="py-3.5 px-6 font-medium text-slate-400">✕ No</td>
+                          <td className="py-3.5 px-6 font-bold text-emerald-600 bg-slate-50">✓ Yes</td>
+                          <td className="py-3.5 px-6 font-medium text-emerald-600">✓ Yes</td>
+                        </tr>
+                        <tr>
+                          <td className="py-3.5 px-6 font-semibold text-slate-900">Custom Branding</td>
+                          <td className="py-3.5 px-6 font-medium text-slate-400">✕ No</td>
+                          <td className="py-3.5 px-6 font-medium text-slate-400 bg-slate-50">✕ No</td>
+                          <td className="py-3.5 px-6 font-medium text-emerald-600">✓ Yes</td>
+                        </tr>
+                        <tr>
+                          <td className="py-3.5 px-6 font-semibold text-slate-900">White-label Portal</td>
+                          <td className="py-3.5 px-6 font-medium text-slate-400">✕ No</td>
+                          <td className="py-3.5 px-6 font-medium text-slate-400 bg-slate-50">✕ No</td>
+                          <td className="py-3.5 px-6 font-medium text-emerald-600">✓ Yes</td>
+                        </tr>
+                        <tr>
+                          <td className="py-3.5 px-6 font-semibold text-slate-900">Account Manager</td>
+                          <td className="py-3.5 px-6 font-medium text-slate-400">Community</td>
+                          <td className="py-3.5 px-6 font-medium text-slate-600 bg-slate-50">Priority Support</td>
+                          <td className="py-3.5 px-6 font-medium text-emerald-600">Dedicated VIP</td>
+                        </tr>
+                        <tr className="bg-slate-50/50">
+                          <td className="py-4 px-6 font-bold text-slate-900">Select Plan</td>
+                          <td className="py-4 px-6">
+                            <button
+                              onClick={() => handleSelectPlan('Essential', 19.99, ['Max Workers: 3', 'Unlimited Bookings'])}
+                              className="px-4 py-2 bg-slate-900 hover:bg-black text-white text-xs font-bold rounded-xl cursor-pointer"
+                            >
+                              Choose Essential
+                            </button>
+                          </td>
+                          <td className="py-4 px-6 bg-slate-100">
+                            <button
+                              onClick={() => handleSelectPlan('Professional', 49.99, ['Max Workers: 15', 'Unlimited Bookings', 'Allow Cash Payment'])}
+                              className="px-4 py-2 bg-black hover:bg-slate-800 text-white text-xs font-bold rounded-xl cursor-pointer shadow-xs"
+                            >
+                              Choose Professional
+                            </button>
+                          </td>
+                          <td className="py-4 px-6">
+                            <button
+                              onClick={() => handleSelectPlan('Enterprise', 149.99, ['Max Workers: Unlimited', 'Allow Cash Payment', 'White-label Portal', 'Dedicated Account Manager'])}
+                              className="px-4 py-2 bg-slate-900 hover:bg-black text-white text-xs font-bold rounded-xl cursor-pointer"
+                            >
+                              Choose Enterprise
+                            </button>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Fallback for other sidebar items */}
-          {['workers', 'customers', 'reviews', 'subscriptions', 'account', 'settings'].includes(activeTab) && (
+          {['workers', 'customers', 'reviews', 'account', 'settings'].includes(activeTab) && (
             <div className="p-12 bg-white rounded-2xl border border-slate-200 text-center space-y-3 animate-in fade-in">
               <Building2 className="w-10 h-10 text-slate-400 mx-auto" />
               <h2 className="text-lg font-extrabold text-slate-900 capitalize">{activeTab} Section</h2>
@@ -3241,6 +3729,150 @@ export const BusinessPortal: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: CONFIRM SUBSCRIPTION PLAN & PAYMENT                                */}
+      {/* ========================================================================= */}
+      {isPlanConfirmModalOpen && selectedPlanForConfirmation && (
+        <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-lg w-full overflow-hidden animate-in zoom-in-95 duration-150">
+            {/* Header */}
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-black text-white flex items-center justify-center shadow-xs">
+                  <CreditCard className="w-5 h-5 text-emerald-400" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-slate-900 text-base">Confirm Subscription Plan</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Review your tier details before confirming marketplace activation
+                  </p>
+                </div>
+              </div>
+              <button
+                id="close-plan-confirm-modal-btn"
+                onClick={() => {
+                  if (!isProcessingPayment) {
+                    setIsPlanConfirmModalOpen(false);
+                  }
+                }}
+                className="w-8 h-8 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-5">
+              {/* Target Business Card */}
+              {payingBiz && (
+                <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-2xl flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-white border border-slate-200 flex items-center justify-center font-bold text-slate-800 text-xs shrink-0 shadow-2xs">
+                      {payingBiz.avatarChar || payingBiz.coreDetails.businessName.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                        Target Business
+                      </span>
+                      <p className="font-bold text-slate-900 text-xs sm:text-sm">
+                        {payingBiz.coreDetails.businessName}
+                      </p>
+                      <p className="text-[11px] text-slate-500">
+                        {payingBiz.coreDetails.category} • {payingBiz.coreDetails.city}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/80 shrink-0">
+                    KYC Verified
+                  </span>
+                </div>
+              )}
+
+              {/* Plan Summary Card */}
+              <div className="p-5 rounded-2xl border border-slate-200 bg-linear-to-br from-slate-50/70 to-white space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md bg-slate-900 text-white">
+                      {selectedPlanForConfirmation.name} Plan
+                    </span>
+                    <h4 className="text-xl font-black text-slate-900 mt-1.5">
+                      ${selectedPlanForConfirmation.price.toFixed(2)}{' '}
+                      <span className="text-xs font-medium text-slate-500">/month</span>
+                    </h4>
+                  </div>
+                  <span className="text-xs font-semibold text-slate-500 bg-white border border-slate-200 px-3 py-1 rounded-xl shadow-2xs">
+                    Monthly Billing
+                  </span>
+                </div>
+
+                <div className="pt-2 border-t border-slate-100 space-y-1.5">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                    Plan Inclusions:
+                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-slate-700">
+                    {selectedPlanForConfirmation.features.map((f, i) => (
+                      <div key={i} className="flex items-center gap-1.5">
+                        <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span>{f}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Payment Method / Verification summary */}
+              <div className="p-4 rounded-2xl bg-white border border-slate-200 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-slate-700">Payment Instrument</span>
+                  <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Verified Instant ACH</span>
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-xs text-slate-600">
+                  <span className="font-medium">Apex Media Group Inc. (•••• 5519)</span>
+                  <span className="font-mono text-slate-500 text-[11px]">Next billing: Oct 10, 2026</span>
+                </div>
+                <p className="text-[11px] text-slate-400 pt-1 border-t border-slate-100">
+                  🔒 256-bit encrypted checkout. Your business will go Live on the marketplace immediately.
+                </p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  disabled={isProcessingPayment}
+                  onClick={() => setIsPlanConfirmModalOpen(false)}
+                  className="px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs font-bold text-slate-700 transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  id="confirm-pay-btn"
+                  type="button"
+                  disabled={isProcessingPayment}
+                  onClick={handleConfirmPlanPayment}
+                  className="px-6 py-2.5 rounded-xl bg-black hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-md cursor-pointer flex items-center gap-2 disabled:opacity-50 active:scale-98"
+                >
+                  {isProcessingPayment ? (
+                    <>
+                      <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      <span>Processing Payment...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CreditCard className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Confirm & Pay ${selectedPlanForConfirmation.price.toFixed(2)}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

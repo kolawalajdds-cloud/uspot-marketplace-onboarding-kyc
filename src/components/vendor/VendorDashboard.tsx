@@ -11,6 +11,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Rocket,
+  CreditCard,
 } from 'lucide-react';
 
 export const VendorDashboard: React.FC = () => {
@@ -127,28 +128,43 @@ export const VendorDashboard: React.FC = () => {
                   </div>
                 )}
 
-                {/* KYC Approved Go-Live Callout */}
+                {/* KYC Approved Callout: Pay Now if unpaid, Go Live if paid */}
                 {isApproved && (
                   <div className="mb-4 p-3.5 rounded-lg bg-emerald-50 border border-emerald-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                     <div className="flex items-center gap-2.5">
                       <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
                       <div>
                         <div className="text-xs font-bold text-emerald-950">
-                          🎉 Verification Passed! Ready to Go Live
+                          {biz.payment?.paidAt
+                            ? '🎉 Verification Passed! Ready to Go Live'
+                            : '🎉 KYC Verification Approved! Next: Select Plan & Pay'}
                         </div>
                         <div className="text-[11px] text-emerald-800">
-                          Super-Admin approved this entity. Publish your listing to begin taking live bookings.
+                          {biz.payment?.paidAt
+                            ? 'Super-Admin approved this entity. Publish your listing to begin taking live bookings.'
+                            : 'Super-Admin has verified this entity. Complete your subscription plan payment to activate.'}
                         </div>
                       </div>
                     </div>
-                    <button
-                      id={`go-live-card-btn-${biz.id}`}
-                      onClick={() => publishAndGoLive(biz.id)}
-                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-colors cursor-pointer shrink-0"
-                    >
-                      <Rocket className="w-3.5 h-3.5" />
-                      Publish & Go Live
-                    </button>
+                    {biz.payment?.paidAt ? (
+                      <button
+                        id={`go-live-card-btn-${biz.id}`}
+                        onClick={() => publishAndGoLive(biz.id)}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-colors cursor-pointer shrink-0"
+                      >
+                        <Rocket className="w-3.5 h-3.5" />
+                        Publish & Go Live
+                      </button>
+                    ) : (
+                      <button
+                        id={`pay-now-card-btn-${biz.id}`}
+                        onClick={() => selectBusinessForVendor(biz.id)}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-black hover:bg-slate-800 text-white text-xs font-bold shadow-xs transition-all cursor-pointer shrink-0 active:scale-95"
+                      >
+                        <CreditCard className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Pay Now</span>
+                      </button>
+                    )}
                   </div>
                 )}
 

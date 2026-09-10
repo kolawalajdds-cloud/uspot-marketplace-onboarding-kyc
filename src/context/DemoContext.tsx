@@ -221,8 +221,13 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const loadedBusinesses = [...validStoredBusinesses, ...missingBizSeeds].map((b: Business) => {
             const rCount = b.rejectionCount ?? b.verification?.rejectionCount ?? 0;
             const rHist = b.rejectionHistory ?? b.verification?.rejectionHistory ?? [];
+            const payment =
+              b.id === 'biz-002' && b.payment?.paidAt === '2026-09-02T16:40:00Z'
+                ? { ...b.payment, paidAt: null }
+                : b.payment;
             return {
               ...b,
+              payment,
               rejectionCount: rCount,
               rejectionHistory: rHist,
               verification: {
@@ -982,10 +987,12 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
         ...b,
         status: 'Pending KYC Review',
         subTab: 'kyc-requests',
+        rejectionReason: null,
         resubmittedAt: formattedDate,
         coreDetails: updatedCore,
         verification: {
           ...updatedVerif,
+          status: 'Pending',
           submittedAt: now,
           resubmittedAt: formattedDate,
           rejectionReason: null,
@@ -1065,7 +1072,7 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const now = new Date().toISOString();
       const newNotif: NotificationItem = {
         id: `notif-${Date.now()}`,
-        message: `🎉 Your business "${b.coreDetails.businessName}" KYC has been approved and verified by the Super Admin! You can now go live on the platform.`,
+        message: `🎉 Your business "${b.coreDetails.businessName}" KYC has been approved by the Super Admin! Please choose a subscription plan and complete payment to go live.`,
         type: 'success',
         read: false,
         timestamp: 'Just now',
@@ -1077,11 +1084,19 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
         ...b,
         status: 'KYC Approved',
         subTab: 'approved',
+        rejectionReason: null,
         verification: {
           ...b.verification,
+          status: 'Approved',
           reviewedAt: now,
           reviewedBy: state.currentUser?.fullName || 'Super Admin',
           rejectionReason: null,
+          kycSubmitted: true,
+        },
+        payment: b.payment || {
+          planSelected: 'Starter',
+          amount: 29,
+          paidAt: null,
         },
         notifications: [newNotif, ...b.notifications],
       };
@@ -1127,6 +1142,7 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
           rejectionHistory: updatedHistory,
           verification: {
             ...b.verification,
+            status: 'Rejected',
             reviewedAt: now,
             reviewedBy: prev.currentUser?.fullName || 'Super Admin',
             rejectionReason: reason.trim(),
@@ -1293,7 +1309,10 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
         verification,
         status: computedStatus,
         subTab: computedSubTab,
-        rejectionReason: verification.rejectionReason,
+        rejectionReason:
+          computedStatus === 'KYC Approved' || computedStatus === 'Live'
+            ? null
+            : verification.rejectionReason,
         rejectionCount: verification.rejectionCount,
         rejectionHistory: verification.rejectionHistory,
         operatingHours: parsedOperatingHours,

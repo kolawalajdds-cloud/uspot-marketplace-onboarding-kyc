@@ -14,6 +14,7 @@ import {
   Clock,
   ChevronDown,
   ChevronUp,
+  CreditCard,
 } from 'lucide-react';
 import { BusinessFormData } from './types';
 import { DynamicTinInput, formatTinDisplay, maskTinDisplay } from '../DynamicTinInput';
@@ -22,6 +23,7 @@ import { TinType, TinVerificationStatus } from '../../../types';
 interface VerificationTabProps {
   data: BusinessFormData;
   onChange: (updates: Partial<BusinessFormData>) => void;
+  onNavigateToPayment?: () => void;
 }
 
 const ENTITY_TYPE_OPTIONS = [
@@ -41,7 +43,7 @@ const LLC_TAX_TREATMENT_OPTIONS = [
   { value: 'Disregarded Entity', label: 'Disregarded Entity (Owner TIN: SSN or EIN)', defaultTin: 'SSN' as TinType },
 ];
 
-export const VerificationTab: React.FC<VerificationTabProps> = ({ data, onChange }) => {
+export const VerificationTab: React.FC<VerificationTabProps> = ({ data, onChange, onNavigateToPayment }) => {
   const [isVerifyingTin, setIsVerifyingTin] = useState(false);
   const [isCheckingState, setIsCheckingState] = useState(false);
   const [isScreeningSanctions, setIsScreeningSanctions] = useState(false);
@@ -844,14 +846,27 @@ export const VerificationTab: React.FC<VerificationTabProps> = ({ data, onChange
               </>
             ) : isVerified ? (
               <>
-                <button
-                  type="button"
-                  disabled={true}
-                  className="px-6 py-2.5 rounded-xl text-xs font-bold shadow-xs bg-emerald-100 text-emerald-800 border border-emerald-300 cursor-not-allowed flex items-center gap-2"
-                >
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                  <span>✓ eKYC Approved</span>
-                </button>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    disabled={true}
+                    className="px-4 py-2 rounded-xl text-xs font-bold shadow-xs bg-emerald-100 text-emerald-800 border border-emerald-300 cursor-not-allowed flex items-center gap-2"
+                  >
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    <span>✓ eKYC Approved</span>
+                  </button>
+                  {onNavigateToPayment && (
+                    <button
+                      id="btn-verification-pay-now"
+                      type="button"
+                      onClick={onNavigateToPayment}
+                      className="px-5 py-2 rounded-xl text-xs font-bold bg-black text-white hover:bg-slate-800 transition-all shadow-xs cursor-pointer flex items-center gap-1.5 active:scale-95"
+                    >
+                      <CreditCard className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Pay Now & Select Plan</span>
+                    </button>
+                  )}
+                </div>
                 <span className="text-[11px] font-semibold text-emerald-700">
                   Ready for Plan Selection & W-9 completion
                 </span>

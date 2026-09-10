@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronRight, Check, AlertCircle } from 'lucide-react';
+import { ChevronRight, Check, AlertCircle, CreditCard, CheckCircle2 } from 'lucide-react';
 import { MultiStepTab, BusinessFormData } from './types';
 import { BusinessSetupTab } from './BusinessSetupTab';
 import { OperatingHoursTab } from './OperatingHoursTab';
@@ -15,6 +15,7 @@ interface BusinessMultiStepPageProps {
   isEditMode?: boolean;
   onSave: (data: BusinessFormData) => void;
   onDiscard: () => void;
+  onNavigateToPayment?: (bizId: string) => void;
 }
 
 const TABS: { id: MultiStepTab; label: string; subtitle: string }[] = [
@@ -41,7 +42,7 @@ const TABS: { id: MultiStepTab; label: string; subtitle: string }[] = [
   {
     id: 'holidays-rules',
     label: 'Holidays & Rules',
-    subtitle: 'Manage holiday closures, cancellation policy and venue rules.',
+    subtitle: 'Select the features and facilities available at your location.',
   },
   {
     id: 'fees-tax',
@@ -102,19 +103,17 @@ export const DEFAULT_FORM_DATA: BusinessFormData = {
 
   holidays: [
     { id: 'h1', name: "New Year's Day", date: '2026-01-01', enabled: true },
-    { id: 'h2', name: 'Memorial Day', date: '2026-05-25', enabled: true },
-    { id: 'h3', name: 'Independence Day', date: '2026-07-04', enabled: true },
-    { id: 'h4', name: 'Labor Day', date: '2026-09-07', enabled: true },
-    { id: 'h5', name: 'Thanksgiving', date: '2026-11-26', enabled: true },
-    { id: 'h6', name: 'Christmas Day', date: '2026-12-25', enabled: true },
+    { id: 'h2', name: 'Independence Day', date: '2026-07-04', enabled: true },
+    { id: 'h3', name: 'Thanksgiving', date: '2026-11-28', enabled: false },
   ],
-  maxCapacity: 50,
-  ageRequirement: 'All Ages',
+  maxCapacity: 150,
+  ageRequirement: '21+ after 9:00 PM',
   cancellationPolicy: 'Flexible',
   depositRequired: true,
   depositPercentage: 20,
   byobAllowed: false,
   petFriendly: true,
+  petFriendlyPolicy: 'Allowed (Patio Only)',
 
   taxId: '',
   salesTaxRate: 8.5,
@@ -168,6 +167,7 @@ export const BusinessMultiStepPage: React.FC<BusinessMultiStepPageProps> = ({
   isEditMode = false,
   onSave,
   onDiscard,
+  onNavigateToPayment,
 }) => {
   const [activeTab, setActiveTab] = useState<MultiStepTab>(initialTab);
   const [formData, setFormData] = useState<BusinessFormData>({
@@ -255,9 +255,12 @@ export const BusinessMultiStepPage: React.FC<BusinessMultiStepPageProps> = ({
       </div>
 
       {/* Global Alert in Multi-Step Page if KYC was rejected by Super Admin */}
-      {(formData.kycStatus === 'Rejected' ||
-        formData.status === 'KYC Rejected' ||
-        Boolean(formData.rejectionReason && formData.kycStatus !== 'Verified')) && (
+      {formData.status !== 'KYC Approved' &&
+        formData.status !== 'Live' &&
+        formData.kycStatus !== 'Verified' &&
+        (formData.kycStatus === 'Rejected' ||
+          formData.status === 'KYC Rejected' ||
+          Boolean(formData.rejectionReason)) && (
         <div className="p-4 sm:p-5 rounded-2xl bg-rose-50 border-2 border-rose-300 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in shadow-xs">
           <div className="flex items-start gap-3">
             <div className="w-9 h-9 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
@@ -290,6 +293,37 @@ export const BusinessMultiStepPage: React.FC<BusinessMultiStepPageProps> = ({
             >
               <span>Edit KYC Tab & Fix</span>
               <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Global Banner in Multi-Step Page if KYC is Approved and Awaiting Payment */}
+      {(formData.status === 'KYC Approved' || formData.kycStatus === 'Verified') &&
+        formData.status !== 'Live' && (
+        <div className="p-4 sm:p-5 rounded-2xl bg-emerald-50 border-2 border-emerald-300 flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-in fade-in shadow-xs">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+              <CheckCircle2 className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-sm font-black text-emerald-950">
+                🎉 KYC Verification Approved by Super Admin!
+              </h4>
+              <p className="text-xs text-emerald-800 mt-0.5">
+                Your business is verified. Choose your subscription plan and complete payment to go live.
+              </p>
+            </div>
+          </div>
+          {onNavigateToPayment && (formData.id || initialData?.id) && (
+            <button
+              id="multistep-header-pay-now-btn"
+              type="button"
+              onClick={() => onNavigateToPayment((formData.id || initialData?.id)!)}
+              className="px-5 py-2.5 rounded-xl bg-black hover:bg-slate-800 text-white text-xs font-bold transition-all cursor-pointer shadow-xs whitespace-nowrap self-start sm:self-auto flex items-center gap-2 active:scale-95"
+            >
+              <CreditCard className="w-4 h-4 text-emerald-400" />
+              <span>Pay Now to Activate</span>
             </button>
           )}
         </div>
@@ -371,7 +405,15 @@ export const BusinessMultiStepPage: React.FC<BusinessMultiStepPageProps> = ({
           <FeesTaxTab data={formData} onChange={updateFormData} />
         )}
         {activeTab === 'verification' && (
-          <VerificationTab data={formData} onChange={updateFormData} />
+          <VerificationTab
+            data={formData}
+            onChange={updateFormData}
+            onNavigateToPayment={
+              onNavigateToPayment && (formData.id || initialData?.id)
+                ? () => onNavigateToPayment((formData.id || initialData?.id)!)
+                : undefined
+            }
+          />
         )}
       </div>
 
