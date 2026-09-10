@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useDemo } from '../../context/DemoContext';
 import { User, LogOut, Shield, Building2, Users, Check } from 'lucide-react';
 
@@ -10,6 +10,31 @@ interface CustomerNavbarProps {
 export const CustomerNavbar: React.FC<CustomerNavbarProps> = ({ activePage, setActivePage }) => {
   const { currentUser, loginAsUser, logout, setAuthModalOpen } = useDemo();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const profileRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!isProfileOpen) return;
+
+    function handleClickOutside(event: MouseEvent | TouchEvent) {
+      if (
+        profileRef.current &&
+        !profileRef.current.contains(event.target as Node)
+      ) {
+        setIsProfileOpen(false);
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside, true);
+    document.addEventListener('touchstart', handleClickOutside, true);
+    document.addEventListener('click', handleClickOutside, true);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside, true);
+      document.removeEventListener('touchstart', handleClickOutside, true);
+      document.removeEventListener('click', handleClickOutside, true);
+    };
+  }, [isProfileOpen]);
 
   const navItems: Array<{ id: 'home' | 'categories' | 'cities'; label: string }> = [
     { id: 'home', label: 'Home' },
@@ -54,7 +79,7 @@ export const CustomerNavbar: React.FC<CustomerNavbarProps> = ({ activePage, setA
         </nav>
 
         {/* Right User Avatar */}
-        <div className="relative">
+        <div className="relative" ref={profileRef}>
           <button
             onClick={() => setIsProfileOpen(!isProfileOpen)}
             className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-slate-950 text-white flex items-center justify-center hover:bg-slate-800 transition-colors shadow-2xs cursor-pointer"
@@ -67,8 +92,9 @@ export const CustomerNavbar: React.FC<CustomerNavbarProps> = ({ activePage, setA
           {isProfileOpen && (
             <>
               <div
-                className="fixed inset-0 z-40"
+                className="fixed inset-0 z-40 cursor-default"
                 onClick={() => setIsProfileOpen(false)}
+                onPointerDown={() => setIsProfileOpen(false)}
               />
               <div className="absolute right-0 mt-2 w-64 bg-white rounded-2xl shadow-xl border border-slate-200/80 p-3 z-50 animate-in fade-in zoom-in-95 duration-150">
                 <div className="px-2 py-2 border-b border-slate-100 mb-2">

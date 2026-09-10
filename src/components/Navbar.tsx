@@ -46,7 +46,9 @@ export const Navbar: React.FC = () => {
 
   // Close dropdowns on outside click
   useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
+    if (!userDropdownOpen && !notificationsOpen) return;
+
+    function handleClickOutside(event: MouseEvent | TouchEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setUserDropdownOpen(false);
       }
@@ -54,9 +56,17 @@ export const Navbar: React.FC = () => {
         setNotificationsOpen(false);
       }
     }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+
+    document.addEventListener('mousedown', handleClickOutside, true);
+    document.addEventListener('touchstart', handleClickOutside, true);
+    document.addEventListener('click', handleClickOutside, true);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside, true);
+      document.removeEventListener('touchstart', handleClickOutside, true);
+      document.removeEventListener('click', handleClickOutside, true);
+    };
+  }, [userDropdownOpen, notificationsOpen]);
 
   const handleNotificationClick = (notif: typeof allNotifications[0]) => {
     markNotificationAsRead(notif.id);

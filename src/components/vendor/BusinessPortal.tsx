@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useDemo } from '../../context/DemoContext';
 import { Business, UserProfile } from '../../types';
 import {
@@ -113,6 +113,39 @@ export const BusinessPortal: React.FC = () => {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const profileMenuRef = useRef<HTMLDivElement>(null);
+  const notificationsRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdowns on outside click
+  useEffect(() => {
+    if (!isProfileMenuOpen && !isNotificationsOpen) return;
+
+    function handleClickOutside(event: MouseEvent | TouchEvent) {
+      if (
+        profileMenuRef.current &&
+        !profileMenuRef.current.contains(event.target as Node)
+      ) {
+        setIsProfileMenuOpen(false);
+      }
+      if (
+        notificationsRef.current &&
+        !notificationsRef.current.contains(event.target as Node)
+      ) {
+        setIsNotificationsOpen(false);
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside, true);
+    document.addEventListener('touchstart', handleClickOutside, true);
+    document.addEventListener('click', handleClickOutside, true);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside, true);
+      document.removeEventListener('touchstart', handleClickOutside, true);
+      document.removeEventListener('click', handleClickOutside, true);
+    };
+  }, [isProfileMenuOpen, isNotificationsOpen]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -1134,7 +1167,7 @@ export const BusinessPortal: React.FC = () => {
       {/* ========================================================================= */}
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-y-auto overscroll-contain scrollbar-none">
         {/* Top Header Bar matching Image 1 & 2 */}
-        <header className="bg-white border-b border-slate-200 px-6 py-3.5 flex items-center justify-between gap-4 sticky top-0 z-20 shadow-2xs">
+        <header className={`bg-white border-b border-slate-200 px-6 py-3.5 flex items-center justify-between gap-4 sticky top-0 ${isProfileMenuOpen || isNotificationsOpen ? 'z-50' : 'z-20'} shadow-2xs`}>
           {/* Left: Breadcrumbs / Title */}
           <div className="flex items-center gap-2 text-xs">
             <span className="font-extrabold text-slate-900 text-sm">
@@ -1191,7 +1224,7 @@ export const BusinessPortal: React.FC = () => {
           {/* Right: Notifications, App Launcher Grid, User Profile Badge */}
           <div className="flex items-center gap-3">
             {/* Notification Bell */}
-            <div className="relative">
+            <div className="relative" ref={notificationsRef}>
               <button
                 id="portal-notif-btn"
                 onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
@@ -1206,7 +1239,13 @@ export const BusinessPortal: React.FC = () => {
               </button>
 
               {isNotificationsOpen && (
-                <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-2xl border border-slate-200 shadow-2xl p-3 z-50 text-xs space-y-2 animate-in fade-in zoom-in-95">
+                <>
+                  <div
+                    className="fixed inset-0 z-40 cursor-default"
+                    onClick={() => setIsNotificationsOpen(false)}
+                    onPointerDown={() => setIsNotificationsOpen(false)}
+                  />
+                  <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-2xl border border-slate-200 shadow-2xl p-3 z-50 text-xs space-y-2 animate-in fade-in zoom-in-95">
                   <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                     <div className="flex items-center gap-2">
                       <strong className="text-slate-900 font-bold text-sm">Notifications</strong>
@@ -1296,7 +1335,8 @@ export const BusinessPortal: React.FC = () => {
                     )}
                   </div>
                 </div>
-              )}
+              </>
+            )}
             </div>
 
             {/* App Grid Launcher */}
@@ -1309,7 +1349,7 @@ export const BusinessPortal: React.FC = () => {
             </button>
 
             {/* Profile User Chip matching Image 1 & 2 */}
-            <div className="relative">
+            <div className="relative" ref={profileMenuRef}>
               <button
                 id="portal-user-profile-menu-btn"
                 onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
@@ -1331,7 +1371,13 @@ export const BusinessPortal: React.FC = () => {
 
               {/* Role Switcher & Profile Dropdown */}
               {isProfileMenuOpen && (
-                <div className="absolute right-0 mt-2 w-64 bg-white rounded-2xl border border-slate-200 shadow-2xl p-3 z-50 text-xs space-y-3 animate-in fade-in zoom-in-95">
+                <>
+                  <div
+                    className="fixed inset-0 z-40 cursor-default"
+                    onClick={() => setIsProfileMenuOpen(false)}
+                    onPointerDown={() => setIsProfileMenuOpen(false)}
+                  />
+                  <div className="absolute right-0 mt-2 w-64 bg-white rounded-2xl border border-slate-200 shadow-2xl p-3 z-50 text-xs space-y-3 animate-in fade-in zoom-in-95">
                   <div className="pb-2 border-b border-slate-100">
                     <p className="font-bold text-slate-900 text-sm">{currentUser?.fullName || 'Alex Vance'}</p>
                     <p className="text-slate-400 text-[11px]">{currentUser?.email || 'alex.vance@uspot.com'}</p>
@@ -1380,7 +1426,8 @@ export const BusinessPortal: React.FC = () => {
                     </button>
                   </div>
                 </div>
-              )}
+              </>
+            )}
             </div>
           </div>
         </header>
