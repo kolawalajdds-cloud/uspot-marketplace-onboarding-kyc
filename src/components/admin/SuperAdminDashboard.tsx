@@ -5,6 +5,7 @@ import { AdminUsersTab } from './tabs/AdminUsersTab';
 import { AdminAssetsTab, BusinessAssetsSubTab } from './tabs/AdminAssetsTab';
 import { AdminBusinessManagementTab } from './tabs/AdminBusinessManagementTab';
 import { AdminConfigurationTab } from './tabs/AdminConfigurationTab';
+import { AdminPaymentTab } from './tabs/AdminPaymentTab';
 import {
   LayoutDashboard,
   Users,
@@ -37,6 +38,7 @@ import {
   User,
   Shield,
   FileCheck2,
+  CreditCard,
 } from 'lucide-react';
 
 export type SuperAdminNavTab =
@@ -51,6 +53,7 @@ export type SuperAdminNavTab =
   | 'assets-services'
   | 'assets-cat-requests'
   | 'management'
+  | 'payment'
   | 'settings';
 
 export const SuperAdminDashboard: React.FC = () => {
@@ -482,6 +485,32 @@ export const SuperAdminDashboard: React.FC = () => {
                 ) : null;
               })()}
             </button>
+
+            {/* 5. Payment */}
+            <button
+              id="sidebar-admin-payment"
+              onClick={() => setActiveNav('payment')}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                activeNav === 'payment'
+                  ? 'bg-white text-slate-900 font-bold shadow-xs'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-900/60'
+              }`}
+              title={isSidebarCollapsed ? 'Payment' : undefined}
+            >
+              <div className="flex items-center gap-3">
+                <CreditCard className={`w-4 h-4 shrink-0 ${activeNav === 'payment' ? 'text-blue-600' : ''}`} />
+                {!isSidebarCollapsed && <span>Payment</span>}
+              </div>
+              {!isSidebarCollapsed && (
+                <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
+                  activeNav === 'payment'
+                    ? 'bg-slate-100 text-slate-700 font-bold'
+                    : 'text-slate-500 bg-slate-800/80 border border-slate-700/50'
+                }`}>
+                  %
+                </span>
+              )}
+            </button>
           </nav>
         </div>
 
@@ -535,7 +564,7 @@ export const SuperAdminDashboard: React.FC = () => {
       {/* ========================================================================= */}
       {/* 2. MAIN CONTENT AREA WITH TOPBAR (Matching screenshot)                     */}
       {/* ========================================================================= */}
-      <div className="flex-1 flex flex-col min-w-0 h-full overflow-y-auto overscroll-contain scrollbar-none">
+      <div className="flex-1 flex flex-col min-w-0 h-full overflow-y-auto overscroll-contain">
         {/* Top Header Bar matching screenshot */}
         <header className={`bg-white border-b border-slate-200/90 px-6 py-3.5 flex items-center justify-between gap-4 sticky top-0 ${isProfileMenuOpen || isNotificationsOpen ? 'z-50' : 'z-20'} shadow-2xs`}>
           {/* Left: Brand / Title and Search */}
@@ -801,7 +830,12 @@ export const SuperAdminDashboard: React.FC = () => {
           {/* 4. Business Management (KYC review & applications) */}
           {activeNav === 'management' && <AdminBusinessManagementTab />}
 
-          {/* 5. Configuration & System Settings */}
+          {/* 5. Payment Configuration */}
+          {activeNav === 'payment' && (
+            <AdminPaymentTab onSaveSuccess={(rate) => showToast(`Payment percentage updated to ${rate}% successfully!`)} />
+          )}
+
+          {/* 6. Configuration & System Settings */}
           {activeNav === 'settings' && <AdminConfigurationTab />}
         </main>
       </div>

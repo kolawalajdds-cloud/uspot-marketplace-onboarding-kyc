@@ -848,7 +848,7 @@ export const BusinessPortal: React.FC = () => {
   // If in wizard mode, render the BusinessWizard component
   if (state.vendorView === 'wizard') {
     return (
-      <div className="h-full w-full overflow-y-auto overscroll-contain scrollbar-none">
+      <div className="h-full w-full overflow-y-auto overscroll-contain">
         <BusinessWizard />
       </div>
     );
@@ -1242,7 +1242,7 @@ export const BusinessPortal: React.FC = () => {
       {/* ========================================================================= */}
       {/* 2. MAIN VIEW CONTAINER (Navbar + Dynamic Active Tab Content)              */}
       {/* ========================================================================= */}
-      <div className="flex-1 flex flex-col min-w-0 h-full overflow-y-auto overscroll-contain scrollbar-none">
+      <div className="flex-1 flex flex-col min-w-0 h-full overflow-y-auto overscroll-contain">
         {/* Top Header Bar matching Image 1 & 2 */}
         <header className={`bg-white border-b border-slate-200 px-6 py-3.5 flex items-center justify-between gap-4 sticky top-0 ${isProfileMenuOpen || isNotificationsOpen ? 'z-50' : 'z-20'} shadow-2xs`}>
           {/* Left: Breadcrumbs / Title */}

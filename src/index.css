@@ -16,31 +16,67 @@
     background-color: #F8FAFC;
     color: #0F172A;
   }
-
-  /* Completely hide scrollbars across all browsers while maintaining full scrolling functionality */
-  *,
-  *::before,
-  *::after {
-    scrollbar-width: none !important;
-    -ms-overflow-style: none !important;
-  }
-
-  *::-webkit-scrollbar {
-    display: none !important;
-    width: 0 !important;
-    height: 0 !important;
-    background: transparent !important;
-  }
 }
 
-/* Utility classes to hide scrollbars */
+/* ========================================================================== */
+/* 1. HIDE SCROLLBAR FROM SIDEBAR ONLY (and explicit .scrollbar-none elements) */
+/* ========================================================================== */
+aside,
+aside *,
+nav,
+.sidebar-scroll-hidden,
+.scrollbar-none,
+.no-scrollbar {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+aside::-webkit-scrollbar,
+aside *::-webkit-scrollbar,
+nav::-webkit-scrollbar,
+.sidebar-scroll-hidden::-webkit-scrollbar,
 .scrollbar-none::-webkit-scrollbar,
 .no-scrollbar::-webkit-scrollbar {
   display: none !important;
   width: 0 !important;
   height: 0 !important;
+  background: transparent !important;
 }
 
+/* ========================================================================== */
+/* 2. VISIBLE STYLED SCROLLBAR FOR RIGHT SIDE SECTION & MAIN CONTENT          */
+/* ========================================================================== */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: #CBD5E1;
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: #94A3B8;
+}
+
+/* Firefox scrollbar for main content */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #CBD5E1 transparent;
+}
+
+/* Re-enforce sidebar hiding after global Firefox rule */
+aside,
+aside *,
+nav,
+.sidebar-scroll-hidden,
 .scrollbar-none,
 .no-scrollbar {
   scrollbar-width: none !important;
