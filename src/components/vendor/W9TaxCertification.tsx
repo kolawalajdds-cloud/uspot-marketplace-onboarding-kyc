@@ -35,6 +35,7 @@ interface W9TaxCertificationProps {
   onSubmitW9: (w9Data: W9Data) => Promise<void> | void;
   onNavigateToEkyc?: () => void;
   onPlanSelectSuccess?: (plan: any, amount: number) => Promise<void>;
+  onResetW9?: (businessId: string) => void;
 }
 
 const FEDERAL_TAX_CLASSIFICATION_OPTIONS = [
@@ -68,6 +69,7 @@ export const W9TaxCertification: React.FC<W9TaxCertificationProps> = ({
   onSubmitW9,
   onNavigateToEkyc,
   onPlanSelectSuccess,
+  onResetW9,
 }) => {
   const isKycApproved =
     business.status === 'KYC Approved' ||
@@ -80,11 +82,12 @@ export const W9TaxCertification: React.FC<W9TaxCertificationProps> = ({
 
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
 
-  // Pre-fill values from verified eKYC
+  // Pre-fill / reference values from verified eKYC
   const ekycLegalName =
     business.coreDetails?.legalEntityName ||
     business.verification?.beneficialOwner?.fullName ||
-    'Vance Enterprises LLC';
+    business.coreDetails?.businessName ||
+    'Business Entity LLC';
 
   const ekycEntityType =
     business.verification?.legalEntityType || 'Limited Liability Company (LLC)';
@@ -92,119 +95,248 @@ export const W9TaxCertification: React.FC<W9TaxCertificationProps> = ({
   const ekycRawTin = (
     business.verification?.tinRaw ||
     business.verification?.einVerification?.einEntered ||
-    '123456789'
+    ''
   ).replace(/\D/g, '');
 
   const ekycTinType: TinType =
     business.verification?.tinType ||
     (ekycEntityType === 'Sole Proprietorship' ? 'SSN' : 'EIN');
 
-  // Form State
-  const [legalName, setLegalName] = useState(
-    business.w9?.legalName || ekycLegalName
+  // Status & Submit Handling
+  const [isSubmitted, setIsSubmitted] = useState<boolean>(
+    Boolean(business.w9?.status === 'submitted' || business.w9?.status === 'verified')
   );
-  const [businessName, setBusinessName] = useState(
-    business.w9?.businessNameOrDisregarded ||
-      business.coreDetails?.businessName ||
-      'Vance Enterprises'
+
+  // Form State - NO prefilled fake defaults so test cases run completely clean!
+  const [legalName, setLegalName] = useState<string>(business.w9?.legalName || '');
+  const [businessName, setBusinessName] = useState<string>(business.w9?.businessNameOrDisregarded || '');
+  const [taxClassification, setTaxClassification] = useState<string>(
+    business.w9?.federalTaxClassification || ''
   );
-  const [taxClassification, setTaxClassification] = useState(
-    business.w9?.federalTaxClassification ||
-      (ekycEntityType.includes('LLC')
-        ? 'Limited Liability Company (LLC)'
-        : ekycEntityType.includes('Sole')
-        ? 'Individual / Sole Proprietor or single-member LLC'
-        : 'C Corporation')
-  );
-  const [llcTaxClassification, setLlcTaxClassification] = useState(
+  const [llcTaxClassification, setLlcTaxClassification] = useState<string>(
     business.w9?.llcTaxClassification || 'C'
   );
-  const [otherClassificationDetail, setOtherClassificationDetail] = useState(
+  const [otherClassificationDetail, setOtherClassificationDetail] = useState<string>(
     business.w9?.otherClassificationDetail || ''
   );
-  const [exemptPayeeCode, setExemptPayeeCode] = useState(
+  const [exemptPayeeCode, setExemptPayeeCode] = useState<string>(
     business.w9?.exemptPayeeCode || ''
   );
-  const [fatcaCode, setFatcaCode] = useState(business.w9?.fatcaCode || '');
-  const [accountNumber, setAccountNumber] = useState(
+  const [fatcaCode, setFatcaCode] = useState<string>(business.w9?.fatcaCode || '');
+  const [accountNumber, setAccountNumber] = useState<string>(
     business.w9?.accountNumbers || ''
   );
 
-  const [streetAddress, setStreetAddress] = useState(
-    business.w9?.streetAddress ||
-      business.coreDetails?.streetAddress ||
-      '123 Business Way, Suite 100'
-  );
-  const [city, setCity] = useState(
-    business.w9?.city || business.coreDetails?.city || 'New York'
-  );
-  const [stateCode, setStateCode] = useState(
-    business.w9?.state || business.coreDetails?.state || 'NY'
-  );
-  const [zipCode, setZipCode] = useState(
-    business.w9?.zipCode || business.coreDetails?.zipCode || '10001'
-  );
+  const [streetAddress, setStreetAddress] = useState<string>(business.w9?.streetAddress || '');
+  const [city, setCity] = useState<string>(business.w9?.city || '');
+  const [stateCode, setStateCode] = useState<string>(business.w9?.state || '');
+  const [zipCode, setZipCode] = useState<string>(business.w9?.zipCode || '');
 
-  // TIN state & Same-TIN verification reuse (Rule 16 & 17)
-  const [tinType, setTinType] = useState<TinType>(
-    business.w9?.tinType || ekycTinType
+  // TIN state & verification status
+  const [tinType, setTinType] = useState<TinType>(business.w9?.tinType || 'EIN');
+  const [currentTinInput, setCurrentTinInput] = useState<string>(business.w9?.tinRaw || '');
+  const [tinVerificationStatus, setTinVerificationStatus] = useState<TinVerificationStatus>(
+    business.w9?.tinMatchStatus || (business.w9?.status === 'verified' ? 'match' : 'idle')
   );
-  const [currentTinInput, setCurrentTinInput] = useState<string>(
-    business.w9?.tinRaw || ekycRawTin
-  );
-  const [tinVerificationStatus, setTinVerificationStatus] =
-    useState<TinVerificationStatus>(
-      business.w9?.tinMatchStatus || 'match'
-    );
   const [isVerifyingChangedTin, setIsVerifyingChangedTin] = useState(false);
   const [isEditingTin, setIsEditingTin] = useState(false);
 
-  // Certifications Checkboxes
-  const [certCorrectTin, setCertCorrectTin] = useState(
-    business.w9?.certifications?.correctTin ?? true
+  // Certifications Checkboxes - start clean unchecked!
+  const [certCorrectTin, setCertCorrectTin] = useState<boolean>(
+    business.w9?.certifications?.correctTin ?? false
   );
-  const [certNoBackupWithholding, setCertNoBackupWithholding] = useState(
-    business.w9?.certifications?.noBackupWithholding ?? true
+  const [certNoBackupWithholding, setCertNoBackupWithholding] = useState<boolean>(
+    business.w9?.certifications?.noBackupWithholding ?? false
   );
-  const [certUsPerson, setCertUsPerson] = useState(
-    business.w9?.certifications?.usPerson ?? true
+  const [certUsPerson, setCertUsPerson] = useState<boolean>(
+    business.w9?.certifications?.usPerson ?? false
   );
-  const [certFatcaCorrect, setCertFatcaCorrect] = useState(
-    business.w9?.certifications?.fatcaCorrect ?? true
+  const [certFatcaCorrect, setCertFatcaCorrect] = useState<boolean>(
+    business.w9?.certifications?.fatcaCorrect ?? false
   );
 
   // Electronic Signature & Canvas State
-  const [signatureName, setSignatureName] = useState(
-    business.w9?.signatureName ||
-      business.verification?.beneficialOwner?.fullName ||
-      'Alex Vance'
-  );
-  const [agreedPerjury, setAgreedPerjury] = useState(
-    business.w9?.agreedPerjury ?? true
-  );
+  const [signatureName, setSignatureName] = useState<string>(business.w9?.signatureName || '');
+  const [agreedPerjury, setAgreedPerjury] = useState<boolean>(business.w9?.agreedPerjury ?? false);
 
   const [showTermsModal, setShowTermsModal] = useState(false);
-  const [signatureImage, setSignatureImage] = useState<string>(
-    business.w9?.signatureImage || (business.w9 as any)?.signature || business.verification?.signature || ''
-  );
-  const [hasSignature, setHasSignature] = useState<boolean>(
-    Boolean(business.w9?.signatureImage || (business.w9 as any)?.signature || business.verification?.signature)
-  );
+  const [signatureImage, setSignatureImage] = useState<string>(business.w9?.signatureImage || '');
+  const [hasSignature, setHasSignature] = useState<boolean>(Boolean(business.w9?.signatureImage));
   const [isDrawing, setIsDrawing] = useState(false);
   const isDrawingRef = useRef(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const loadedSigRef = useRef<string | null>(null);
 
-  // Status & Submit Handling
-  const [isSubmitted, setIsSubmitted] = useState(
-    business.w9?.status === 'submitted' || business.w9?.status === 'verified'
-  );
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 4000);
+  };
+
+  // Synchronize state whenever business changes or W-9 is reset
+  useEffect(() => {
+    const isCert = Boolean(business.w9?.status === 'submitted' || business.w9?.status === 'verified');
+    setIsSubmitted(isCert);
+
+    if (business.w9) {
+      setLegalName(business.w9.legalName || '');
+      setBusinessName(business.w9.businessNameOrDisregarded || '');
+      setTaxClassification(business.w9.federalTaxClassification || '');
+      setLlcTaxClassification(business.w9.llcTaxClassification || 'C');
+      setOtherClassificationDetail(business.w9.otherClassificationDetail || '');
+      setExemptPayeeCode(business.w9.exemptPayeeCode || '');
+      setFatcaCode(business.w9.fatcaCode || '');
+      setAccountNumber(business.w9.accountNumbers || '');
+      setStreetAddress(business.w9.streetAddress || '');
+      setCity(business.w9.city || '');
+      setStateCode(business.w9.state || '');
+      setZipCode(business.w9.zipCode || '');
+      setTinType(business.w9.tinType || 'EIN');
+      setCurrentTinInput(business.w9.tinRaw || '');
+      setTinVerificationStatus(business.w9.tinMatchStatus || (isCert ? 'match' : 'idle'));
+      setCertCorrectTin(business.w9.certifications?.correctTin ?? false);
+      setCertNoBackupWithholding(business.w9.certifications?.noBackupWithholding ?? false);
+      setCertUsPerson(business.w9.certifications?.usPerson ?? false);
+      setCertFatcaCorrect(business.w9.certifications?.fatcaCorrect ?? false);
+      setSignatureName(business.w9.signatureName || '');
+      setAgreedPerjury(business.w9.agreedPerjury ?? false);
+      setSignatureImage(business.w9.signatureImage || '');
+      setHasSignature(Boolean(business.w9.signatureImage));
+    } else {
+      // Clean blank state for test cases
+      setLegalName('');
+      setBusinessName('');
+      setTaxClassification('');
+      setLlcTaxClassification('C');
+      setOtherClassificationDetail('');
+      setExemptPayeeCode('');
+      setFatcaCode('');
+      setAccountNumber('');
+      setStreetAddress('');
+      setCity('');
+      setStateCode('');
+      setZipCode('');
+      setTinType('EIN');
+      setCurrentTinInput('');
+      setTinVerificationStatus('idle');
+      setCertCorrectTin(false);
+      setCertNoBackupWithholding(false);
+      setCertUsPerson(false);
+      setCertFatcaCorrect(false);
+      setSignatureName('');
+      setAgreedPerjury(false);
+      setSignatureImage('');
+      setHasSignature(false);
+
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const ctx = canvas.getContext('2d');
+        if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+      loadedSigRef.current = null;
+    }
+    setValidationErrors([]);
+  }, [business.id, business.w9]);
+
+  // Test Helpers: Fast population & reset
+  const handleFillSampleData = () => {
+    const bizLegal = business.coreDetails?.legalEntityName || 'Nexus Operations LLC';
+    const bizTrade = business.coreDetails?.businessName || 'The Nexus Workspace & Lab';
+    const bizStreet = business.coreDetails?.streetAddress || '420 Montgomery Street, Suite 800';
+    const bizCity = business.coreDetails?.city || 'San Francisco';
+    const bizState = business.coreDetails?.state || 'CA';
+    const bizZip = business.coreDetails?.zipCode || '94104';
+    const sampleTin = '842918392';
+    const signer = business.verification?.beneficialOwner?.fullName || 'Alex Vance';
+
+    setLegalName(bizLegal);
+    setBusinessName(bizTrade);
+    setTaxClassification('Limited Liability Company (LLC)');
+    setLlcTaxClassification('C');
+    setStreetAddress(bizStreet);
+    setCity(bizCity);
+    setStateCode(bizState);
+    setZipCode(bizZip);
+    setTinType('EIN');
+    setCurrentTinInput(sampleTin);
+    setTinVerificationStatus('match');
+    setCertCorrectTin(true);
+    setCertNoBackupWithholding(true);
+    setCertUsPerson(true);
+    setCertFatcaCorrect(true);
+    setSignatureName(signer);
+    setAgreedPerjury(true);
+
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.strokeStyle = '#0f172a';
+        ctx.lineWidth = 2.5;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(30, 70);
+        ctx.bezierCurveTo(70, 20, 110, 100, 160, 45);
+        ctx.bezierCurveTo(190, 20, 220, 80, 260, 50);
+        ctx.stroke();
+        const dataUrl = canvas.toDataURL('image/png');
+        setSignatureImage(dataUrl);
+        setHasSignature(true);
+      }
+    } else {
+      setHasSignature(true);
+      setSignatureImage('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="60"><text x="10" y="40" font-family="cursive" font-size="24" fill="%230f172a">Alex Vance</text></svg>');
+    }
+
+    setValidationErrors([]);
+    showToast('✓ Sample W-9 data populated for rapid test submission.');
+  };
+
+  const handleClearAllFields = () => {
+    setLegalName('');
+    setBusinessName('');
+    setTaxClassification('');
+    setLlcTaxClassification('C');
+    setOtherClassificationDetail('');
+    setExemptPayeeCode('');
+    setFatcaCode('');
+    setAccountNumber('');
+    setStreetAddress('');
+    setCity('');
+    setStateCode('');
+    setZipCode('');
+    setTinType('EIN');
+    setCurrentTinInput('');
+    setTinVerificationStatus('idle');
+    setCertCorrectTin(false);
+    setCertNoBackupWithholding(false);
+    setCertUsPerson(false);
+    setCertFatcaCorrect(false);
+    setSignatureName('');
+    setAgreedPerjury(false);
+    setSignatureImage('');
+    setHasSignature(false);
+
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+    loadedSigRef.current = null;
+    setValidationErrors([]);
+    showToast('All form fields cleared.');
+  };
+
+  const handleResetToUncertified = () => {
+    if (onResetW9) {
+      onResetW9(business.id);
+    }
+    handleClearAllFields();
+    setIsSubmitted(false);
+    showToast(`✓ Form W-9 revoked for "${business.coreDetails.businessName}". 24% backup withholding is now active.`);
   };
 
   // Load existing signature on canvas when available and not submitted
@@ -304,6 +436,7 @@ export const W9TaxCertification: React.FC<W9TaxCertificationProps> = ({
 
   // Check if current TIN is same as verified eKYC TIN (Rule 17)
   const isSameAsEkycTin =
+    Boolean(ekycRawTin) &&
     currentTinInput.replace(/\D/g, '') === ekycRawTin &&
     tinType === ekycTinType;
 
@@ -755,6 +888,64 @@ export const W9TaxCertification: React.FC<W9TaxCertificationProps> = ({
           <span>{toastMessage}</span>
         </div>
       )}
+
+      {/* TEST CONTROLS & STATUS BAR */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">W-9 Test Controls:</span>
+          {isSubmitted ? (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Certified with IRS (0% Tax Withholding)</span>
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-900 border border-amber-200">
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+              <span>Uncertified / Missing W-9 (24% IRS Withholding Active)</span>
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          {!isSubmitted && (
+            <>
+              <button
+                type="button"
+                id="btn-fill-sample-w9"
+                onClick={handleFillSampleData}
+                className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer active:scale-95"
+                title="Populates valid test data for fast submission testing"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                <span>Fill Sample W-9</span>
+              </button>
+              <button
+                type="button"
+                id="btn-clear-w9-form"
+                onClick={handleClearAllFields}
+                className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer"
+                title="Clears all fields to completely empty"
+              >
+                <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+                <span>Clear All Fields</span>
+              </button>
+            </>
+          )}
+
+          {isSubmitted && onResetW9 && (
+            <button
+              type="button"
+              id="btn-reset-w9-uncertified"
+              onClick={handleResetToUncertified}
+              className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs active:scale-95"
+              title="Revokes W-9 so you can test customer payment with 24% IRS backup withholding"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-rose-600" />
+              <span>Reset to Uncertified (Test 24% Withholding)</span>
+            </button>
+          )}
+        </div>
+      </div>
 
       {/* Header: Title, Subtitle, and Top-Right 3-Step Progress Stepper matching Image 1 */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">

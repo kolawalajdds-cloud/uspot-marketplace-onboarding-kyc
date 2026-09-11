@@ -35,6 +35,7 @@ export type LlcTaxClassification = 'C' | 'S' | 'P' | 'Disregarded Entity';
 export type TinType = 'EIN' | 'SSN';
 
 export type TinVerificationStatus =
+  | 'idle'
   | 'not_verified'
   | 'verifying'
   | 'match'
@@ -104,6 +105,7 @@ export interface GalleryImage {
   label: string;
   color: string;
   isCover: boolean;
+  url?: string;
 }
 
 export interface AmenityItem {
@@ -374,5 +376,92 @@ export interface UserProfile {
   department?: string;
   primaryServiceCategory?: string;
   yearsOfExperience?: number | string;
+}
+
+export type PaymentStatus = 'paid' | 'pending' | 'failed' | 'refunded';
+export type WithdrawalStatus = 'none' | 'pending' | 'processing' | 'completed' | 'rejected';
+
+export type TransactionType =
+  | 'BOOKING_PAYMENT'
+  | 'BUSINESS_PAYOUT'
+  | 'PAYOUT_FAILED'
+  | 'PAYOUT_REVERSAL'
+  | 'ADMIN_WITHDRAWAL'
+  | 'REFUND'
+  | 'WITHHOLDING'
+  // Backward compatibility with legacy stored types
+  | 'booking_payment'
+  | 'business_withdrawal'
+  | 'admin_withdrawal'
+  | 'withdrawal_rejection_refund';
+
+export interface MarketplaceTransaction {
+  id: string;
+  bookingId: string;
+  type: TransactionType;
+  customerName: string;
+  customerEmail?: string;
+  businessId: string;
+  businessName: string;
+  serviceName: string;
+  grossAmount: number;
+  commissionRate: number; // e.g. 10.0 (%)
+  platformCommission: number; // e.g. 10.00
+  w9Submitted: boolean;
+  w9WithholdingRate: number; // 24 if not submitted, 0 if submitted
+  w9WithholdingAmount: number; // e.g. 24.00 if uncertified, 0 if certified
+  businessAmount: number; // e.g. 90.00 or 66.00
+  currency: string;
+  paymentStatus: PaymentStatus;
+  withdrawalStatus: WithdrawalStatus;
+  paymentGateway: string; // e.g. 'NMI Gateway'
+  maskedBankAccount?: string;
+  notes?: string;
+  relatedTransactionId?: string; // Reference to original transaction (for reversals and refunds)
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WithdrawalRequest {
+  id: string;
+  type: 'business' | 'super_admin';
+  businessId?: string;
+  businessName: string;
+  requestedByUserId: string;
+  requestedByUserName: string;
+  amount: number;
+  maskedBankAccount: string;
+  bankAccountHolder: string;
+  status: 'Pending' | 'Processing' | 'Completed' | 'Rejected';
+  requestDate: string;
+  processedDate?: string;
+  processedBy?: string;
+  rejectionReason?: string;
+  transactionId?: string;
+}
+
+export interface BusinessBalance {
+  availableBalance: number;
+  pendingWithdrawal: number;
+  totalEarned: number;
+  totalWithdrawn: number;
+  totalWithheldTax: number;
+  grossEarned?: number;
+}
+
+export interface PlatformLedgerState {
+  platformCommissionBalance: number;
+  platformTaxWithholdingBalance: number;
+  totalPlatformBalance: number;
+  businessBalances: Record<string, BusinessBalance>;
+  superAdminBank: {
+    bankName: string;
+    accountHolder: string;
+    accountMasked: string;
+    routingNumber: string;
+  };
+  transactions: MarketplaceTransaction[];
+  withdrawals: WithdrawalRequest[];
+  commissionRate: number;
 }
 

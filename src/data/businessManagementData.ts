@@ -60,6 +60,7 @@ export interface ManagedBusinessRecord {
   workersCount?: number;
   address?: string;
   entityType?: string;
+  hasW9?: boolean;
 }
 
 export const INITIAL_MANAGED_BUSINESSES: ManagedBusinessRecord[] = [

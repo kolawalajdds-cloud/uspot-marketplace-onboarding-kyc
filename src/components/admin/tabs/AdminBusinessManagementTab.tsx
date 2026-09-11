@@ -126,6 +126,7 @@ export const AdminBusinessManagementTab: React.FC<AdminBusinessManagementTabProp
         rejectionReason: b.verification.rejectionReason ?? null,
         resubmittedAt: b.resubmittedAt ?? b.verification.resubmittedAt ?? null,
         kycSubmitted: Boolean(b.verification.kycSubmitted || isPending),
+        hasW9: Boolean(b.w9 && (b.w9.status === 'submitted' || b.w9.status === 'verified')),
       };
     });
 
@@ -816,6 +817,25 @@ export const AdminBusinessManagementTab: React.FC<AdminBusinessManagementTabProp
                                 <span>Resubmitted</span>
                               </span>
                             )}
+
+                            {/* W-9 Form Tax Status */}
+                            {biz.hasW9 ? (
+                              <span
+                                className="bg-emerald-50 text-emerald-700 border border-emerald-200/80 font-bold text-[10px] px-2 py-0.5 rounded-md inline-flex items-center gap-1"
+                                title="Form W-9 verified. 0% backup tax withholding."
+                              >
+                                <Check className="w-3 h-3 text-emerald-600" />
+                                <span>W-9 (0% Tax)</span>
+                              </span>
+                            ) : (
+                              <span
+                                className="bg-amber-50 text-amber-800 border border-amber-200/80 font-bold text-[10px] px-2 py-0.5 rounded-md inline-flex items-center gap-1"
+                                title="Missing W-9 form. 24% IRS backup withholding will be deducted from payouts."
+                              >
+                                <AlertTriangle className="w-3 h-3 text-amber-600" />
+                                <span>Missing W-9 (24% Tax)</span>
+                              </span>
+                            )}
                           </div>
                         </td>
 
@@ -1015,6 +1035,25 @@ export const AdminBusinessManagementTab: React.FC<AdminBusinessManagementTabProp
                             >
                               <RefreshCw className="w-3 h-3 text-blue-600" />
                               <span>Resubmitted</span>
+                            </span>
+                          )}
+
+                          {/* W-9 Form Tax Status */}
+                          {biz.hasW9 ? (
+                            <span
+                              className="bg-emerald-50 text-emerald-700 border border-emerald-200/80 font-bold text-[10px] px-2 py-0.5 rounded-md inline-flex items-center gap-1"
+                              title="Form W-9 verified. 0% backup tax withholding."
+                            >
+                              <Check className="w-3 h-3 text-emerald-600" />
+                              <span>W-9 (0% Tax)</span>
+                            </span>
+                          ) : (
+                            <span
+                              className="bg-amber-50 text-amber-800 border border-amber-200/80 font-bold text-[10px] px-2 py-0.5 rounded-md inline-flex items-center gap-1"
+                              title="Missing W-9 form. 24% IRS backup withholding will be deducted from payouts."
+                            >
+                              <AlertTriangle className="w-3 h-3 text-amber-600" />
+                              <span>Missing W-9 (24% Tax)</span>
                             </span>
                           )}
                         </div>

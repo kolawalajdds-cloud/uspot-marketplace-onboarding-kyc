@@ -57,12 +57,17 @@ import {
   Sparkles,
   CalendarCheck,
   AlertCircle,
+  Wallet,
 } from 'lucide-react';
 import { BusinessWizard } from './BusinessWizard';
 import { BusinessMultiStepPage, DEFAULT_FORM_DATA } from './multistep/BusinessMultiStepPage';
 import { BusinessFormData, MultiStepTab } from './multistep/types';
 import { W9TaxCertification } from './W9TaxCertification';
 import { BusinessDetailsView } from './BusinessDetailsView';
+import {
+  normalizeTransactionType,
+  getTransactionTypeMeta,
+} from '../../utils/ledgerAccounting';
 
 type BusinessPortalTab =
   | 'dashboard'
@@ -102,6 +107,10 @@ export const BusinessPortal: React.FC = () => {
     saveW9Data,
     submitW9Data,
     processPayment,
+    platformLedger,
+    getBusinessBalance,
+    requestBusinessWithdrawal,
+    resetW9Data,
   } = useDemo();
 
   // Active Tab State
@@ -808,14 +817,46 @@ export const BusinessPortal: React.FC = () => {
     }
   };
 
-  const handleRequestPayout = (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsPayoutModalOpen(false);
-    showToast(`Payout request for $${payoutAmount} submitted to primary bank account.`);
-  };
-
   const selectedBusiness =
     state.businesses.find((b) => b.id === selectedBusinessId) || state.businesses[0];
+
+  const currentBusinessBalance = getBusinessBalance(selectedBusiness?.id || '');
+  const isSelectedBizW9Certified = Boolean(
+    selectedBusiness?.w9 &&
+      (selectedBusiness.w9.status === 'submitted' || selectedBusiness.w9.status === 'verified')
+  );
+
+  const handleOpenWithdrawalModal = () => {
+    const bal = getBusinessBalance(selectedBusiness?.id || '');
+    setPayoutAmount(bal.availableBalance > 0 ? bal.availableBalance.toFixed(2) : '0.00');
+    setIsPayoutModalOpen(true);
+  };
+
+  const handleRequestPayout = (e: React.FormEvent) => {
+    e.preventDefault();
+    const parsed = parseFloat(payoutAmount.replace(/,/g, ''));
+    if (isNaN(parsed) || parsed <= 0) {
+      showToast('Please enter a valid withdrawal amount.');
+      return;
+    }
+    if (parsed > currentBusinessBalance.availableBalance) {
+      showToast(
+        `Cannot withdraw more than available balance ($${currentBusinessBalance.availableBalance.toFixed(2)}).`
+      );
+      return;
+    }
+    const res = requestBusinessWithdrawal(selectedBusiness.id, parsed);
+    if (res.success) {
+      setIsPayoutModalOpen(false);
+      showToast(
+        `✓ Withdrawal request for $${parsed.toFixed(2)} submitted to ${
+          selectedBusiness.verification?.bankAccount?.accountNumberMasked || '•••• 9382'
+        }. Status: Pending review.`
+      );
+    } else {
+      showToast(res.error || 'Failed to submit withdrawal request.');
+    }
+  };
 
   const payingBiz = payingBusinessId
     ? state.businesses.find((b) => b.id === payingBusinessId)
@@ -1684,19 +1725,29 @@ export const BusinessPortal: React.FC = () => {
                 {/* Card 3: Payout Balance */}
                 <div className="p-5 bg-white rounded-2xl border border-slate-200 shadow-2xs flex flex-col justify-between hover:shadow-xs transition-shadow">
                   <div>
-                    <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center mb-3">
-                      <DollarSign className="w-4 h-4" />
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center">
+                        <DollarSign className="w-4 h-4" />
+                      </div>
+                      {currentBusinessBalance.pendingWithdrawal > 0 && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                          ${currentBusinessBalance.pendingWithdrawal.toFixed(2)} pending
+                        </span>
+                      )}
                     </div>
-                    <h3 className="font-bold text-sm text-slate-900">Available Payouts</h3>
-                    <p className="text-xs text-slate-500 mt-1">
-                      Available to withdraw: <strong className="text-emerald-700 font-bold">$2,450.00</strong>.
+                    <h3 className="font-bold text-sm text-slate-900">Available Balance</h3>
+                    <p className="text-2xl font-black text-emerald-600 mt-1 font-mono">
+                      ${currentBusinessBalance.availableBalance.toFixed(2)}
+                    </p>
+                    <p className="text-[11px] text-slate-500 mt-1 font-mono">
+                      Bank: {selectedBusiness.verification?.bankAccount?.accountNumberMasked || '•••• •••• 9382'}
                     </p>
                   </div>
                   <button
-                    onClick={() => setIsPayoutModalOpen(true)}
-                    className="mt-4 text-xs font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1 cursor-pointer"
+                    onClick={handleOpenWithdrawalModal}
+                    className="mt-4 text-xs font-bold text-emerald-700 hover:text-emerald-800 flex items-center gap-1 cursor-pointer"
                   >
-                    <span>Create Payout Request</span>
+                    <span>Withdraw Funds</span>
                     <ArrowRight className="w-3.5 h-3.5" />
                   </button>
                 </div>
@@ -1709,15 +1760,35 @@ export const BusinessPortal: React.FC = () => {
           {/* =================================================================== */}
           {activeTab === 'w9-form' && (
             <div className="max-w-5xl mx-auto space-y-6 animate-in fade-in duration-150 pb-20">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs">
                 <button
                   id="btn-back-to-my-businesses"
                   onClick={() => setActiveTab('my-businesses')}
-                  className="flex items-center gap-1.5 text-xs font-bold text-slate-700 hover:text-slate-900 transition-colors cursor-pointer bg-white hover:bg-slate-50 px-3.5 py-2 rounded-xl border border-slate-200 shadow-2xs"
+                  className="flex items-center gap-1.5 text-xs font-bold text-slate-700 hover:text-slate-900 transition-colors cursor-pointer hover:bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200"
                 >
                   <ArrowLeft className="w-3.5 h-3.5 text-slate-500" />
                   <span>Back to My Businesses</span>
                 </button>
+
+                {/* Business Selector Dropdown */}
+                <div className="flex items-center gap-2.5">
+                  <span className="text-xs font-bold text-slate-500 whitespace-nowrap">Managing Business:</span>
+                  <select
+                    id="select-w9-business"
+                    value={selectedBusiness.id}
+                    onChange={(e) => setSelectedBusinessId(e.target.value)}
+                    className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 cursor-pointer"
+                  >
+                    {state.businesses.map((biz) => {
+                      const isW9Done = Boolean(biz.w9 && (biz.w9.status === 'submitted' || biz.w9.status === 'verified'));
+                      return (
+                        <option key={biz.id} value={biz.id}>
+                          {biz.coreDetails.businessName} {isW9Done ? '(✓ W-9 Certified: 0% Tax)' : '(⚠️ W-9 Missing: 24% Tax)'}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
               </div>
               <W9TaxCertification
                 business={selectedBusiness}
@@ -1729,6 +1800,7 @@ export const BusinessPortal: React.FC = () => {
                   await submitW9Data(selectedBusiness.id, w9Data);
                   showToast('W-9 tax certification submitted and certified successfully!');
                 }}
+                onResetW9={resetW9Data}
                 onNavigateToEkyc={() => {
                   const biz = selectedBusiness;
                   if (biz) {
@@ -2678,33 +2750,349 @@ export const BusinessPortal: React.FC = () => {
           {/* =================================================================== */}
           {/* VIEW 6: PAYOUTS                                                     */}
           {/* =================================================================== */}
+          {/* VIEW 6: PAYOUTS & DISBURSEMENTS                                     */}
+          {/* =================================================================== */}
           {activeTab === 'payouts' && (
-            <div className="space-y-6 animate-in fade-in duration-150 max-w-4xl mx-auto">
-              <div className="flex items-center justify-between">
+            <div className="space-y-6 animate-in fade-in duration-150 max-w-5xl mx-auto pb-16">
+              {/* Header */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                   <h1 className="text-2xl font-black text-slate-900 tracking-tight">Payouts & Disbursements</h1>
-                  <p className="text-xs text-slate-500 mt-1">Track revenue withdrawals, automated deposits, and tax withholdings.</p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Manage your commercial balance, request withdrawals to your verified bank account, and track ledger history.
+                  </p>
                 </div>
                 <button
-                  onClick={() => setIsPayoutModalOpen(true)}
-                  className="bg-black text-white text-xs font-bold px-4 py-2 rounded-xl cursor-pointer"
+                  id="btn-open-withdrawal-modal"
+                  onClick={handleOpenWithdrawalModal}
+                  disabled={currentBusinessBalance.availableBalance <= 0}
+                  className={`text-xs font-bold px-4 py-2.5 rounded-xl transition-all shadow-xs flex items-center gap-1.5 self-start sm:self-auto ${
+                    currentBusinessBalance.availableBalance > 0
+                      ? 'bg-black hover:bg-slate-800 text-white cursor-pointer active:scale-95'
+                      : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                  }`}
                 >
-                  + Create Payout Request
+                  <Wallet className="w-4 h-4" />
+                  <span>Withdraw ${currentBusinessBalance.availableBalance.toFixed(2)}</span>
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="p-5 bg-white rounded-2xl border border-slate-200 shadow-2xs">
-                  <span className="text-xs text-slate-400 font-bold uppercase">Available Balance</span>
-                  <p className="text-2xl font-black text-emerald-600 mt-1">$2,450.00</p>
+              {/* Business Selector Bar for Payouts */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs">
+                <div className="flex items-center gap-2">
+                  <Building2 className="w-4 h-4 text-slate-500" />
+                  <span className="text-xs font-bold text-slate-700">Selected Business:</span>
+                  <span className="text-xs font-extrabold text-slate-900">{selectedBusiness.coreDetails.businessName}</span>
                 </div>
-                <div className="p-5 bg-white rounded-2xl border border-slate-200 shadow-2xs">
-                  <span className="text-xs text-slate-400 font-bold uppercase">Pending Escrow</span>
-                  <p className="text-2xl font-black text-slate-900 mt-1">$1,180.00</p>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-500 font-medium">Switch Business:</span>
+                  <select
+                    id="select-payout-business"
+                    value={selectedBusiness.id}
+                    onChange={(e) => setSelectedBusinessId(e.target.value)}
+                    className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 cursor-pointer"
+                  >
+                    {state.businesses.map((biz) => {
+                      const isW9Done = Boolean(biz.w9 && (biz.w9.status === 'submitted' || biz.w9.status === 'verified'));
+                      const bizBal = getBusinessBalance(biz.id);
+                      return (
+                        <option key={biz.id} value={biz.id}>
+                          {biz.coreDetails.businessName} — Avail: ${bizBal.availableBalance.toFixed(2)} {isW9Done ? '(0% Tax)' : '(24% Tax)'}
+                        </option>
+                      );
+                    })}
+                  </select>
                 </div>
+              </div>
+
+              {/* W-9 Warning Alert if not submitted */}
+              {!isSelectedBizW9Certified && (
+                <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-900">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center shrink-0 font-bold">
+                      <AlertCircle className="w-4 h-4 text-slate-950" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-amber-950">
+                        Form W-9 Missing — 24% IRS Backup Withholding Active
+                      </h4>
+                      <p className="text-[11px] text-amber-800 mt-0.5">
+                        Federal tax regulations require 24% backup withholding on all payments until your Form W-9 is submitted and certified.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setActiveTab('w9-form')}
+                    className="px-3 py-1.5 rounded-xl bg-amber-900 hover:bg-amber-950 text-white text-xs font-bold transition-colors cursor-pointer self-start sm:self-auto whitespace-nowrap"
+                  >
+                    Complete Form W-9
+                  </button>
+                </div>
+              )}
+
+              {/* 4 Balance Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* Available Balance */}
                 <div className="p-5 bg-white rounded-2xl border border-slate-200 shadow-2xs">
-                  <span className="text-xs text-slate-400 font-bold uppercase">Lifetime Earnings</span>
-                  <p className="text-2xl font-black text-slate-900 mt-1">$48,920.00</p>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Available Balance</span>
+                    <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                  </div>
+                  <p className="text-2xl font-black text-emerald-600 mt-1 font-mono">
+                    ${currentBusinessBalance.availableBalance.toFixed(2)}
+                  </p>
+                  <span className="text-[11px] text-slate-400 mt-0.5 block">Ready to withdraw</span>
+                </div>
+
+                {/* Pending Withdrawal */}
+                <div className="p-5 bg-white rounded-2xl border border-slate-200 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Pending Approval</span>
+                    <div className="w-2 h-2 rounded-full bg-amber-500" />
+                  </div>
+                  <p className="text-2xl font-black text-amber-600 mt-1 font-mono">
+                    ${currentBusinessBalance.pendingWithdrawal.toFixed(2)}
+                  </p>
+                  <span className="text-[11px] text-slate-400 mt-0.5 block">In Super Admin queue</span>
+                </div>
+
+                {/* Total Earned */}
+                <div className="p-5 bg-white rounded-2xl border border-slate-200 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Net Earnings</span>
+                    <div className="w-2 h-2 rounded-full bg-blue-500" />
+                  </div>
+                  <p className="text-2xl font-black text-slate-900 mt-1 font-mono">
+                    ${currentBusinessBalance.totalEarned.toFixed(2)}
+                  </p>
+                  <span className="text-[11px] text-slate-400 mt-0.5 block">Successfully withdrawn</span>
+                </div>
+
+                {/* IRS Tax Withheld */}
+                <div className="p-5 bg-white rounded-2xl border border-slate-200 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">IRS Withheld (24%)</span>
+                    <div className={`w-2 h-2 rounded-full ${currentBusinessBalance.totalWithheldTax > 0 ? 'bg-rose-500' : 'bg-slate-300'}`} />
+                  </div>
+                  <p className={`text-2xl font-black mt-1 font-mono ${currentBusinessBalance.totalWithheldTax > 0 ? 'text-rose-600' : 'text-slate-900'}`}>
+                    ${currentBusinessBalance.totalWithheldTax.toFixed(2)}
+                  </p>
+                  <span className="text-[11px] text-slate-400 mt-0.5 block">
+                    {isSelectedBizW9Certified ? 'W-9 Certified (0% active)' : 'Pending W-9 certification'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Registered Destination Bank Account Card */}
+              <div className="p-5 bg-white rounded-2xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3.5">
+                  <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-800 flex items-center justify-center font-black">
+                    <CreditCard className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-extrabold text-sm text-slate-900">
+                        {selectedBusiness.verification?.bankAccount?.accountHolderName || selectedBusiness.coreDetails.legalEntityName || selectedBusiness.coreDetails.businessName}
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                        Verified Bank Account
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 font-mono mt-0.5">
+                      Account: {selectedBusiness.verification?.bankAccount?.accountNumberMasked || '•••• •••• 9382'} • Routing: {selectedBusiness.verification?.bankAccount?.routingNumber || '121000358'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="text-xs text-slate-400 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100">
+                  <span>Withdrawals automatically route here • No re-entry needed</span>
+                </div>
+              </div>
+
+              {/* Tabbed / Segmented History Tables */}
+              <div className="space-y-6">
+                {/* 1. Withdrawal Requests History */}
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
+                  <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+                    <div>
+                      <h3 className="font-extrabold text-sm text-slate-900">Withdrawal Request History</h3>
+                      <p className="text-xs text-slate-400 mt-0.5">Recent payout requests and their approval statuses</p>
+                    </div>
+                    <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg font-mono">
+                      {platformLedger.withdrawals.filter((w) => w.businessId === selectedBusiness.id).length} record(s)
+                    </span>
+                  </div>
+
+                  {(() => {
+                    const bizWithdrawals = platformLedger.withdrawals.filter(
+                      (w) => w.businessId === selectedBusiness.id
+                    );
+                    if (bizWithdrawals.length === 0) {
+                      return (
+                        <div className="p-12 text-center text-xs text-slate-400">
+                          No withdrawal requests submitted yet. Click "Withdraw Funds" above to disburse available balance.
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse text-xs">
+                          <thead>
+                            <tr className="border-b border-slate-100 text-[11px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50/50">
+                              <th className="py-3 px-5">ID</th>
+                              <th className="py-3 px-5">Requested Date</th>
+                              <th className="py-3 px-5">Amount</th>
+                              <th className="py-3 px-5">Destination Bank</th>
+                              <th className="py-3 px-5">Status</th>
+                              <th className="py-3 px-5">Details / Notes</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {bizWithdrawals.map((w) => (
+                              <tr key={w.id} className="hover:bg-slate-50/60 transition-colors">
+                                <td className="py-3.5 px-5 font-mono font-bold text-slate-900">{w.id}</td>
+                                <td className="py-3.5 px-5 text-slate-600">
+                                  {new Date(w.requestDate).toLocaleDateString()} at{' '}
+                                  {new Date(w.requestDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </td>
+                                <td className="py-3.5 px-5 font-mono font-black text-slate-900">${w.amount.toFixed(2)}</td>
+                                <td className="py-3.5 px-5 font-mono text-slate-600">{w.maskedBankAccount}</td>
+                                <td className="py-3.5 px-5">
+                                  <span
+                                    className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                                      w.status === 'Completed'
+                                        ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                                        : w.status === 'Rejected'
+                                        ? 'bg-rose-100 text-rose-800 border-rose-200'
+                                        : 'bg-amber-100 text-amber-800 border-amber-200'
+                                    }`}
+                                  >
+                                    {w.status}
+                                  </span>
+                                </td>
+                                <td className="py-3.5 px-5 text-slate-500 text-[11px]">
+                                  {w.status === 'Rejected'
+                                    ? `Declined: ${w.rejectionReason || 'Restored to balance'}`
+                                    : w.status === 'Completed'
+                                    ? `Approved by ${w.processedBy || 'Super Admin'}`
+                                    : 'Awaiting Super Admin approval'}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* 2. Transaction & Earnings Ledger */}
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
+                  <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+                    <div>
+                      <h3 className="font-extrabold text-sm text-slate-900">Earnings & Transaction Ledger</h3>
+                      <p className="text-xs text-slate-400 mt-0.5">Line-item financial ledger of customer bookings and allocations</p>
+                    </div>
+                    <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg font-mono">
+                      {platformLedger.transactions.filter((t) => t.businessId === selectedBusiness.id).length} record(s)
+                    </span>
+                  </div>
+
+                  {(() => {
+                    const bizTxs = platformLedger.transactions.filter(
+                      (t) => t.businessId === selectedBusiness.id
+                    );
+                    if (bizTxs.length === 0) {
+                      return (
+                        <div className="p-12 text-center text-xs text-slate-400">
+                          No transactions recorded yet. Switch to Customer view to book appointments.
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse text-xs">
+                          <thead>
+                            <tr className="border-b border-slate-100 text-[11px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50/50">
+                              <th className="py-3 px-5">Booking / Tx</th>
+                              <th className="py-3 px-5">Type</th>
+                              <th className="py-3 px-5">Service</th>
+                              <th className="py-3 px-5">Customer</th>
+                              <th className="py-3 px-5">Gross Paid</th>
+                              <th className="py-3 px-5">Platform Fee</th>
+                              <th className="py-3 px-5">W-9 Withheld</th>
+                              <th className="py-3 px-5">Net Earnings</th>
+                              <th className="py-3 px-5">Gateway</th>
+                              <th className="py-3 px-5">Date</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {bizTxs.map((tx) => {
+                              const normType = normalizeTransactionType(tx.type, tx.paymentStatus);
+                              const typeMeta = getTransactionTypeMeta(tx.type, tx.paymentStatus);
+                              const isPayout = normType === 'BUSINESS_PAYOUT';
+                              const isFailed = normType === 'PAYOUT_FAILED';
+                              const isReversal = normType === 'PAYOUT_REVERSAL';
+
+                              return (
+                                <tr key={tx.id} className="hover:bg-slate-50/60 transition-colors">
+                                  <td className="py-3.5 px-5 font-mono font-bold text-slate-900">
+                                    <div>{tx.bookingId}</div>
+                                    {tx.id !== tx.bookingId && (
+                                      <div className="text-[10px] text-slate-400 font-mono font-normal">Tx: {tx.id}</div>
+                                    )}
+                                  </td>
+                                  <td className="py-3.5 px-5 whitespace-nowrap">
+                                    <span
+                                      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${typeMeta.badgeBg}`}
+                                      title={typeMeta.description}
+                                    >
+                                      <span className={`w-1.5 h-1.5 rounded-full ${typeMeta.dotBg}`} />
+                                      {typeMeta.label}
+                                    </span>
+                                  </td>
+                                  <td className="py-3.5 px-5 font-medium text-slate-800">{tx.serviceName}</td>
+                                  <td className="py-3.5 px-5 text-slate-600">{tx.customerName}</td>
+                                  <td className="py-3.5 px-5 font-mono font-bold text-slate-900">${tx.grossAmount.toFixed(2)}</td>
+                                  <td className="py-3.5 px-5 font-mono text-slate-500">
+                                    {tx.platformCommission > 0 ? `-$${tx.platformCommission.toFixed(2)} (${tx.commissionRate}%)` : '—'}
+                                  </td>
+                                  <td className="py-3.5 px-5 font-mono">
+                                    {tx.w9WithholdingAmount > 0 ? (
+                                      <span className="text-rose-600 font-bold">
+                                        -${tx.w9WithholdingAmount.toFixed(2)} (24%)
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-400">$0.00</span>
+                                    )}
+                                  </td>
+                                  <td className="py-3.5 px-5 font-mono font-black">
+                                    {isPayout ? (
+                                      <span className="text-blue-700">-${tx.businessAmount.toFixed(2)}</span>
+                                    ) : isReversal ? (
+                                      <span className="text-amber-700">+${tx.businessAmount.toFixed(2)}</span>
+                                    ) : isFailed ? (
+                                      <span className="text-slate-400">$0.00</span>
+                                    ) : (
+                                      <span className="text-emerald-600">+${tx.businessAmount.toFixed(2)}</span>
+                                    )}
+                                  </td>
+                                  <td className="py-3.5 px-5">
+                                    <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-700 font-mono">
+                                      {tx.paymentGateway}
+                                    </span>
+                                  </td>
+                                  <td className="py-3.5 px-5 text-slate-500 text-[11px]">
+                                    {new Date(tx.createdAt).toLocaleDateString()}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
@@ -3079,15 +3467,14 @@ export const BusinessPortal: React.FC = () => {
       </div>
 
       {/* ========================================================================= */}
-      {/* MODAL: CREATE PAYOUT REQUEST                                              */}
+      {/* MODAL: WITHDRAWAL REQUEST                                                 */}
       {/* ========================================================================= */}
-      {/* Payout Modal */}
       {isPayoutModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-md w-full overflow-hidden animate-in zoom-in-95 duration-150">
             <div className="p-6 border-b border-slate-100 flex items-center justify-between">
               <div>
-                <h3 className="font-extrabold text-slate-900 text-base">Create Payout Request</h3>
+                <h3 className="font-extrabold text-slate-900 text-base">Withdrawal Request</h3>
                 <p className="text-xs text-slate-500 mt-0.5">Disburse available earnings to verified bank account</p>
               </div>
               <button
@@ -3101,26 +3488,57 @@ export const BusinessPortal: React.FC = () => {
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Available to Withdraw</label>
                 <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between">
-                  <span className="text-xs text-emerald-800 font-semibold">Current Balance</span>
-                  <span className="font-mono font-black text-emerald-700 text-base">$2,450.00</span>
+                  <span className="text-xs text-emerald-800 font-semibold">Current Available Balance</span>
+                  <span className="font-mono font-black text-emerald-700 text-base">
+                    ${currentBusinessBalance.availableBalance.toFixed(2)}
+                  </span>
                 </div>
               </div>
+
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Payout Amount ($ USD) *</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-slate-700">Withdrawal Amount ($ USD) *</label>
+                  <button
+                    type="button"
+                    onClick={() => setPayoutAmount(currentBusinessBalance.availableBalance.toFixed(2))}
+                    className="text-[11px] text-blue-600 hover:text-blue-800 font-bold cursor-pointer"
+                  >
+                    Withdraw All (${currentBusinessBalance.availableBalance.toFixed(2)})
+                  </button>
+                </div>
                 <input
-                  type="text"
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  max={currentBusinessBalance.availableBalance}
                   required
                   value={payoutAmount}
                   onChange={(e) => setPayoutAmount(e.target.value)}
-                  className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900"
+                  className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-sm font-mono font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900"
                 />
+                {parseFloat(payoutAmount) > currentBusinessBalance.availableBalance && (
+                  <p className="text-[11px] text-rose-600 font-semibold mt-1">
+                    Amount cannot exceed available balance of ${currentBusinessBalance.availableBalance.toFixed(2)}.
+                  </p>
+                )}
               </div>
+
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Destination Bank Account</label>
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 font-mono">
-                  Chase Business Checking (••••4829)
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+                  <div className="flex items-center justify-between text-xs font-mono font-bold text-slate-800">
+                    <span>{selectedBusiness.verification?.bankAccount?.accountHolderName || selectedBusiness.coreDetails.businessName}</span>
+                    <span className="text-[10px] font-sans px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">Verified</span>
+                  </div>
+                  <div className="text-xs text-slate-600 font-mono">
+                    Account: {selectedBusiness.verification?.bankAccount?.accountNumberMasked || '•••• •••• 9382'}
+                  </div>
+                  <div className="text-[10px] text-slate-400">
+                    Bank details are verified and saved. Users do not re-enter bank details.
+                  </div>
                 </div>
               </div>
+
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
                 <button
                   type="button"
@@ -3131,9 +3549,21 @@ export const BusinessPortal: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-black text-white text-xs font-bold hover:bg-slate-800 cursor-pointer shadow-xs"
+                  disabled={
+                    currentBusinessBalance.availableBalance <= 0 ||
+                    parseFloat(payoutAmount) <= 0 ||
+                    parseFloat(payoutAmount) > currentBusinessBalance.availableBalance ||
+                    isNaN(parseFloat(payoutAmount))
+                  }
+                  className={`px-5 py-2 rounded-xl text-xs font-bold shadow-xs transition-all ${
+                    currentBusinessBalance.availableBalance > 0 &&
+                    parseFloat(payoutAmount) > 0 &&
+                    parseFloat(payoutAmount) <= currentBusinessBalance.availableBalance
+                      ? 'bg-black text-white hover:bg-slate-800 cursor-pointer'
+                      : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                  }`}
                 >
-                  Request Transfer
+                  Confirm Withdrawal
                 </button>
               </div>
             </form>

@@ -16,11 +16,33 @@ import {
   VerificationData,
   computeRiskTier,
   W9Data,
+  MarketplaceTransaction,
+  WithdrawalRequest,
+  BusinessBalance,
+  PlatformLedgerState,
 } from '../types';
 import { getSeedBusinesses } from '../data/seedData';
 import { getSeedUsers } from '../data/seedUsers';
+import { calculateLedgerBalances, normalizeTransactionType } from '../utils/ledgerAccounting';
 
 const LOCAL_STORAGE_KEY = 'uspot_demo_state';
+const PAYMENT_RATE_STORAGE_KEY = 'urspot_superadmin_payment_rate';
+
+export const DEFAULT_LEDGER_STATE: PlatformLedgerState = {
+  platformCommissionBalance: 0,
+  platformTaxWithholdingBalance: 0,
+  totalPlatformBalance: 0,
+  businessBalances: {},
+  superAdminBank: {
+    bankName: 'JPMorgan Chase Treasury',
+    accountHolder: 'URSPOT Platform Operations LLC',
+    accountMasked: '•••• •••• 5678',
+    routingNumber: '021000021',
+  },
+  transactions: [],
+  withdrawals: [],
+  commissionRate: 10.0,
+};
 
 interface StoredState {
   businesses: Business[];
@@ -42,6 +64,7 @@ interface StoredState {
   isAuthModalOpen: boolean;
   hasExplicitLogin?: boolean;
   notifications?: NotificationItem[];
+  platformLedger: PlatformLedgerState;
 }
 
 interface DemoContextType {
@@ -110,6 +133,34 @@ interface DemoContextType {
   saveVendorBusiness: (formData: any) => Business;
   saveW9Data: (businessId: string, w9Data: Partial<W9Data>) => void;
   submitW9Data: (businessId: string, w9Data: W9Data) => Promise<void>;
+  resetW9Data: (businessId: string) => void;
+  // Marketplace Ledger, Balances & Withdrawals
+  platformLedger: PlatformLedgerState;
+  getBusinessBalance: (businessId: string) => BusinessBalance;
+  bookServiceWithNmi: (params: {
+    businessId: string;
+    serviceName: string;
+    amount: number;
+    customerName: string;
+    customerEmail?: string;
+  }) => Promise<{ success: boolean; transaction: MarketplaceTransaction; message: string }>;
+  requestBusinessWithdrawal: (
+    businessId: string,
+    amount?: number
+  ) => { success: boolean; error?: string; withdrawal?: WithdrawalRequest };
+  approveWithdrawal: (
+    withdrawalId: string,
+    adminUserId?: string
+  ) => { success: boolean; error?: string };
+  rejectWithdrawal: (
+    withdrawalId: string,
+    reason: string,
+    adminUserId?: string
+  ) => { success: boolean; error?: string };
+  requestSuperAdminWithdrawal: (
+    amount?: number
+  ) => { success: boolean; error?: string; withdrawal?: WithdrawalRequest };
+  updateCommissionRate: (newRate: number) => void;
   // Helpers
   prefillWizardWithDummyData: (id: string) => void;
   markNotificationAsRead: (notificationId: string) => void;
@@ -238,6 +289,30 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
             };
           });
 
+          // Load or initialize platform ledger
+          const savedRate = localStorage.getItem(PAYMENT_RATE_STORAGE_KEY);
+          const initialRate = savedRate !== null && !isNaN(parseFloat(savedRate)) ? parseFloat(savedRate) : 10.0;
+          const parsedLedger: PlatformLedgerState = parsed.platformLedger
+            ? {
+                ...DEFAULT_LEDGER_STATE,
+                ...parsed.platformLedger,
+                commissionRate: parsed.platformLedger.commissionRate ?? initialRate,
+                businessBalances: parsed.platformLedger.businessBalances || {},
+                transactions: Array.isArray(parsed.platformLedger.transactions) ? parsed.platformLedger.transactions : [],
+                withdrawals: Array.isArray(parsed.platformLedger.withdrawals) ? parsed.platformLedger.withdrawals : [],
+              }
+            : {
+                ...DEFAULT_LEDGER_STATE,
+                commissionRate: initialRate,
+              };
+
+          // Calculate and reconcile all balances dynamically from transactions and withdrawals
+          const calculated = calculateLedgerBalances(parsedLedger.transactions, parsedLedger.withdrawals);
+          parsedLedger.platformCommissionBalance = calculated.superAdminBalance;
+          parsedLedger.platformTaxWithholdingBalance = calculated.totalTaxWithheld;
+          parsedLedger.totalPlatformBalance = calculated.totalPlatformBalance;
+          parsedLedger.businessBalances = calculated.businessBreakdown;
+
           return {
             businesses: loadedBusinesses,
             users: loadedUsers,
@@ -250,6 +325,7 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
             wizardTab: parsed.wizardTab || 'Core Details',
             isAuthModalOpen: false,
             hasExplicitLogin: Boolean(loadedCurrent && parsed.hasExplicitLogin),
+            platformLedger: parsedLedger,
           };
         }
       }
@@ -258,6 +334,8 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     const seeds = getSeedBusinesses();
+    const savedRate = localStorage.getItem(PAYMENT_RATE_STORAGE_KEY);
+    const initialRate = savedRate !== null && !isNaN(parseFloat(savedRate)) ? parseFloat(savedRate) : 10.0;
     return {
       businesses: seeds,
       users: seedUsers,
@@ -270,6 +348,10 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
       wizardTab: 'Core Details',
       isAuthModalOpen: false,
       hasExplicitLogin: false,
+      platformLedger: {
+        ...DEFAULT_LEDGER_STATE,
+        commissionRate: initialRate,
+      },
     };
   });
 
@@ -467,6 +549,8 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem(LOCAL_STORAGE_KEY);
     const seeds = getSeedBusinesses();
     const seedUsers = getSeedUsers();
+    const savedRate = localStorage.getItem(PAYMENT_RATE_STORAGE_KEY);
+    const initialRate = savedRate !== null && !isNaN(parseFloat(savedRate)) ? parseFloat(savedRate) : 10.0;
     setState({
       businesses: seeds,
       users: seedUsers,
@@ -479,6 +563,10 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
       wizardTab: 'Core Details',
       isAuthModalOpen: false,
       hasExplicitLogin: false,
+      platformLedger: {
+        ...DEFAULT_LEDGER_STATE,
+        commissionRate: initialRate,
+      },
     });
   };
 
@@ -1520,25 +1608,25 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const merged: W9Data = {
         ...(existingW9 || {
           businessId,
-          legalName: b.coreDetails.legalEntityName || b.verification.beneficialOwner.fullName,
-          federalTaxClassification: 'Limited Liability Company (LLC)',
-          streetAddress: b.coreDetails.streetAddress,
-          city: b.coreDetails.city,
-          state: b.coreDetails.state,
-          zipCode: b.coreDetails.zipCode,
+          legalName: '',
+          federalTaxClassification: '',
+          streetAddress: '',
+          city: '',
+          state: '',
+          zipCode: '',
           tinType: 'EIN',
-          tinMasked: '**-*****6789',
-          tinVerified: true,
-          tinMatchStatus: 'match',
-          reusedEkycTin: true,
+          tinMasked: '',
+          tinVerified: false,
+          tinMatchStatus: 'idle',
+          reusedEkycTin: false,
           certifications: {
-            correctTin: true,
-            noBackupWithholding: true,
-            usPerson: true,
-            fatcaCorrect: true,
+            correctTin: false,
+            noBackupWithholding: false,
+            usPerson: false,
+            fatcaCorrect: false,
           },
-          signatureName: b.verification.beneficialOwner.fullName || 'Alex Vance',
-          agreedPerjury: true,
+          signatureName: '',
+          agreedPerjury: false,
           status: 'draft',
         }),
         ...w9Data,
@@ -1573,6 +1661,539 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
         resolve();
       }, 500);
+    });
+  };
+
+  const resetW9Data = (businessId: string) => {
+    updateBusinessInState(businessId, (b) => {
+      const newNotif: NotificationItem = {
+        id: `notif-${Date.now()}`,
+        message: `ℹ Form W-9 for "${b.coreDetails.businessName}" has been reset to uncertified (Test Mode).`,
+        type: 'warning',
+        read: false,
+        timestamp: 'Just now',
+        businessId,
+      };
+      return {
+        ...b,
+        w9: undefined,
+        notifications: [newNotif, ...b.notifications],
+      };
+    });
+  };
+
+  // Helper to compute total platform balance
+  const computeTotalPlatformBalance = (
+    commBal: number,
+    taxBal: number,
+    bizBalances: Record<string, BusinessBalance>
+  ): number => {
+    const sumBiz = Object.values(bizBalances || {}).reduce(
+      (acc, b) => acc + (b.availableBalance || 0) + (b.pendingWithdrawal || 0),
+      0
+    );
+    return Number((commBal + taxBal + sumBiz).toFixed(2));
+  };
+
+  // Helper to get business balance dynamically from ledger
+  const getBusinessBalance = (businessId: string): BusinessBalance => {
+    const balances = calculateLedgerBalances(
+      state.platformLedger?.transactions || [],
+      state.platformLedger?.withdrawals || []
+    );
+    const b = balances.businessBreakdown[businessId];
+    if (b) {
+      return {
+        availableBalance: b.availableBalance,
+        pendingWithdrawal: b.pendingWithdrawal,
+        totalEarned: b.totalEarned,
+        totalWithdrawn: b.totalWithdrawn,
+        totalWithheldTax: b.totalWithheldTax,
+        grossEarned: b.grossEarned,
+      };
+    }
+    return {
+      availableBalance: 0,
+      pendingWithdrawal: 0,
+      totalEarned: 0,
+      totalWithdrawn: 0,
+      totalWithheldTax: 0,
+      grossEarned: 0,
+    };
+  };
+
+  // 1. Customer Booking Payment via NMI Gateway
+  const bookServiceWithNmi = async (params: {
+    businessId: string;
+    serviceName: string;
+    amount: number;
+    customerName: string;
+    customerEmail?: string;
+  }): Promise<{ success: boolean; transaction: MarketplaceTransaction; message: string }> => {
+    const { businessId, serviceName, amount, customerName, customerEmail } = params;
+    if (!amount || amount <= 0) {
+      return { success: false, transaction: null as any, message: 'Invalid payment amount.' };
+    }
+
+    const biz = state.businesses.find((b) => b.id === businessId) || state.businesses[0];
+    if (!biz) {
+      return { success: false, transaction: null as any, message: 'Target business not found.' };
+    }
+
+    // W-9 certification check: if not certified, 24% IRS backup withholding applies
+    const isW9Certified = Boolean(biz.w9 && (biz.w9.status === 'submitted' || biz.w9.status === 'verified'));
+    const currentCommissionRate = state.platformLedger?.commissionRate ?? 10.0;
+    const platformCommission = Number(((amount * currentCommissionRate) / 100).toFixed(2));
+    const w9WithholdingRate = isW9Certified ? 0 : 24.0;
+    const w9WithholdingAmount = isW9Certified ? 0 : Number(((amount * 24.0) / 100).toFixed(2));
+    const businessAmount = Number((amount - platformCommission - w9WithholdingAmount).toFixed(2));
+
+    const newTx: MarketplaceTransaction = {
+      id: `TX-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 900)}`,
+      bookingId: `BK-${Date.now().toString().slice(-6)}`,
+      type: 'BOOKING_PAYMENT',
+      customerName: customerName || 'Marketplace Customer',
+      customerEmail: customerEmail || 'alex.taylor@example.com',
+      businessId: biz.id,
+      businessName: biz.coreDetails.businessName,
+      serviceName: serviceName || 'Standard Service Appointment',
+      grossAmount: amount,
+      commissionRate: currentCommissionRate,
+      platformCommission,
+      w9Submitted: isW9Certified,
+      w9WithholdingRate,
+      w9WithholdingAmount,
+      businessAmount,
+      currency: 'USD',
+      paymentStatus: 'paid',
+      withdrawalStatus: 'none',
+      paymentGateway: 'NMI Gateway',
+      maskedBankAccount: biz.verification?.bankAccount?.accountNumberMasked || '•••• •••• 9382',
+      notes: isW9Certified
+        ? 'Payment received via NMI Gateway. Platform commission allocated.'
+        : 'Payment received via NMI Gateway. 24% backup withholding deducted due to missing Form W-9.',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    setState((prev) => {
+      const prevLedger = prev.platformLedger || DEFAULT_LEDGER_STATE;
+      const updatedTxs = [newTx, ...(prevLedger.transactions || [])];
+      const updatedWds = prevLedger.withdrawals || [];
+      const newBalances = calculateLedgerBalances(updatedTxs, updatedWds);
+
+      const newNotif: NotificationItem = {
+        id: `notif-${Date.now()}`,
+        message: `💰 Customer paid $${amount.toFixed(2)} via NMI Gateway for "${serviceName}". Internal allocation: $${businessAmount.toFixed(2)} credited to balance${w9WithholdingAmount > 0 ? ` ($${w9WithholdingAmount.toFixed(2)} W-9 backup withholding deducted)` : ''}.`,
+        type: 'success',
+        read: false,
+        timestamp: 'Just now',
+        businessId: biz.id,
+      };
+
+      return {
+        ...prev,
+        platformLedger: {
+          ...prevLedger,
+          platformCommissionBalance: newBalances.superAdminBalance,
+          platformTaxWithholdingBalance: newBalances.totalTaxWithheld,
+          totalPlatformBalance: newBalances.totalPlatformBalance,
+          businessBalances: newBalances.businessBreakdown,
+          transactions: updatedTxs,
+          withdrawals: updatedWds,
+        },
+        businesses: prev.businesses.map((b) =>
+          b.id === biz.id ? { ...b, notifications: [newNotif, ...b.notifications] } : b
+        ),
+      };
+    });
+
+    return {
+      success: true,
+      transaction: newTx,
+      message: `Payment of $${amount.toFixed(2)} processed successfully via NMI Gateway.`,
+    };
+  };
+
+  // 2. Business Withdrawal Request
+  const requestBusinessWithdrawal = (
+    businessId: string,
+    requestedAmount?: number
+  ): { success: boolean; error?: string; withdrawal?: WithdrawalRequest } => {
+    const biz = state.businesses.find((b) => b.id === businessId);
+    if (!biz) {
+      return { success: false, error: 'Business account not found.' };
+    }
+
+    const currentBal = getBusinessBalance(businessId);
+    const amount =
+      typeof requestedAmount === 'number' && requestedAmount > 0
+        ? Number(requestedAmount.toFixed(2))
+        : currentBal.availableBalance;
+
+    if (amount <= 0) {
+      return { success: false, error: 'Withdrawal amount must be greater than $0.00.' };
+    }
+
+    if (amount > currentBal.availableBalance) {
+      return {
+        success: false,
+        error: `Insufficient available balance ($${currentBal.availableBalance.toFixed(2)}). You cannot withdraw more than your available balance.`,
+      };
+    }
+
+    const maskedBank = biz.verification?.bankAccount?.accountNumberMasked || '•••• •••• 9382';
+    const bankHolder =
+      biz.verification?.bankAccount?.accountHolderName ||
+      biz.coreDetails.legalEntityName ||
+      biz.coreDetails.businessName;
+
+    const newWithdrawalId = `WD-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 900)}`;
+
+    const newWithdrawal: WithdrawalRequest = {
+      id: newWithdrawalId,
+      type: 'business',
+      businessId: biz.id,
+      businessName: biz.coreDetails.businessName,
+      requestedByUserId: state.currentUser?.id || 'user-business',
+      requestedByUserName: state.currentUser?.fullName || biz.coreDetails.businessName,
+      amount,
+      maskedBankAccount: maskedBank,
+      bankAccountHolder: bankHolder,
+      status: 'Pending',
+      requestDate: new Date().toISOString(),
+    };
+
+    const ledgerEntry: MarketplaceTransaction = {
+      id: `TX-WD-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 900)}`,
+      bookingId: newWithdrawal.id,
+      type: 'BUSINESS_PAYOUT',
+      customerName: 'Platform Settlement',
+      businessId: biz.id,
+      businessName: biz.coreDetails.businessName,
+      serviceName: `Payout to Bank (${maskedBank})`,
+      grossAmount: amount,
+      commissionRate: 0,
+      platformCommission: 0,
+      w9Submitted: Boolean(biz.w9 && (biz.w9.status === 'submitted' || biz.w9.status === 'verified')),
+      w9WithholdingRate: 0,
+      w9WithholdingAmount: 0,
+      businessAmount: amount,
+      currency: 'USD',
+      paymentStatus: 'pending',
+      withdrawalStatus: 'pending',
+      paymentGateway: 'ACH / Direct Deposit',
+      maskedBankAccount: maskedBank,
+      notes: `Withdrawal request submitted by business owner. Pending Super Admin approval.`,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    setState((prev) => {
+      const prevLedger = prev.platformLedger || DEFAULT_LEDGER_STATE;
+      const updatedWds = [newWithdrawal, ...(prevLedger.withdrawals || [])];
+      const updatedTxs = [ledgerEntry, ...(prevLedger.transactions || [])];
+      const newBalances = calculateLedgerBalances(updatedTxs, updatedWds);
+
+      const newNotif: NotificationItem = {
+        id: `notif-${Date.now()}`,
+        message: `Withdrawal request for $${amount.toFixed(2)} submitted to ${maskedBank}. Status: Pending review.`,
+        type: 'info',
+        read: false,
+        timestamp: 'Just now',
+        businessId: biz.id,
+      };
+
+      return {
+        ...prev,
+        platformLedger: {
+          ...prevLedger,
+          platformCommissionBalance: newBalances.superAdminBalance,
+          platformTaxWithholdingBalance: newBalances.totalTaxWithheld,
+          totalPlatformBalance: newBalances.totalPlatformBalance,
+          businessBalances: newBalances.businessBreakdown,
+          withdrawals: updatedWds,
+          transactions: updatedTxs,
+        },
+        businesses: prev.businesses.map((b) =>
+          b.id === biz.id ? { ...b, notifications: [newNotif, ...b.notifications] } : b
+        ),
+      };
+    });
+
+    return { success: true, withdrawal: newWithdrawal };
+  };
+
+  // 3. Super Admin Approve Withdrawal
+  const approveWithdrawal = (
+    withdrawalId: string,
+    adminUserId?: string
+  ): { success: boolean; error?: string } => {
+    const withdrawal = state.platformLedger?.withdrawals?.find((w) => w.id === withdrawalId);
+    if (!withdrawal) {
+      return { success: false, error: 'Withdrawal request not found.' };
+    }
+    if (withdrawal.status !== 'Pending') {
+      return { success: false, error: `Withdrawal request is already '${withdrawal.status}'.` };
+    }
+
+    const now = new Date().toISOString();
+    const processedBy = adminUserId || state.currentUser?.fullName || 'Super Admin';
+
+    setState((prev) => {
+      const prevLedger = prev.platformLedger || DEFAULT_LEDGER_STATE;
+      const updatedWithdrawals = prevLedger.withdrawals.map((w) =>
+        w.id === withdrawalId
+          ? {
+              ...w,
+              status: 'Completed' as const,
+              processedDate: now,
+              processedBy,
+            }
+          : w
+      );
+
+      const updatedTransactions = prevLedger.transactions.map((tx) =>
+        tx.bookingId === withdrawal.id
+          ? {
+              ...tx,
+              type: 'BUSINESS_PAYOUT' as const,
+              paymentStatus: 'paid' as const,
+              withdrawalStatus: 'completed' as const,
+              notes: `Disbursement approved by ${processedBy}. Sent to ${withdrawal.maskedBankAccount}.`,
+              updatedAt: now,
+            }
+          : tx
+      );
+
+      const newBalances = calculateLedgerBalances(updatedTransactions, updatedWithdrawals);
+
+      return {
+        ...prev,
+        platformLedger: {
+          ...prevLedger,
+          platformCommissionBalance: newBalances.superAdminBalance,
+          platformTaxWithholdingBalance: newBalances.totalTaxWithheld,
+          totalPlatformBalance: newBalances.totalPlatformBalance,
+          businessBalances: newBalances.businessBreakdown,
+          withdrawals: updatedWithdrawals,
+          transactions: updatedTransactions,
+        },
+      };
+    });
+
+    return { success: true };
+  };
+
+  // 4. Super Admin Reject Withdrawal (Restores reserved funds to available balance with duplicate protection)
+  const rejectWithdrawal = (
+    withdrawalId: string,
+    reason: string,
+    adminUserId?: string
+  ): { success: boolean; error?: string } => {
+    const withdrawal = state.platformLedger?.withdrawals?.find((w) => w.id === withdrawalId);
+    if (!withdrawal) {
+      return { success: false, error: 'Withdrawal request not found.' };
+    }
+    if (withdrawal.status !== 'Pending') {
+      return { success: false, error: `Withdrawal request is already '${withdrawal.status}'.` };
+    }
+
+    // DUPLICATE REVERSAL PROTECTION: Ensure a reversal cannot be applied multiple times
+    const alreadyReversed = (state.platformLedger?.transactions || []).some(
+      (t) =>
+        t.bookingId === withdrawalId &&
+        normalizeTransactionType(t.type, t.paymentStatus) === 'PAYOUT_REVERSAL'
+    );
+    if (alreadyReversed) {
+      return { success: false, error: 'A payout reversal has already been processed for this withdrawal.' };
+    }
+
+    const now = new Date().toISOString();
+    const processedBy = adminUserId || state.currentUser?.fullName || 'Super Admin';
+    const rejectionReason = reason || 'Declined by platform compliance';
+
+    setState((prev) => {
+      const prevLedger = prev.platformLedger || DEFAULT_LEDGER_STATE;
+      const updatedWithdrawals = prevLedger.withdrawals.map((w) =>
+        w.id === withdrawalId
+          ? {
+              ...w,
+              status: 'Rejected' as const,
+              rejectionReason,
+              processedDate: now,
+              processedBy,
+            }
+          : w
+      );
+
+      const updatedTransactions = prevLedger.transactions.map((tx) =>
+        tx.bookingId === withdrawal.id
+          ? {
+              ...tx,
+              type: 'PAYOUT_FAILED' as const,
+              paymentStatus: 'failed' as const,
+              withdrawalStatus: 'rejected' as const,
+              notes: `Withdrawal rejected by ${processedBy}. Reason: ${rejectionReason}. Funds restored to available balance.`,
+              updatedAt: now,
+            }
+          : tx
+      );
+
+      // Ledger reversal entry referencing the original withdrawal
+      const refundTx: MarketplaceTransaction = {
+        id: `TX-REV-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 900)}`,
+        bookingId: withdrawal.id,
+        type: 'PAYOUT_REVERSAL',
+        customerName: 'Platform Escrow Restoration',
+        businessId: withdrawal.businessId || '',
+        businessName: withdrawal.businessName,
+        serviceName: 'Withdrawal Restoration to Available Balance',
+        grossAmount: withdrawal.amount,
+        commissionRate: 0,
+        platformCommission: 0,
+        w9Submitted: true,
+        w9WithholdingRate: 0,
+        w9WithholdingAmount: 0,
+        businessAmount: withdrawal.amount,
+        currency: 'USD',
+        paymentStatus: 'paid',
+        withdrawalStatus: 'rejected',
+        paymentGateway: 'Internal Ledger Reversal',
+        relatedTransactionId: withdrawal.id,
+        notes: `Restored $${withdrawal.amount.toFixed(2)} to available balance following rejection: ${rejectionReason}`,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      const finalTransactions = [refundTx, ...updatedTransactions];
+      const newBalances = calculateLedgerBalances(finalTransactions, updatedWithdrawals);
+
+      return {
+        ...prev,
+        platformLedger: {
+          ...prevLedger,
+          platformCommissionBalance: newBalances.superAdminBalance,
+          platformTaxWithholdingBalance: newBalances.totalTaxWithheld,
+          totalPlatformBalance: newBalances.totalPlatformBalance,
+          businessBalances: newBalances.businessBreakdown,
+          withdrawals: updatedWithdrawals,
+          transactions: finalTransactions,
+        },
+      };
+    });
+
+    return { success: true };
+  };
+
+  // 5. Super Admin Commission Withdrawal
+  const requestSuperAdminWithdrawal = (
+    requestedAmount?: number
+  ): { success: boolean; error?: string; withdrawal?: WithdrawalRequest } => {
+    const currentBalances = calculateLedgerBalances(
+      state.platformLedger?.transactions || [],
+      state.platformLedger?.withdrawals || []
+    );
+    const currentCommBal = currentBalances.superAdminBalance;
+    const amount =
+      typeof requestedAmount === 'number' && requestedAmount > 0
+        ? Number(requestedAmount.toFixed(2))
+        : currentCommBal;
+
+    if (amount <= 0) {
+      return { success: false, error: 'Withdrawal amount must be greater than $0.00.' };
+    }
+
+    if (amount > currentCommBal) {
+      return {
+        success: false,
+        error: `Insufficient platform commission balance ($${currentCommBal.toFixed(2)}).`,
+      };
+    }
+
+    const superAdminBank = state.platformLedger?.superAdminBank || {
+      bankName: 'JPMorgan Chase Treasury',
+      accountHolder: 'URSPOT Platform Operations LLC',
+      accountMasked: '•••• •••• 5678',
+      routingNumber: '021000021',
+    };
+
+    const newWithdrawal: WithdrawalRequest = {
+      id: `WD-ADM-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 900)}`,
+      type: 'super_admin',
+      businessName: 'URSPOT Platform Treasury',
+      requestedByUserId: state.currentUser?.id || 'user-superadmin',
+      requestedByUserName: state.currentUser?.fullName || 'Super Admin',
+      amount,
+      maskedBankAccount: superAdminBank.accountMasked,
+      bankAccountHolder: superAdminBank.accountHolder,
+      status: 'Completed',
+      requestDate: new Date().toISOString(),
+      processedDate: new Date().toISOString(),
+      processedBy: state.currentUser?.fullName || 'Super Admin',
+    };
+
+    const ledgerEntry: MarketplaceTransaction = {
+      id: `TX-ADM-WD-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 900)}`,
+      bookingId: newWithdrawal.id,
+      type: 'ADMIN_WITHDRAWAL',
+      customerName: 'Platform Treasury Payout',
+      businessId: 'super-admin-treasury',
+      businessName: 'URSPOT Platform Operations',
+      serviceName: `Admin Commission Withdrawal (${superAdminBank.accountMasked})`,
+      grossAmount: amount,
+      commissionRate: 0,
+      platformCommission: amount,
+      w9Submitted: true,
+      w9WithholdingRate: 0,
+      w9WithholdingAmount: 0,
+      businessAmount: 0,
+      currency: 'USD',
+      paymentStatus: 'paid',
+      withdrawalStatus: 'completed',
+      paymentGateway: 'ACH Direct Deposit',
+      maskedBankAccount: superAdminBank.accountMasked,
+      notes: `Super Admin commission disbursement to ${superAdminBank.accountMasked} completed.`,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    setState((prev) => {
+      const prevLedger = prev.platformLedger || DEFAULT_LEDGER_STATE;
+      const updatedWds = [newWithdrawal, ...(prevLedger.withdrawals || [])];
+      const updatedTxs = [ledgerEntry, ...(prevLedger.transactions || [])];
+      const newBalances = calculateLedgerBalances(updatedTxs, updatedWds);
+
+      return {
+        ...prev,
+        platformLedger: {
+          ...prevLedger,
+          platformCommissionBalance: newBalances.superAdminBalance,
+          platformTaxWithholdingBalance: newBalances.totalTaxWithheld,
+          totalPlatformBalance: newBalances.totalPlatformBalance,
+          businessBalances: newBalances.businessBreakdown,
+          withdrawals: updatedWds,
+          transactions: updatedTxs,
+        },
+      };
+    });
+
+    return { success: true, withdrawal: newWithdrawal };
+  };
+
+  // 6. Update Platform Commission Rate
+  const updateCommissionRate = (newRate: number) => {
+    if (isNaN(newRate) || newRate < 0 || newRate > 100) return;
+    localStorage.setItem(PAYMENT_RATE_STORAGE_KEY, newRate.toString());
+    setState((prev) => {
+      const prevLedger = prev.platformLedger || DEFAULT_LEDGER_STATE;
+      return {
+        ...prev,
+        platformLedger: {
+          ...prevLedger,
+          commissionRate: newRate,
+        },
+      };
     });
   };
 
@@ -1633,6 +2254,16 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
         saveVendorBusiness,
         saveW9Data,
         submitW9Data,
+        resetW9Data,
+        // Marketplace Ledger, Balances & Withdrawals
+        platformLedger: state.platformLedger || DEFAULT_LEDGER_STATE,
+        getBusinessBalance,
+        bookServiceWithNmi,
+        requestBusinessWithdrawal,
+        approveWithdrawal,
+        rejectWithdrawal,
+        requestSuperAdminWithdrawal,
+        updateCommissionRate,
         prefillWizardWithDummyData,
         markNotificationAsRead,
         markAllNotificationsAsRead,
