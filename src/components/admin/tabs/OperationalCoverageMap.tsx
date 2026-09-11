@@ -120,15 +120,12 @@ export const OperationalCoverageMap: React.FC<OperationalCoverageMapProps> = ({
     markersGroup.clearLayers();
 
     regions.forEach((reg) => {
-      // Custom modern HTML pin
+      // Emerald radar concentric circle pin matching Image 3
       const pinHtml = `
-        <div class="relative flex flex-col items-center -translate-x-1/2 -translate-y-full cursor-pointer group">
-          <div class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-900 text-white text-[10px] font-bold shadow-lg border border-slate-700 whitespace-nowrap mb-0.5 group-hover:bg-indigo-600 transition-colors">
-            <span class="w-1.5 h-1.5 rounded-full ${reg.status === 'Active' ? 'bg-emerald-400' : 'bg-slate-400'}"></span>
-            <span>${coverageType === 'Countries' ? reg.country : coverageType === 'States' ? reg.state : reg.city}</span>
-          </div>
-          <div class="w-4 h-4 rounded-full bg-red-600 border-2 border-white shadow-md flex items-center justify-center">
-            <div class="w-1.5 h-1.5 rounded-full bg-white"></div>
+        <div class="relative flex items-center justify-center -translate-x-1/2 -translate-y-1/2 cursor-pointer group">
+          <div class="absolute w-8 h-8 rounded-full bg-emerald-500/25 animate-ping pointer-events-none"></div>
+          <div class="w-6 h-6 rounded-full bg-emerald-500/30 border border-emerald-600/70 flex items-center justify-center shadow-md group-hover:scale-125 transition-transform">
+            <div class="w-2.5 h-2.5 rounded-full bg-emerald-700"></div>
           </div>
         </div>
       `;
@@ -136,9 +133,9 @@ export const OperationalCoverageMap: React.FC<OperationalCoverageMapProps> = ({
       const customIcon = L.divIcon({
         html: pinHtml,
         className: 'custom-map-pin',
-        iconSize: [0, 0],
-        iconAnchor: [0, 0],
-        popupAnchor: [0, -28],
+        iconSize: [24, 24],
+        iconAnchor: [12, 12],
+        popupAnchor: [0, -14],
       });
 
       const marker = L.marker([reg.lat, reg.lng], { icon: customIcon }).addTo(markersGroup);

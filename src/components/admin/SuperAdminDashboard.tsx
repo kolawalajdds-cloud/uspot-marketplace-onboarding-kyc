@@ -39,6 +39,10 @@ import {
   Shield,
   FileCheck2,
   CreditCard,
+  Tag,
+  Calendar,
+  LifeBuoy,
+  Sliders,
 } from 'lucide-react';
 
 export type SuperAdminNavTab =
@@ -53,18 +57,33 @@ export type SuperAdminNavTab =
   | 'assets-services'
   | 'assets-cat-requests'
   | 'management'
+  | 'management-all'
+  | 'management-kyc'
+  | 'management-approved'
+  | 'management-non-subscription'
+  | 'plans'
+  | 'bookings'
   | 'payment'
+  | 'support'
+  | 'subscription'
+  | 'content'
+  | 'config-reference'
+  | 'config-icons'
+  | 'config-geography'
+  | 'config-general'
   | 'settings';
 
 export const SuperAdminDashboard: React.FC = () => {
   const { state, currentUser, users, loginAsUser, logout } = useDemo();
 
-  // Navigation State - default to 'assets-categories' to immediately match user screenshot!
-  const [activeNav, setActiveNav] = useState<SuperAdminNavTab>('assets-categories');
+  // Navigation State - default to 'config-reference' to immediately display new Configuration feature
+  const [activeNav, setActiveNav] = useState<SuperAdminNavTab>('config-reference');
 
   // Collapsible Accordion Sections
-  const [isUsersOpen, setIsUsersOpen] = useState(true);
-  const [isAssetsOpen, setIsAssetsOpen] = useState(true);
+  const [isUsersOpen, setIsUsersOpen] = useState(false);
+  const [isAssetsOpen, setIsAssetsOpen] = useState(false);
+  const [isManagementOpen, setIsManagementOpen] = useState(false);
+  const [isConfigOpen, setIsConfigOpen] = useState(true);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   // Topbar and Modal States
@@ -147,10 +166,22 @@ export const SuperAdminDashboard: React.FC = () => {
   // Switcher Helper for Overview Tab's callback
   const handleOverviewNavigate = (tabKey: 'dashboard' | 'users' | 'assets' | 'management' | 'config') => {
     if (tabKey === 'dashboard') setActiveNav('dashboard');
-    else if (tabKey === 'users') setActiveNav('users-customers');
-    else if (tabKey === 'assets') setActiveNav('assets-categories');
-    else if (tabKey === 'management') setActiveNav('management');
-    else if (tabKey === 'config') setActiveNav('settings');
+    else if (tabKey === 'users') {
+      setIsUsersOpen(true);
+      setActiveNav('users-customers');
+    }
+    else if (tabKey === 'assets') {
+      setIsAssetsOpen(true);
+      setActiveNav('assets-categories');
+    }
+    else if (tabKey === 'management') {
+      setIsManagementOpen(true);
+      setActiveNav('management-all');
+    }
+    else if (tabKey === 'config') {
+      setIsConfigOpen(true);
+      setActiveNav('config-reference');
+    }
   };
 
   // Resolve SubTabs for child tabs
@@ -225,10 +256,11 @@ export const SuperAdminDashboard: React.FC = () => {
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                 activeNav === 'dashboard'
                   ? 'bg-white text-slate-900 font-bold shadow-xs'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-900/60'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/40 border border-transparent'
               }`}
+              title={isSidebarCollapsed ? 'Dashboard' : undefined}
             >
-              <LayoutDashboard className={`w-4 h-4 shrink-0 ${activeNav === 'dashboard' ? 'text-blue-600' : ''}`} />
+              <LayoutDashboard className={`w-4 h-4 shrink-0 ${activeNav === 'dashboard' ? 'text-slate-900' : 'text-slate-400'}`} />
               {!isSidebarCollapsed && <span>Dashboard</span>}
             </button>
 
@@ -238,43 +270,44 @@ export const SuperAdminDashboard: React.FC = () => {
                 id="sidebar-admin-users-toggle"
                 onClick={() => {
                   setIsUsersOpen(!isUsersOpen);
-                  if (!activeNav.startsWith('users-')) {
+                  if (!isUsersOpen && !activeNav.startsWith('users-')) {
                     setActiveNav('users-customers');
                   }
                 }}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                  activeNav.startsWith('users-')
-                    ? 'text-white font-bold bg-slate-800/60'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-900/60'
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+                  isUsersOpen
+                    ? 'bg-[#131d2e] text-white shadow-xs'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/40 rounded-xl font-semibold'
                 }`}
+                title={isSidebarCollapsed ? 'Users' : undefined}
               >
                 <div className="flex items-center gap-3">
-                  <Users className="w-4 h-4 shrink-0" />
+                  <Users className={`w-4 h-4 shrink-0 ${isUsersOpen ? 'text-white' : 'text-slate-400'}`} />
                   {!isSidebarCollapsed && <span>Users</span>}
                 </div>
                 {!isSidebarCollapsed && (
-                  <ChevronDown
-                    className={`w-3.5 h-3.5 text-slate-400 transition-transform ${
-                      isUsersOpen ? 'rotate-180' : ''
-                    }`}
-                  />
+                  isUsersOpen ? (
+                    <ChevronUp className="w-3.5 h-3.5 text-slate-300 shrink-0" />
+                  ) : (
+                    <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  )
                 )}
               </button>
 
               {/* Sub-items: Customers, Partners, Staff */}
               {isUsersOpen && !isSidebarCollapsed && (
-                <div className="pl-6 pr-1 py-1 space-y-1">
+                <div className="pl-6 pr-2 py-1 space-y-1">
                   <button
                     id="sidebar-subtab-customers"
                     onClick={() => setActiveNav('users-customers')}
-                    className={`w-full text-left px-3 py-2 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2 ${
+                    className={`w-full text-left px-3 py-2 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2.5 ${
                       activeNav === 'users-customers'
                         ? 'bg-white text-slate-900 font-bold shadow-xs'
-                        : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-800/40 font-medium'
                     }`}
                   >
                     <span
-                      className={`w-1.5 h-1.5 rounded-full ${
+                      className={`w-1.5 h-1.5 rounded-full shrink-0 ${
                         activeNav === 'users-customers' ? 'bg-blue-600' : 'bg-slate-500'
                       }`}
                     />
@@ -284,14 +317,14 @@ export const SuperAdminDashboard: React.FC = () => {
                   <button
                     id="sidebar-subtab-partners"
                     onClick={() => setActiveNav('users-partners')}
-                    className={`w-full text-left px-3 py-2 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2 ${
+                    className={`w-full text-left px-3 py-2 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2.5 ${
                       activeNav === 'users-partners'
                         ? 'bg-white text-slate-900 font-bold shadow-xs'
-                        : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-800/40 font-medium'
                     }`}
                   >
                     <span
-                      className={`w-1.5 h-1.5 rounded-full ${
+                      className={`w-1.5 h-1.5 rounded-full shrink-0 ${
                         activeNav === 'users-partners' ? 'bg-blue-600' : 'bg-slate-500'
                       }`}
                     />
@@ -301,14 +334,14 @@ export const SuperAdminDashboard: React.FC = () => {
                   <button
                     id="sidebar-subtab-staff"
                     onClick={() => setActiveNav('users-staff')}
-                    className={`w-full text-left px-3 py-2 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2 ${
+                    className={`w-full text-left px-3 py-2 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2.5 ${
                       activeNav === 'users-staff'
                         ? 'bg-white text-slate-900 font-bold shadow-xs'
-                        : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-800/40 font-medium'
                     }`}
                   >
                     <span
-                      className={`w-1.5 h-1.5 rounded-full ${
+                      className={`w-1.5 h-1.5 rounded-full shrink-0 ${
                         activeNav === 'users-staff' ? 'bg-blue-600' : 'bg-slate-500'
                       }`}
                     />
@@ -318,49 +351,50 @@ export const SuperAdminDashboard: React.FC = () => {
               )}
             </div>
 
-            {/* 3. Business Assets (Collapsible Accordion Group - matching screenshot) */}
+            {/* 3. Business Assets (Collapsible Accordion Group) */}
             <div>
               <button
                 id="sidebar-admin-assets-toggle"
                 onClick={() => {
                   setIsAssetsOpen(!isAssetsOpen);
-                  if (!activeNav.startsWith('assets-')) {
+                  if (!isAssetsOpen && !activeNav.startsWith('assets-')) {
                     setActiveNav('assets-categories');
                   }
                 }}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                  activeNav.startsWith('assets-')
-                    ? 'text-white font-bold bg-slate-800/60'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-900/60'
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+                  isAssetsOpen
+                    ? 'bg-[#131d2e] text-white shadow-xs'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/40 rounded-xl font-semibold'
                 }`}
+                title={isSidebarCollapsed ? 'Business Assets' : undefined}
               >
                 <div className="flex items-center gap-3">
-                  <Layers className="w-4 h-4 shrink-0" />
+                  <Layers className={`w-4 h-4 shrink-0 ${isAssetsOpen ? 'text-white' : 'text-slate-400'}`} />
                   {!isSidebarCollapsed && <span>Business Assets</span>}
                 </div>
                 {!isSidebarCollapsed && (
-                  <ChevronDown
-                    className={`w-3.5 h-3.5 text-slate-400 transition-transform ${
-                      isAssetsOpen ? 'rotate-180' : ''
-                    }`}
-                  />
+                  isAssetsOpen ? (
+                    <ChevronUp className="w-3.5 h-3.5 text-slate-300 shrink-0" />
+                  ) : (
+                    <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  )
                 )}
               </button>
 
-              {/* Sub-items matching screenshot: Onboarding, Organizations, Industries, Categories, Services, Cat. Requests */}
+              {/* Sub-items: Onboarding, Organizations, Industries, Categories, Services, Cat. Requests */}
               {isAssetsOpen && !isSidebarCollapsed && (
-                <div className="pl-6 pr-1 py-1 space-y-1">
+                <div className="pl-6 pr-2 py-1 space-y-1">
                   <button
                     id="sidebar-subtab-onboarding"
                     onClick={() => setActiveNav('assets-onboarding')}
-                    className={`w-full text-left px-3 py-2 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2 ${
+                    className={`w-full text-left px-3 py-2 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2.5 ${
                       activeNav === 'assets-onboarding'
                         ? 'bg-white text-slate-900 font-bold shadow-xs'
-                        : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-800/40 font-medium'
                     }`}
                   >
                     <span
-                      className={`w-1.5 h-1.5 rounded-full ${
+                      className={`w-1.5 h-1.5 rounded-full shrink-0 ${
                         activeNav === 'assets-onboarding' ? 'bg-blue-600' : 'bg-slate-500'
                       }`}
                     />
@@ -370,14 +404,14 @@ export const SuperAdminDashboard: React.FC = () => {
                   <button
                     id="sidebar-subtab-organizations"
                     onClick={() => setActiveNav('assets-organizations')}
-                    className={`w-full text-left px-3 py-2 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2 ${
+                    className={`w-full text-left px-3 py-2 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2.5 ${
                       activeNav === 'assets-organizations'
                         ? 'bg-white text-slate-900 font-bold shadow-xs'
-                        : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-800/40 font-medium'
                     }`}
                   >
                     <span
-                      className={`w-1.5 h-1.5 rounded-full ${
+                      className={`w-1.5 h-1.5 rounded-full shrink-0 ${
                         activeNav === 'assets-organizations' ? 'bg-blue-600' : 'bg-slate-500'
                       }`}
                     />
@@ -387,32 +421,31 @@ export const SuperAdminDashboard: React.FC = () => {
                   <button
                     id="sidebar-subtab-industries"
                     onClick={() => setActiveNav('assets-industries')}
-                    className={`w-full text-left px-3 py-2 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2 ${
+                    className={`w-full text-left px-3 py-2 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2.5 ${
                       activeNav === 'assets-industries'
                         ? 'bg-white text-slate-900 font-bold shadow-xs'
-                        : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-800/40 font-medium'
                     }`}
                   >
                     <span
-                      className={`w-1.5 h-1.5 rounded-full ${
+                      className={`w-1.5 h-1.5 rounded-full shrink-0 ${
                         activeNav === 'assets-industries' ? 'bg-blue-600' : 'bg-slate-500'
                       }`}
                     />
                     <span>Industries</span>
                   </button>
 
-                  {/* Categories - Active item in screenshot */}
                   <button
                     id="sidebar-subtab-categories"
                     onClick={() => setActiveNav('assets-categories')}
-                    className={`w-full text-left px-3 py-2 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2 ${
+                    className={`w-full text-left px-3 py-2 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2.5 ${
                       activeNav === 'assets-categories'
                         ? 'bg-white text-slate-900 font-bold shadow-xs'
-                        : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-800/40 font-medium'
                     }`}
                   >
                     <span
-                      className={`w-1.5 h-1.5 rounded-full ${
+                      className={`w-1.5 h-1.5 rounded-full shrink-0 ${
                         activeNav === 'assets-categories' ? 'bg-blue-600' : 'bg-slate-500'
                       }`}
                     />
@@ -422,14 +455,14 @@ export const SuperAdminDashboard: React.FC = () => {
                   <button
                     id="sidebar-subtab-services"
                     onClick={() => setActiveNav('assets-services')}
-                    className={`w-full text-left px-3 py-2 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2 ${
+                    className={`w-full text-left px-3 py-2 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2.5 ${
                       activeNav === 'assets-services'
                         ? 'bg-white text-slate-900 font-bold shadow-xs'
-                        : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-800/40 font-medium'
                     }`}
                   >
                     <span
-                      className={`w-1.5 h-1.5 rounded-full ${
+                      className={`w-1.5 h-1.5 rounded-full shrink-0 ${
                         activeNav === 'assets-services' ? 'bg-blue-600' : 'bg-slate-500'
                       }`}
                     />
@@ -439,14 +472,14 @@ export const SuperAdminDashboard: React.FC = () => {
                   <button
                     id="sidebar-subtab-cat-requests"
                     onClick={() => setActiveNav('assets-cat-requests')}
-                    className={`w-full text-left px-3 py-2 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2 ${
+                    className={`w-full text-left px-3 py-2 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2.5 ${
                       activeNav === 'assets-cat-requests'
                         ? 'bg-white text-slate-900 font-bold shadow-xs'
-                        : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-800/40 font-medium'
                     }`}
                   >
                     <span
-                      className={`w-1.5 h-1.5 rounded-full ${
+                      className={`w-1.5 h-1.5 rounded-full shrink-0 ${
                         activeNav === 'assets-cat-requests' ? 'bg-blue-600' : 'bg-slate-500'
                       }`}
                     />
@@ -456,81 +489,323 @@ export const SuperAdminDashboard: React.FC = () => {
               )}
             </div>
 
-            {/* 4. Business Management / KYC Queue (Accessible also via link or management nav) */}
+            {/* 4. Business Management (Collapsible Accordion Group) */}
+            <div>
+              <button
+                id="sidebar-admin-management-toggle"
+                onClick={() => {
+                  setIsManagementOpen(!isManagementOpen);
+                  if (!isManagementOpen && !activeNav.startsWith('management')) {
+                    setActiveNav('management-all');
+                  }
+                }}
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+                  isManagementOpen
+                    ? 'bg-[#131d2e] text-white shadow-xs'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/40 rounded-xl font-semibold'
+                }`}
+                title={isSidebarCollapsed ? 'Business Management' : undefined}
+              >
+                <div className="flex items-center gap-3">
+                  <CheckCircle2 className={`w-4 h-4 shrink-0 ${isManagementOpen ? 'text-white' : 'text-slate-400'}`} />
+                  {!isSidebarCollapsed && <span>Business Management</span>}
+                </div>
+                {!isSidebarCollapsed && (
+                  isManagementOpen ? (
+                    <ChevronUp className="w-3.5 h-3.5 text-slate-300 shrink-0" />
+                  ) : (
+                    <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  )
+                )}
+              </button>
+
+              {/* Sub-items: All Businesses, KYC Requests, Approved, Non-Subscription */}
+              {isManagementOpen && !isSidebarCollapsed && (
+                <div className="pl-6 pr-2 py-1 space-y-1">
+                  <button
+                    id="sidebar-subtab-all-businesses"
+                    onClick={() => setActiveNav('management-all')}
+                    className={`w-full text-left px-3 py-2 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2.5 ${
+                      activeNav === 'management-all' || activeNav === 'management'
+                        ? 'bg-white text-slate-900 font-bold shadow-xs'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-800/40 font-medium'
+                    }`}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                        activeNav === 'management-all' || activeNav === 'management'
+                          ? 'bg-blue-600'
+                          : 'bg-slate-500'
+                      }`}
+                    />
+                    <span>All Businesses</span>
+                  </button>
+
+                  <button
+                    id="sidebar-subtab-kyc-requests"
+                    onClick={() => setActiveNav('management-kyc')}
+                    className={`w-full text-left px-3 py-2 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2.5 ${
+                      activeNav === 'management-kyc'
+                        ? 'bg-white text-slate-900 font-bold shadow-xs'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-800/40 font-medium'
+                    }`}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                        activeNav === 'management-kyc' ? 'bg-blue-600' : 'bg-slate-500'
+                      }`}
+                    />
+                    <span>KYC Requests</span>
+                  </button>
+
+                  <button
+                    id="sidebar-subtab-approved-businesses"
+                    onClick={() => setActiveNav('management-approved')}
+                    className={`w-full text-left px-3 py-2 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2.5 ${
+                      activeNav === 'management-approved'
+                        ? 'bg-white text-slate-900 font-bold shadow-xs'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-800/40 font-medium'
+                    }`}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                        activeNav === 'management-approved' ? 'bg-blue-600' : 'bg-slate-500'
+                      }`}
+                    />
+                    <span>Approved</span>
+                  </button>
+
+                  <button
+                    id="sidebar-subtab-non-subscription"
+                    onClick={() => setActiveNav('management-non-subscription')}
+                    className={`w-full text-left px-3 py-2 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2.5 ${
+                      activeNav === 'management-non-subscription'
+                        ? 'bg-white text-slate-900 font-bold shadow-xs'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-800/40 font-medium'
+                    }`}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                        activeNav === 'management-non-subscription' ? 'bg-blue-600' : 'bg-slate-500'
+                      }`}
+                    />
+                    <span>Non-Subscription</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* 5. Plans */}
             <button
-              id="sidebar-admin-management"
-              onClick={() => setActiveNav('management')}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                activeNav === 'management'
+              id="sidebar-admin-plans"
+              onClick={() => setActiveNav('plans')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                activeNav === 'plans'
                   ? 'bg-white text-slate-900 font-bold shadow-xs'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-900/60'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/40 border border-transparent'
               }`}
+              title={isSidebarCollapsed ? 'Plans' : undefined}
             >
-              <div className="flex items-center gap-3">
-                <Building2 className={`w-4 h-4 shrink-0 ${activeNav === 'management' ? 'text-blue-600' : ''}`} />
-                {!isSidebarCollapsed && <span>KYC & Businesses</span>}
-              </div>
-              {!isSidebarCollapsed && (() => {
-                const pendingCount = state.businesses.filter(
-                  (b) => b.status === 'Pending KYC Review' || b.verification?.kycSubmitted
-                ).length;
-                const totalUnapproved = state.businesses.filter(
-                  (b) => b.status !== 'KYC Approved' && b.status !== 'Live'
-                ).length;
-                const countToDisplay = pendingCount > 0 ? pendingCount : totalUnapproved;
-                return countToDisplay > 0 ? (
-                  <span className="px-1.5 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-500 text-slate-950 font-mono">
-                    {countToDisplay}
-                  </span>
-                ) : null;
-              })()}
+              <Tag className={`w-4 h-4 shrink-0 ${activeNav === 'plans' ? 'text-slate-900' : 'text-slate-400'}`} />
+              {!isSidebarCollapsed && <span>Plans</span>}
             </button>
 
-            {/* 5. Payment */}
+            {/* 6. Bookings */}
+            <button
+              id="sidebar-admin-bookings"
+              onClick={() => setActiveNav('bookings')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                activeNav === 'bookings'
+                  ? 'bg-white text-slate-900 font-bold shadow-xs'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/40 border border-transparent'
+              }`}
+              title={isSidebarCollapsed ? 'Bookings' : undefined}
+            >
+              <Calendar className={`w-4 h-4 shrink-0 ${activeNav === 'bookings' ? 'text-slate-900' : 'text-slate-400'}`} />
+              {!isSidebarCollapsed && <span>Bookings</span>}
+            </button>
+
+            {/* 7. Payments */}
             <button
               id="sidebar-admin-payment"
               onClick={() => setActiveNav('payment')}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                 activeNav === 'payment'
                   ? 'bg-white text-slate-900 font-bold shadow-xs'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-900/60'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/40 border border-transparent'
               }`}
-              title={isSidebarCollapsed ? 'Payment' : undefined}
+              title={isSidebarCollapsed ? 'Payments' : undefined}
             >
-              <div className="flex items-center gap-3">
-                <CreditCard className={`w-4 h-4 shrink-0 ${activeNav === 'payment' ? 'text-blue-600' : ''}`} />
-                {!isSidebarCollapsed && <span>Payment</span>}
-              </div>
-              {!isSidebarCollapsed && (
-                <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
-                  activeNav === 'payment'
-                    ? 'bg-slate-100 text-slate-700 font-bold'
-                    : 'text-slate-500 bg-slate-800/80 border border-slate-700/50'
-                }`}>
-                  %
-                </span>
-              )}
+              <CreditCard className={`w-4 h-4 shrink-0 ${activeNav === 'payment' ? 'text-slate-900' : 'text-slate-400'}`} />
+              {!isSidebarCollapsed && <span>Payments</span>}
             </button>
+
+            {/* 8. Support */}
+            <button
+              id="sidebar-admin-support"
+              onClick={() => setActiveNav('support')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                activeNav === 'support'
+                  ? 'bg-white text-slate-900 font-bold shadow-xs'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/40 border border-transparent'
+              }`}
+              title={isSidebarCollapsed ? 'Support' : undefined}
+            >
+              <LifeBuoy className={`w-4 h-4 shrink-0 ${activeNav === 'support' ? 'text-slate-900' : 'text-slate-400'}`} />
+              {!isSidebarCollapsed && <span>Support</span>}
+            </button>
+
+            {/* 9. Subscription */}
+            <button
+              id="sidebar-admin-subscription"
+              onClick={() => setActiveNav('subscription')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                activeNav === 'subscription'
+                  ? 'bg-white text-slate-900 font-bold shadow-xs'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/40 border border-transparent'
+              }`}
+              title={isSidebarCollapsed ? 'Subscription' : undefined}
+            >
+              <ShieldCheck className={`w-4 h-4 shrink-0 ${activeNav === 'subscription' ? 'text-slate-900' : 'text-slate-400'}`} />
+              {!isSidebarCollapsed && <span>Subscription</span>}
+            </button>
+
+            {/* 10. Content */}
+            <button
+              id="sidebar-admin-content"
+              onClick={() => setActiveNav('content')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                activeNav === 'content'
+                  ? 'bg-white text-slate-900 font-bold shadow-xs'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/40 border border-transparent'
+              }`}
+              title={isSidebarCollapsed ? 'Content' : undefined}
+            >
+              <FileText className={`w-4 h-4 shrink-0 ${activeNav === 'content' ? 'text-slate-900' : 'text-slate-400'}`} />
+              {!isSidebarCollapsed && <span>Content</span>}
+            </button>
+
+            {/* 11. Configuration (Collapsible Accordion Group) */}
+            <div>
+              <button
+                id="sidebar-admin-configuration-toggle"
+                onClick={() => {
+                  setIsConfigOpen(!isConfigOpen);
+                  if (!isConfigOpen && !activeNav.startsWith('config-')) {
+                    setActiveNav('config-reference');
+                  }
+                }}
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+                  isConfigOpen
+                    ? 'bg-[#131d2e] text-white shadow-xs'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/40 rounded-xl font-semibold'
+                }`}
+                title={isSidebarCollapsed ? 'Configuration' : undefined}
+              >
+                <div className="flex items-center gap-3">
+                  <Settings className={`w-4 h-4 shrink-0 ${isConfigOpen ? 'text-white' : 'text-slate-400'}`} />
+                  {!isSidebarCollapsed && <span>Configuration</span>}
+                </div>
+                {!isSidebarCollapsed && (
+                  isConfigOpen ? (
+                    <ChevronUp className="w-3.5 h-3.5 text-slate-300 shrink-0" />
+                  ) : (
+                    <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  )
+                )}
+              </button>
+
+              {/* Sub-items: Reference Data, Icons, Geography, Configuration */}
+              {isConfigOpen && !isSidebarCollapsed && (
+                <div className="pl-6 pr-2 py-1 space-y-1">
+                  <button
+                    id="sidebar-subtab-reference-data"
+                    onClick={() => setActiveNav('config-reference')}
+                    className={`w-full text-left px-3 py-2 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2.5 ${
+                      activeNav === 'config-reference'
+                        ? 'bg-white text-slate-900 font-bold shadow-xs'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-800/40 font-medium'
+                    }`}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                        activeNav === 'config-reference' ? 'bg-blue-600' : 'bg-slate-500'
+                      }`}
+                    />
+                    <span>Reference Data</span>
+                  </button>
+
+                  <button
+                    id="sidebar-subtab-icons"
+                    onClick={() => setActiveNav('config-icons')}
+                    className={`w-full text-left px-3 py-2 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2.5 ${
+                      activeNav === 'config-icons'
+                        ? 'bg-white text-slate-900 font-bold shadow-xs'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-800/40 font-medium'
+                    }`}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                        activeNav === 'config-icons' ? 'bg-blue-600' : 'bg-slate-500'
+                      }`}
+                    />
+                    <span>Icons</span>
+                  </button>
+
+                  <button
+                    id="sidebar-subtab-geography"
+                    onClick={() => setActiveNav('config-geography')}
+                    className={`w-full text-left px-3 py-2 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2.5 ${
+                      activeNav === 'config-geography'
+                        ? 'bg-white text-slate-900 font-bold shadow-xs'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-800/40 font-medium'
+                    }`}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                        activeNav === 'config-geography' ? 'bg-blue-600' : 'bg-slate-500'
+                      }`}
+                    />
+                    <span>Geography</span>
+                  </button>
+
+                  <button
+                    id="sidebar-subtab-configuration"
+                    onClick={() => setActiveNav('config-general')}
+                    className={`w-full text-left px-3 py-2 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2.5 ${
+                      activeNav === 'config-general'
+                        ? 'bg-white text-slate-900 font-bold shadow-xs'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-800/40 font-medium'
+                    }`}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                        activeNav === 'config-general' ? 'bg-blue-600' : 'bg-slate-500'
+                      }`}
+                    />
+                    <span>Configuration</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </nav>
         </div>
 
         {/* Sidebar Footer matching screenshot: System Status, Settings, Logout */}
         <div className="p-3 border-t border-slate-800/80 space-y-1.5">
-          {/* System Status: Online (as shown in screenshot) */}
+          {/* System Status: Online */}
           {!isSidebarCollapsed ? (
-            <div className="px-3 py-2 rounded-xl bg-slate-900/80 border border-slate-800/60 flex items-center justify-between">
-              <span className="text-[11px] font-medium text-slate-400">System Status</span>
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span className="text-[11px] font-bold text-emerald-400">Online</span>
-              </div>
+            <div className="px-3.5 py-2.5 rounded-xl bg-black/90 border border-slate-800/80 flex items-center justify-between">
+              <span className="text-xs font-medium text-slate-300">
+                System Status: <span className="font-bold text-white">Online</span>
+              </span>
+              <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></span>
             </div>
           ) : (
             <div className="w-8 h-8 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center mx-auto" title="System Status: Online">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+              <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></span>
             </div>
           )}
-
         </div>
 
         {/* Bottom User Quick Action & Logout */}
@@ -539,10 +814,10 @@ export const SuperAdminDashboard: React.FC = () => {
           <button
             id="sidebar-admin-settings"
             onClick={() => setActiveNav('settings')}
-            className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs transition-colors cursor-pointer ${
+            className={`w-full flex items-center gap-3 px-3.5 py-2 rounded-xl text-xs transition-colors cursor-pointer ${
               activeNav === 'settings'
                 ? 'bg-white text-slate-900 font-bold shadow-xs'
-                : 'text-slate-400 hover:text-white hover:bg-slate-900/60'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/40 font-medium'
             }`}
           >
             <Settings className="w-4 h-4 shrink-0" />
@@ -553,7 +828,7 @@ export const SuperAdminDashboard: React.FC = () => {
           <button
             id="sidebar-admin-logout"
             onClick={logout}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-950/30 transition-colors cursor-pointer"
+            className="w-full flex items-center gap-3 px-3.5 py-2 rounded-xl text-xs text-slate-400 hover:text-white hover:bg-slate-800/40 transition-colors cursor-pointer font-medium"
           >
             <LogOut className="w-4 h-4 shrink-0" />
             {!isSidebarCollapsed && <span>Logout</span>}
@@ -762,7 +1037,7 @@ export const SuperAdminDashboard: React.FC = () => {
         {/* Dynamic Content Display Area */}
         <main className="p-6 max-w-7xl w-full mx-auto space-y-6">
           {/* Action callout banner if any business is pending review/unapproved and activeNav is not management */}
-          {activeNav !== 'management' && (() => {
+          {!activeNav.startsWith('management') && (() => {
             const pendingBizs = state.businesses.filter(
               (b) => b.status === 'Pending KYC Review' || b.verification?.kycSubmitted
             );
@@ -792,7 +1067,7 @@ export const SuperAdminDashboard: React.FC = () => {
                   </div>
                 </div>
                 <button
-                  onClick={() => setActiveNav('management')}
+                  onClick={() => setActiveNav('management-all')}
                   className="px-4 py-2 rounded-xl bg-slate-950 hover:bg-slate-800 text-white text-xs font-bold transition-colors cursor-pointer shadow-xs whitespace-nowrap self-start sm:self-auto flex items-center gap-1.5"
                 >
                   <span>Review & Approve Now</span>
@@ -828,15 +1103,93 @@ export const SuperAdminDashboard: React.FC = () => {
           )}
 
           {/* 4. Business Management (KYC review & applications) */}
-          {activeNav === 'management' && <AdminBusinessManagementTab />}
+          {(activeNav === 'management' || activeNav.startsWith('management-')) && (
+            <AdminBusinessManagementTab
+              key={activeNav}
+              initialSubTab={
+                activeNav === 'management-kyc'
+                  ? 'kyc-requests'
+                  : activeNav === 'management-approved'
+                  ? 'approved'
+                  : activeNav === 'management-non-subscription'
+                  ? 'non-subscription'
+                  : 'all'
+              }
+            />
+          )}
 
           {/* 5. Payment Configuration */}
           {activeNav === 'payment' && (
             <AdminPaymentTab onSaveSuccess={(rate) => showToast(`Payment percentage updated to ${rate}% successfully!`)} />
           )}
 
-          {/* 6. Configuration & System Settings */}
-          {activeNav === 'settings' && <AdminConfigurationTab />}
+          {/* 6. Module Placeholders for Secondary Nav */}
+          {['plans', 'bookings', 'support', 'subscription', 'content'].includes(activeNav) && (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-12 text-center space-y-4 animate-in fade-in">
+              <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-600 flex items-center justify-center mx-auto shadow-2xs">
+                {activeNav === 'plans' && <Tag className="w-6 h-6" />}
+                {activeNav === 'bookings' && <Calendar className="w-6 h-6" />}
+                {activeNav === 'support' && <LifeBuoy className="w-6 h-6" />}
+                {activeNav === 'subscription' && <ShieldCheck className="w-6 h-6" />}
+                {activeNav === 'content' && <FileText className="w-6 h-6" />}
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-900 capitalize">{activeNav} Management</h3>
+                <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+                  Manage platform {activeNav} policies, customer subscriptions, and business terms.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* 7. Configuration Sub-Tabs (Reference Data, Icons, Geography, Configuration) */}
+          {activeNav === 'config-reference' && (
+            <AdminConfigurationTab
+              initialSubOption="reference-data"
+              onSubOptionChange={(sub) => {
+                if (sub === 'reference-data') setActiveNav('config-reference');
+                else if (sub === 'icons') setActiveNav('config-icons');
+                else if (sub === 'geography') setActiveNav('config-geography');
+                else if (sub === 'configuration') setActiveNav('config-general');
+              }}
+            />
+          )}
+
+          {activeNav === 'config-icons' && (
+            <AdminConfigurationTab
+              initialSubOption="icons"
+              onSubOptionChange={(sub) => {
+                if (sub === 'reference-data') setActiveNav('config-reference');
+                else if (sub === 'icons') setActiveNav('config-icons');
+                else if (sub === 'geography') setActiveNav('config-geography');
+                else if (sub === 'configuration') setActiveNav('config-general');
+              }}
+            />
+          )}
+
+          {activeNav === 'config-geography' && (
+            <AdminConfigurationTab
+              initialSubOption="geography"
+              onSubOptionChange={(sub) => {
+                if (sub === 'reference-data') setActiveNav('config-reference');
+                else if (sub === 'icons') setActiveNav('config-icons');
+                else if (sub === 'geography') setActiveNav('config-geography');
+                else if (sub === 'configuration') setActiveNav('config-general');
+              }}
+            />
+          )}
+
+          {(activeNav === 'config-general' || activeNav === 'settings') && (
+            <AdminConfigurationTab
+              initialSubOption="configuration"
+              onSubOptionChange={(sub) => {
+                if (sub === 'reference-data') setActiveNav('config-reference');
+                else if (sub === 'icons') setActiveNav('config-icons');
+                else if (sub === 'geography') setActiveNav('config-geography');
+                else if (sub === 'configuration') setActiveNav('config-general');
+              }}
+            />
+          )}
         </main>
       </div>
 
