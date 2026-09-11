@@ -50,7 +50,6 @@ export const CustomerHomeView: React.FC<CustomerHomeViewProps> = ({
     };
 
     return state.businesses.map((b) => {
-      const isCertified = Boolean(b.w9 && (b.w9.status === 'submitted' || b.w9.status === 'verified'));
       const cover =
         b.imageGallery?.find((img) => img.isCover)?.url ||
         defaultImages[b.id] ||
@@ -61,8 +60,6 @@ export const CustomerHomeView: React.FC<CustomerHomeViewProps> = ({
         name: b.coreDetails.businessName,
         rating: b.id === 'biz-001' ? '5.0' : b.id === 'biz-002' ? '4.9' : b.id === 'biz-003' ? '4.9' : '4.8',
         location: `${b.coreDetails.city}, ${b.coreDetails.state}`,
-        isCertified,
-        badge: isCertified ? 'W-9 Certified (0% Tax)' : 'W-9 Missing (24% IRS Withholding)',
         image: cover,
       };
     });
@@ -151,9 +148,8 @@ export const CustomerHomeView: React.FC<CustomerHomeViewProps> = ({
 
     if (res.success && res.transaction) {
       const t = res.transaction;
-      const isWithheld = t.w9WithholdingAmount > 0;
       setQuickTestNotice(
-        `✓ "${t.businessName}": Gross $100.00 | Super Admin Commission: $${t.platformCommission.toFixed(2)} (${t.commissionRate}%) | IRS Tax: $${t.w9WithholdingAmount.toFixed(2)} (${isWithheld ? '24% backup withholding charged' : '0% W-9 certified'}) | Business Net: $${t.businessAmount.toFixed(2)}`
+        `✓ Simulated $100 payment for "${t.businessName}". Transaction ${t.id} successfully processed via NMI Gateway.`
       );
       setTimeout(() => setQuickTestNotice(null), 10000);
     }
@@ -232,10 +228,10 @@ export const CustomerHomeView: React.FC<CustomerHomeViewProps> = ({
                 </span>
               </div>
               <h2 className="text-lg font-black text-white mt-1">
-                Simulate Customer Booking & Internal Balance Flow ($100 Example)
+                Simulate Customer Booking ($100 Service)
               </h2>
               <p className="text-xs text-slate-400 mt-0.5">
-                Customer pays $100 via NMI Gateway → Checks live W-9 status of target business → If W-9 is not filled, Super Admin charges 24% IRS withholding.
+                Simulate a $100 checkout via the NMI Payment Gateway to test platform settlement and merchant balance allocation.
               </p>
             </div>
 
@@ -246,7 +242,7 @@ export const CustomerHomeView: React.FC<CustomerHomeViewProps> = ({
                 className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition-all cursor-pointer shadow-md flex items-center gap-2 border border-slate-700"
               >
                 <CreditCard className="w-3.5 h-3.5 text-blue-400" />
-                <span>Test Booking: The Nexus ($100)</span>
+                <span>Simulate $100: The Nexus</span>
               </button>
 
               <button
@@ -255,7 +251,7 @@ export const CustomerHomeView: React.FC<CustomerHomeViewProps> = ({
                 className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition-all cursor-pointer shadow-md flex items-center gap-2 border border-slate-700"
               >
                 <CreditCard className="w-3.5 h-3.5 text-amber-400" />
-                <span>Test Booking: Apex Studios ($100)</span>
+                <span>Simulate $100: Apex Studios</span>
               </button>
             </div>
           </div>
@@ -367,26 +363,13 @@ export const CustomerHomeView: React.FC<CustomerHomeViewProps> = ({
                 className="bg-white rounded-2xl border border-slate-200/90 overflow-hidden flex flex-col justify-between p-3.5 hover:shadow-md transition-all group"
               >
                 <div>
-                  {/* Image Container with Live W-9 Status Badge */}
+                  {/* Image Container */}
                   <div className="h-44 w-full rounded-xl bg-slate-100 overflow-hidden relative mb-3">
                     <img
                       src={salon.image}
                       alt={salon.name}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />
-                    <div className="absolute top-2.5 left-2.5">
-                      {salon.isCertified ? (
-                        <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-emerald-600/95 text-white shadow-xs backdrop-blur-xs flex items-center gap-1">
-                          <Check className="w-3 h-3" />
-                          <span>W-9 Certified (0% Tax)</span>
-                        </span>
-                      ) : (
-                        <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-amber-600/95 text-white shadow-xs backdrop-blur-xs flex items-center gap-1">
-                          <AlertCircle className="w-3 h-3" />
-                          <span>W-9 Missing (24% Tax)</span>
-                        </span>
-                      )}
-                    </div>
                   </div>
 
                   {/* Info */}
@@ -576,26 +559,14 @@ export const CustomerHomeView: React.FC<CustomerHomeViewProps> = ({
                     <strong className="text-slate-900 text-sm font-black">${confirmedTransaction.grossAmount.toFixed(2)}</strong>
                   </div>
 
-                  <div className="pt-2 border-t border-slate-200 space-y-1 text-[11px] text-slate-500">
-                    <div className="flex items-center justify-between text-blue-700">
-                      <span>Platform Commission ({confirmedTransaction.commissionRate}%):</span>
-                      <strong className="font-mono">${confirmedTransaction.platformCommission.toFixed(2)}</strong>
-                    </div>
-                    {confirmedTransaction.w9WithholdingAmount > 0 && (
-                      <div className="flex items-center justify-between text-amber-700">
-                        <span>IRS Backup Withholding (24% - Missing W-9):</span>
-                        <strong className="font-mono">-${confirmedTransaction.w9WithholdingAmount.toFixed(2)}</strong>
-                      </div>
-                    )}
-                    <div className="flex items-center justify-between text-emerald-800 font-semibold">
-                      <span>Credited to Business Balance:</span>
-                      <strong className="font-mono">${confirmedTransaction.businessAmount.toFixed(2)}</strong>
-                    </div>
+                  <div className="flex items-center justify-between text-[11px] text-emerald-700 font-medium pt-2 border-t border-slate-200">
+                    <span>Payment Status:</span>
+                    <span className="font-bold">✓ Confirmed & Processed via NMI</span>
                   </div>
                 </div>
 
                 <p className="text-[11px] text-slate-400 leading-relaxed">
-                  The platform is holding your payment. Balances have been internally allocated between platform treasury and merchant balance.
+                  Your reservation is confirmed. A digital confirmation receipt has been sent to your email.
                 </p>
 
                 <button
@@ -751,63 +722,28 @@ export const CustomerHomeView: React.FC<CustomerHomeViewProps> = ({
                   </div>
                 </div>
 
-                {/* Live W-9 Status & Settlement Allocation Breakdown */}
-                {(() => {
-                  const targetBiz = state.businesses.find((b) => b.id === bookingVenue.id) || state.businesses[0];
-                  const isW9Done = Boolean(targetBiz?.w9 && (targetBiz.w9.status === 'submitted' || targetBiz.w9.status === 'verified'));
-                  const commRate = platformLedger?.commissionRate ?? 10.0;
-                  const commAmt = Number(((paymentAmount * commRate) / 100).toFixed(2));
-                  const taxAmt = isW9Done ? 0 : Number(((paymentAmount * 24.0) / 100).toFixed(2));
-                  const bizNet = Number((paymentAmount - commAmt - taxAmt).toFixed(2));
-
-                  return (
-                    <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-slate-700">Business W-9 Status:</span>
-                        {isW9Done ? (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
-                            <Check className="w-3 h-3 text-emerald-600" />
-                            <span>W-9 Certified (0% Tax)</span>
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-900 border border-amber-200 flex items-center gap-1">
-                            <AlertCircle className="w-3 h-3 text-amber-600" />
-                            <span>W-9 Missing (24% IRS Withheld)</span>
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="pt-2 border-t border-slate-200/80 space-y-1.5 text-[11px]">
-                        <div className="flex items-center justify-between text-slate-600">
-                          <span>Super Admin Commission ({commRate}%):</span>
-                          <span className="font-mono font-semibold">${commAmt.toFixed(2)}</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className={taxAmt > 0 ? 'text-amber-800 font-semibold' : 'text-slate-500'}>
-                            IRS Backup Withholding ({isW9Done ? '0%' : '24%'}):
-                          </span>
-                          <span className={`font-mono font-bold ${taxAmt > 0 ? 'text-amber-700' : 'text-slate-400'}`}>
-                            {taxAmt > 0 ? `-$${taxAmt.toFixed(2)}` : '$0.00'}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between text-slate-900 font-bold pt-1 border-t border-slate-200/60">
-                          <span>Net Disbursable to Business:</span>
-                          <span className="font-mono font-black text-emerald-700">${bizNet.toFixed(2)}</span>
-                        </div>
-                      </div>
-
-                      {!isW9Done && (
-                        <p className="text-[10px] text-amber-800 bg-amber-50/80 p-2 rounded-xl border border-amber-200/60 leading-tight">
-                          ℹ Because this business has not completed Form W-9, Super Admin charges 24% IRS backup withholding to platform tax escrow.
-                        </p>
-                      )}
-                    </div>
-                  );
-                })()}
+                {/* Order Summary */}
+                <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs space-y-2">
+                  <div className="flex items-center justify-between text-slate-700 font-medium">
+                    <span>Service Reservation:</span>
+                    <span className="font-bold text-slate-900">{bookingVenue.name}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-slate-500 text-[11px]">
+                    <span>Standard Rate:</span>
+                    <span className="font-mono">${paymentAmount.toFixed(2)}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-slate-500 text-[11px]">
+                    <span>Platform Booking & Processing:</span>
+                    <span className="font-mono text-emerald-700 font-semibold">$0.00 (Included)</span>
+                  </div>
+                </div>
 
                 {/* Price Breakdown */}
-                <div className="p-3 bg-slate-100/70 rounded-xl text-xs flex items-center justify-between">
-                  <span className="font-semibold text-slate-700">Total Customer Payment</span>
+                <div className="p-3.5 bg-slate-100/80 rounded-xl text-xs flex items-center justify-between border border-slate-200/60">
+                  <div>
+                    <span className="font-bold text-slate-800 block text-xs">Total Amount Due</span>
+                    <span className="text-[10px] text-slate-400">Processed securely via NMI 256-bit TLS</span>
+                  </div>
                   <span className="font-mono font-black text-slate-950 text-base">
                     ${paymentAmount.toFixed(2)} USD
                   </span>
