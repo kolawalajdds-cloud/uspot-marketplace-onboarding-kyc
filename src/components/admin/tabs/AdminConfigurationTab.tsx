@@ -47,6 +47,10 @@ import {
   Activity,
   Terminal,
   Server,
+  MessageSquare,
+  Flame,
+  Phone,
+  BellRing,
 } from 'lucide-react';
 import {
   IconAssetRecord,
@@ -64,6 +68,8 @@ import {
   INITIAL_GEOGRAPHY_REGIONS,
   INITIAL_NMI_ADMIN_CONFIGS,
   INITIAL_NMI_ADMIN_AUDIT,
+  INITIAL_TWILIO_ADMIN_CONFIGS,
+  INITIAL_FIREBASE_ADMIN_CONFIGS,
 } from '../../../data/configurationData';
 import { OperationalCoverageMap } from './OperationalCoverageMap';
 import { useDemo } from '../../../context/DemoContext';
@@ -534,8 +540,13 @@ export const AdminConfigurationTab: React.FC<AdminConfigurationTabProps> = ({
 
   // NMI Configuration Variables (admin_configs under group = 'nmi')
   const [nmiConfigs, setNmiConfigs] = useState<AdminConfigRecord[]>(INITIAL_NMI_ADMIN_CONFIGS);
+  // Twilio Configuration Variables (admin_configs under group = 'twilio')
+  const [twilioConfigs, setTwilioConfigs] = useState<AdminConfigRecord[]>(INITIAL_TWILIO_ADMIN_CONFIGS);
+  // Firebase Configuration Variables (admin_configs under group = 'firebase')
+  const [firebaseConfigs, setFirebaseConfigs] = useState<AdminConfigRecord[]>(INITIAL_FIREBASE_ADMIN_CONFIGS);
+
   const [nmiAudits, setNmiAudits] = useState<AdminConfigAuditRecord[]>(INITIAL_NMI_ADMIN_AUDIT);
-  const [configSubTab, setConfigSubTab] = useState<'nmi' | 'audit' | 'fees'>('nmi');
+  const [configSubTab, setConfigSubTab] = useState<'nmi' | 'twilio' | 'firebase' | 'audit' | 'fees'>('nmi');
   const [revealedSecrets, setRevealedSecrets] = useState<Record<string, boolean>>({});
 
   // Rotate Secret Key Modal State
@@ -543,7 +554,7 @@ export const AdminConfigurationTab: React.FC<AdminConfigurationTabProps> = ({
   const [targetConfigForRotation, setTargetConfigForRotation] = useState<AdminConfigRecord | null>(null);
   const [newSecretValue, setNewSecretValue] = useState('');
 
-  // Test Ping Gateway State
+  // Test Ping Gateway State (NMI)
   const [isTestingNmiConnection, setIsTestingNmiConnection] = useState(false);
   const [nmiTestDiagnostic, setNmiTestDiagnostic] = useState<{
     success: boolean;
@@ -552,6 +563,30 @@ export const AdminConfigurationTab: React.FC<AdminConfigurationTabProps> = ({
     latencyMs: number;
     timestamp: string;
     responseBody: string;
+  } | null>(null);
+
+  // Test State (Twilio)
+  const [isTestingTwilio, setIsTestingTwilio] = useState(false);
+  const [twilioTestDiagnostic, setTwilioTestDiagnostic] = useState<{
+    success: boolean;
+    statusText: string;
+    senderPhone: string;
+    recipientTest: string;
+    latencyMs: number;
+    timestamp: string;
+    sid: string;
+  } | null>(null);
+
+  // Test State (Firebase)
+  const [isTestingFirebase, setIsTestingFirebase] = useState(false);
+  const [firebaseTestDiagnostic, setFirebaseTestDiagnostic] = useState<{
+    success: boolean;
+    statusText: string;
+    projectId: string;
+    clientEmail: string;
+    latencyMs: number;
+    timestamp: string;
+    tokenExpiry: string;
   } | null>(null);
 
   // Toggle secret visibility
@@ -575,20 +610,50 @@ export const AdminConfigurationTab: React.FC<AdminConfigurationTabProps> = ({
     const newLast4 = trimmed.slice(-4);
     const mockHash = Array.from(new Uint8Array(32), () => Math.floor(Math.random() * 16).toString(16)).join('');
 
-    // Update config record
-    setNmiConfigs((prev) =>
-      prev.map((cfg) => {
-        if (cfg.id === targetConfigForRotation.id) {
-          return {
-            ...cfg,
-            valueEncrypted: `aes256gcm:iv_${Math.random().toString(36).slice(2, 6)}:tag_${Math.random().toString(36).slice(2, 6)}:enc_${trimmed}`,
-            valueLast4: newLast4,
-            updatedAt: new Date().toISOString(),
-          };
-        }
-        return cfg;
-      })
-    );
+    // Update config record based on target group
+    if (targetConfigForRotation.group === 'nmi') {
+      setNmiConfigs((prev) =>
+        prev.map((cfg) => {
+          if (cfg.id === targetConfigForRotation.id) {
+            return {
+              ...cfg,
+              valueEncrypted: `aes256gcm:iv_${Math.random().toString(36).slice(2, 6)}:tag_${Math.random().toString(36).slice(2, 6)}:enc_${trimmed}`,
+              valueLast4: newLast4,
+              updatedAt: new Date().toISOString(),
+            };
+          }
+          return cfg;
+        })
+      );
+    } else if (targetConfigForRotation.group === 'twilio') {
+      setTwilioConfigs((prev) =>
+        prev.map((cfg) => {
+          if (cfg.id === targetConfigForRotation.id) {
+            return {
+              ...cfg,
+              valueEncrypted: `aes256gcm:iv_${Math.random().toString(36).slice(2, 6)}:tag_${Math.random().toString(36).slice(2, 6)}:enc_${trimmed}`,
+              valueLast4: newLast4,
+              updatedAt: new Date().toISOString(),
+            };
+          }
+          return cfg;
+        })
+      );
+    } else if (targetConfigForRotation.group === 'firebase') {
+      setFirebaseConfigs((prev) =>
+        prev.map((cfg) => {
+          if (cfg.id === targetConfigForRotation.id) {
+            return {
+              ...cfg,
+              valueEncrypted: `aes256gcm:iv_${Math.random().toString(36).slice(2, 6)}:tag_${Math.random().toString(36).slice(2, 6)}:enc_${trimmed}`,
+              valueLast4: newLast4,
+              updatedAt: new Date().toISOString(),
+            };
+          }
+          return cfg;
+        })
+      );
+    }
 
     // Append to admin_config_audit
     const auditEntry: AdminConfigAuditRecord = {
@@ -610,10 +675,10 @@ export const AdminConfigurationTab: React.FC<AdminConfigurationTabProps> = ({
 
     setNmiAudits((prev) => [auditEntry, ...prev]);
     setIsRotateKeyModalOpen(false);
-    showToast(`✓ ${targetConfigForRotation.key} rotated successfully (AES-256-GCM) and logged to admin_config_audit.`);
+    showToast(`✓ [${targetConfigForRotation.group.toUpperCase()}] ${targetConfigForRotation.key} rotated successfully (AES-256-GCM) and logged to admin_config_audit.`);
   };
 
-  // Run Test Ping
+  // Run Test Ping (NMI)
   const handleRunNmiTest = () => {
     setIsTestingNmiConnection(true);
     setNmiTestDiagnostic(null);
@@ -654,16 +719,111 @@ export const AdminConfigurationTab: React.FC<AdminConfigurationTabProps> = ({
     }, 750);
   };
 
-  // Handle URL change
-  const handleUpdatePlainConfig = (key: string, newVal: string) => {
-    setNmiConfigs((prev) =>
-      prev.map((c) => (c.key === key ? { ...c, valuePlain: newVal, updatedAt: new Date().toISOString() } : c))
-    );
+  // Run Test Ping (Twilio)
+  const handleRunTwilioTest = () => {
+    setIsTestingTwilio(true);
+    setTwilioTestDiagnostic(null);
+
+    const sender = twilioConfigs.find((c) => c.key === 'sender_phone')?.valuePlain || '+18559281042';
+
+    setTimeout(() => {
+      setIsTestingTwilio(false);
+      const latency = Math.floor(Math.random() * 45) + 85;
+      const diag = {
+        success: true,
+        statusText: '200 OK — Twilio SMS Super Network Handshake Verified',
+        senderPhone: sender,
+        recipientTest: '+1 (555) 019-2834',
+        latencyMs: latency,
+        timestamp: new Date().toLocaleTimeString(),
+        sid: `SM_sim_${Math.random().toString(36).slice(2, 11)}`,
+      };
+      setTwilioTestDiagnostic(diag);
+
+      const auditEntry: AdminConfigAuditRecord = {
+        id: `aud-${Date.now()}`,
+        configId: 'cfg-twilio-002',
+        group: 'twilio',
+        key: 'auth_token',
+        environment: 'sandbox',
+        action: 'TEST',
+        updatedBy: 'Super Admin (You)',
+        oldValueLast4: '0831',
+        newValueLast4: '0831',
+        ipAddress: '192.168.1.45',
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/128.0.0.0',
+        createdAt: new Date().toISOString(),
+      };
+      setNmiAudits((prev) => [auditEntry, ...prev]);
+
+      showToast(`✓ Twilio test SMS dispatched successfully (${latency}ms). Logged to audit.`);
+    }, 750);
+  };
+
+  // Run Test Ping (Firebase)
+  const handleRunFirebaseTest = () => {
+    setIsTestingFirebase(true);
+    setFirebaseTestDiagnostic(null);
+
+    const projId = firebaseConfigs.find((c) => c.key === 'project_id')?.valuePlain || 'urspot-marketplace-prod';
+    const clientEmail = firebaseConfigs.find((c) => c.key === 'client_email')?.valuePlain || 'firebase-adminsdk-m8192@urspot-marketplace-prod.iam.gserviceaccount.com';
+
+    setTimeout(() => {
+      setIsTestingFirebase(false);
+      const latency = Math.floor(Math.random() * 40) + 95;
+      const expiryDate = new Date(Date.now() + 3600 * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const diag = {
+        success: true,
+        statusText: '200 OK — Google OAuth2 Service Account Handshake Verified',
+        projectId: projId,
+        clientEmail,
+        latencyMs: latency,
+        timestamp: new Date().toLocaleTimeString(),
+        tokenExpiry: `${expiryDate} (1 hour validity)`,
+      };
+      setFirebaseTestDiagnostic(diag);
+
+      const auditEntry: AdminConfigAuditRecord = {
+        id: `aud-${Date.now()}`,
+        configId: 'cfg-firebase-003',
+        group: 'firebase',
+        key: 'private_key',
+        environment: 'sandbox',
+        action: 'TEST',
+        updatedBy: 'Super Admin (You)',
+        oldValueLast4: '8192',
+        newValueLast4: '8192',
+        ipAddress: '192.168.1.45',
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/128.0.0.0',
+        createdAt: new Date().toISOString(),
+      };
+      setNmiAudits((prev) => [auditEntry, ...prev]);
+
+      showToast(`✓ Firebase FCM OAuth2 handshake verified (${latency}ms). Logged to audit.`);
+    }, 750);
+  };
+
+  // Handle URL & Plaintext changes across groups
+  const handleUpdatePlainConfig = (group: 'nmi' | 'twilio' | 'firebase', key: string, newVal: string) => {
+    if (group === 'nmi') {
+      setNmiConfigs((prev) =>
+        prev.map((c) => (c.key === key ? { ...c, valuePlain: newVal, updatedAt: new Date().toISOString() } : c))
+      );
+    } else if (group === 'twilio') {
+      setTwilioConfigs((prev) =>
+        prev.map((c) => (c.key === key ? { ...c, valuePlain: newVal, updatedAt: new Date().toISOString() } : c))
+      );
+    } else if (group === 'firebase') {
+      setFirebaseConfigs((prev) =>
+        prev.map((c) => (c.key === key ? { ...c, valuePlain: newVal, updatedAt: new Date().toISOString() } : c))
+      );
+    }
+
     // Log to admin_config_audit
     const auditEntry: AdminConfigAuditRecord = {
       id: `aud-${Date.now()}`,
-      configId: nmiConfigs.find((c) => c.key === key)?.id || `cfg-${key}`,
-      group: 'nmi',
+      configId: `cfg-${group}-${key}`,
+      group,
       key,
       environment: 'sandbox',
       action: 'UPDATE',
@@ -673,7 +833,7 @@ export const AdminConfigurationTab: React.FC<AdminConfigurationTabProps> = ({
       createdAt: new Date().toISOString(),
     };
     setNmiAudits((prev) => [auditEntry, ...prev]);
-    showToast(`✓ ${key} updated and logged.`);
+    showToast(`✓ [${group.toUpperCase()}] ${key} updated and logged.`);
   };
 
   const handleSavePlatformConfig = (e: React.FormEvent) => {
@@ -1546,26 +1706,52 @@ export const AdminConfigurationTab: React.FC<AdminConfigurationTabProps> = ({
                 Platform System Configuration
               </h1>
               <p className="text-xs text-slate-500 mt-1">
-                Database variables for NMI payment gateway (<span className="font-mono font-semibold text-slate-700">admin_configs</span>), AES-256-GCM encryption keys, and change audit ledger (<span className="font-mono font-semibold text-slate-700">admin_config_audit</span>).
+                Database variables for NMI payment gateway, Twilio SMS carrier, and Firebase push notifications (<span className="font-mono font-semibold text-slate-700">admin_configs</span>), AES-256-GCM encryption keys, and change audit ledger (<span className="font-mono font-semibold text-slate-700">admin_config_audit</span>).
               </p>
             </div>
 
             {/* Header Right Actions */}
             <div className="flex items-center gap-2.5 self-start sm:self-auto">
-              <button
-                type="button"
-                onClick={handleRunNmiTest}
-                disabled={isTestingNmiConnection}
-                className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 disabled:opacity-50"
-              >
-                <Activity className={`w-3.5 h-3.5 text-emerald-400 ${isTestingNmiConnection ? 'animate-spin' : ''}`} />
-                <span>{isTestingNmiConnection ? 'Testing Handshake...' : 'Test Gateway Ping'}</span>
-              </button>
+              {configSubTab === 'nmi' && (
+                <button
+                  type="button"
+                  onClick={handleRunNmiTest}
+                  disabled={isTestingNmiConnection}
+                  className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 disabled:opacity-50"
+                >
+                  <Activity className={`w-3.5 h-3.5 text-blue-400 ${isTestingNmiConnection ? 'animate-spin' : ''}`} />
+                  <span>{isTestingNmiConnection ? 'Testing NMI...' : 'Test Gateway Ping'}</span>
+                </button>
+              )}
+
+              {configSubTab === 'twilio' && (
+                <button
+                  type="button"
+                  onClick={handleRunTwilioTest}
+                  disabled={isTestingTwilio}
+                  className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 disabled:opacity-50"
+                >
+                  <Activity className={`w-3.5 h-3.5 text-emerald-400 ${isTestingTwilio ? 'animate-spin' : ''}`} />
+                  <span>{isTestingTwilio ? 'Testing SMS Carrier...' : 'Test SMS Dispatch'}</span>
+                </button>
+              )}
+
+              {configSubTab === 'firebase' && (
+                <button
+                  type="button"
+                  onClick={handleRunFirebaseTest}
+                  disabled={isTestingFirebase}
+                  className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 disabled:opacity-50"
+                >
+                  <Activity className={`w-3.5 h-3.5 text-amber-400 ${isTestingFirebase ? 'animate-spin' : ''}`} />
+                  <span>{isTestingFirebase ? 'Testing FCM OAuth2...' : 'Test FCM Handshake'}</span>
+                </button>
+              )}
             </div>
           </div>
 
           {/* Diagnostic Result Banner (when tested) */}
-          {nmiTestDiagnostic && (
+          {nmiTestDiagnostic && configSubTab === 'nmi' && (
             <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 shadow-2xs space-y-2 animate-in fade-in">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -1585,19 +1771,65 @@ export const AdminConfigurationTab: React.FC<AdminConfigurationTabProps> = ({
             </div>
           )}
 
+          {twilioTestDiagnostic && configSubTab === 'twilio' && (
+            <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 shadow-2xs space-y-2 animate-in fade-in">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span className="text-xs font-bold text-emerald-900">
+                    Twilio SMS Carrier Diagnostic: {twilioTestDiagnostic.statusText}
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-200/80 text-emerald-800 text-[10px] font-mono font-bold">
+                    {twilioTestDiagnostic.latencyMs}ms latency
+                  </span>
+                </div>
+                <span className="text-[10px] text-emerald-700 font-mono">{twilioTestDiagnostic.timestamp}</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-4 text-[11px] text-emerald-800 font-mono bg-emerald-100/60 p-2.5 rounded-xl">
+                <span><strong>Sender Phone:</strong> {twilioTestDiagnostic.senderPhone}</span>
+                <span><strong>Test Recipient:</strong> {twilioTestDiagnostic.recipientTest}</span>
+                <span><strong>Message SID:</strong> {twilioTestDiagnostic.sid}</span>
+                <span><strong>Carrier Status:</strong> <span className="text-emerald-700 font-bold uppercase">Delivered</span></span>
+              </div>
+            </div>
+          )}
+
+          {firebaseTestDiagnostic && configSubTab === 'firebase' && (
+            <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 shadow-2xs space-y-2 animate-in fade-in">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span className="text-xs font-bold text-amber-900">
+                    Firebase Service Account Diagnostic: {firebaseTestDiagnostic.statusText}
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full bg-amber-200/80 text-amber-800 text-[10px] font-mono font-bold">
+                    {firebaseTestDiagnostic.latencyMs}ms latency
+                  </span>
+                </div>
+                <span className="text-[10px] text-amber-700 font-mono">{firebaseTestDiagnostic.timestamp}</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-4 text-[11px] text-amber-900 font-mono bg-amber-100/60 p-2.5 rounded-xl">
+                <span><strong>Project ID:</strong> {firebaseTestDiagnostic.projectId}</span>
+                <span><strong>Client Email:</strong> {firebaseTestDiagnostic.clientEmail}</span>
+                <span><strong>OAuth2 Handshake:</strong> <span className="text-emerald-700 font-bold uppercase">Google JWT Signed & Exchanged</span></span>
+                <span><strong>Token Expiry:</strong> {firebaseTestDiagnostic.tokenExpiry}</span>
+              </div>
+            </div>
+          )}
+
           {/* Configuration Segment Navigation Pills */}
           <div className="flex items-center gap-2 border-b border-slate-200 pb-3 overflow-x-auto">
             <button
               type="button"
               onClick={() => setConfigSubTab('nmi')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
                 configSubTab === 'nmi'
                   ? 'bg-slate-900 text-white shadow-xs'
                   : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
               }`}
             >
-              <Key className="w-3.5 h-3.5" />
-              <span>NMI Gateway (admin_configs)</span>
+              <Key className="w-3.5 h-3.5 text-blue-400" />
+              <span>NMI Gateway</span>
               <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
                 configSubTab === 'nmi' ? 'bg-slate-800 text-slate-200' : 'bg-slate-100 text-slate-600'
               }`}>
@@ -1607,14 +1839,50 @@ export const AdminConfigurationTab: React.FC<AdminConfigurationTabProps> = ({
 
             <button
               type="button"
+              onClick={() => setConfigSubTab('twilio')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
+                configSubTab === 'twilio'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+              }`}
+            >
+              <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Twilio (SMS)</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                configSubTab === 'twilio' ? 'bg-slate-800 text-slate-200' : 'bg-slate-100 text-slate-600'
+              }`}>
+                {twilioConfigs.length}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setConfigSubTab('firebase')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
+                configSubTab === 'firebase'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+              }`}
+            >
+              <Flame className="w-3.5 h-3.5 text-amber-400" />
+              <span>Firebase (Push / FCM)</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                configSubTab === 'firebase' ? 'bg-slate-800 text-slate-200' : 'bg-slate-100 text-slate-600'
+              }`}>
+                {firebaseConfigs.length}
+              </span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => setConfigSubTab('audit')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
                 configSubTab === 'audit'
                   ? 'bg-slate-900 text-white shadow-xs'
                   : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
               }`}
             >
-              <History className="w-3.5 h-3.5" />
+              <History className="w-3.5 h-3.5 text-purple-400" />
               <span>Audit Trail (admin_config_audit)</span>
               <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
                 configSubTab === 'audit' ? 'bg-slate-800 text-slate-200' : 'bg-slate-100 text-slate-600'
@@ -1626,13 +1894,13 @@ export const AdminConfigurationTab: React.FC<AdminConfigurationTabProps> = ({
             <button
               type="button"
               onClick={() => setConfigSubTab('fees')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
                 configSubTab === 'fees'
                   ? 'bg-slate-900 text-white shadow-xs'
                   : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
               }`}
             >
-              <Percent className="w-3.5 h-3.5" />
+              <Percent className="w-3.5 h-3.5 text-indigo-400" />
               <span>Commission & W-9 Rules</span>
             </button>
           </div>
@@ -1777,7 +2045,7 @@ export const AdminConfigurationTab: React.FC<AdminConfigurationTabProps> = ({
                             defaultValue={cfg.valuePlain || ''}
                             onBlur={(e) => {
                               if (e.target.value !== cfg.valuePlain) {
-                                handleUpdatePlainConfig(cfg.key, e.target.value);
+                                handleUpdatePlainConfig('nmi', cfg.key, e.target.value);
                               }
                             }}
                             className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-slate-800 text-xs focus:outline-none focus:bg-white focus:ring-1 focus:ring-slate-900"
@@ -1802,7 +2070,7 @@ export const AdminConfigurationTab: React.FC<AdminConfigurationTabProps> = ({
                   <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl">
                     <button
                       type="button"
-                      onClick={() => handleUpdatePlainConfig('environment', 'sandbox')}
+                      onClick={() => handleUpdatePlainConfig('nmi', 'environment', 'sandbox')}
                       className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                         nmiConfigs.find((c) => c.key === 'environment')?.valuePlain === 'sandbox'
                           ? 'bg-white text-slate-900 shadow-xs'
@@ -1813,7 +2081,7 @@ export const AdminConfigurationTab: React.FC<AdminConfigurationTabProps> = ({
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleUpdatePlainConfig('environment', 'production')}
+                      onClick={() => handleUpdatePlainConfig('nmi', 'environment', 'production')}
                       className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                         nmiConfigs.find((c) => c.key === 'environment')?.valuePlain === 'production'
                           ? 'bg-white text-slate-900 shadow-xs'
@@ -1822,6 +2090,422 @@ export const AdminConfigurationTab: React.FC<AdminConfigurationTabProps> = ({
                     >
                       ● Production
                     </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2: TWILIO (SMS) CONFIGURATION (admin_configs group = 'twilio') */}
+          {configSubTab === 'twilio' && (
+            <div className="space-y-6">
+              {/* Security Storage Callout */}
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-slate-900 to-slate-800 text-white shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-600/30 border border-emerald-500/40 text-emerald-400 flex items-center justify-center shrink-0">
+                    <MessageSquare className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold flex items-center gap-2">
+                      <span>Twilio SMS Service: AES-256-GCM Encrypted Auth Token</span>
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-mono text-[10px]">
+                        group = 'twilio'
+                      </span>
+                    </h4>
+                    <p className="text-[11px] text-slate-300 mt-0.5">
+                      Auth token is encrypted in <code className="text-emerald-300 font-mono">valueEncrypted</code> using AES-256-GCM with distinct IV and tag. Account SID and sender phone are stored in <code className="text-emerald-300 font-mono">valuePlain</code> for outbound SMS dispatch.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-[11px] font-semibold text-slate-400">Carrier Mode:</span>
+                  <span className={`px-2.5 py-1 rounded-lg font-mono text-xs font-bold flex items-center gap-1.5 border ${
+                    twilioConfigs.find((c) => c.key === 'sms_log_only')?.valuePlain === 'true'
+                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                      : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                  }`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${
+                      twilioConfigs.find((c) => c.key === 'sms_log_only')?.valuePlain === 'true' ? 'bg-amber-400' : 'bg-emerald-400 animate-pulse'
+                    }`} />
+                    <span>{twilioConfigs.find((c) => c.key === 'sms_log_only')?.valuePlain === 'true' ? 'Console Mock Mode' : 'Live Carrier Dispatch'}</span>
+                  </span>
+                </div>
+              </div>
+
+              {/* Secret Keys Cards (auth_token) */}
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                      <Lock className="w-4 h-4 text-emerald-600" />
+                      <span>Encrypted Twilio Auth Token</span>
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Stored with <code className="text-slate-600">isSecret = true</code> in the <code className="text-slate-600">admin_configs</code> table.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="divide-y divide-slate-100">
+                  {twilioConfigs
+                    .filter((c) => c.isSecret)
+                    .map((cfg) => {
+                      const isRevealed = Boolean(revealedSecrets[cfg.key]);
+                      return (
+                        <div key={cfg.id} className="p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 hover:bg-slate-50/50 transition-colors">
+                          <div className="space-y-1.5 max-w-md">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-xs font-bold text-slate-900 bg-slate-100 px-2.5 py-1 rounded-lg">
+                                {cfg.key}
+                              </span>
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200/60 font-mono">
+                                AES-256-GCM
+                              </span>
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-600 font-mono">
+                                {cfg.environment}
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-600">{cfg.description}</p>
+                            <p className="text-[10px] text-slate-400 font-mono">
+                              Last updated: {new Date(cfg.updatedAt).toLocaleDateString()} by {cfg.updatedBy}
+                            </p>
+                          </div>
+
+                          {/* Key Display Box & Action */}
+                          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                            <div className="flex items-center gap-2 px-3 py-2 bg-slate-100/90 rounded-xl border border-slate-200/80 font-mono text-xs">
+                              <span className="text-slate-700 select-all">
+                                {isRevealed
+                                  ? `tw_live_token_7a9f41b2e8c0${cfg.valueLast4}`
+                                  : `••••••••••••••••••••••••${cfg.valueLast4}`}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => toggleSecretReveal(cfg.key)}
+                                className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
+                                title={isRevealed ? 'Hide secret' : 'Reveal masked secret'}
+                              >
+                                {isRevealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard?.writeText(cfg.valueLast4 || '');
+                                  showToast(`Copied ${cfg.key} reference.`);
+                                }}
+                                className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
+                                title="Copy"
+                              >
+                                <Copy className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => openRotateKeyModal(cfg)}
+                              className="px-3.5 py-2 rounded-xl border border-slate-200 hover:bg-slate-100 text-xs font-bold text-slate-700 flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                            >
+                              <RefreshCw className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>Rotate Key</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+
+              {/* Non-Secret Parameters (account_sid, sender_phone, sms_log_only) */}
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-5">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                    <Phone className="w-4 h-4 text-emerald-600" />
+                    <span>Twilio Account Parameters & E.164 Sender Phone</span>
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Stored as plaintext in <code className="text-slate-600">valuePlain</code> with <code className="text-slate-600">isSecret = false</code>.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs pt-1">
+                  <div className="space-y-1.5">
+                    <label className="block font-bold text-slate-700">
+                      account_sid (Twilio Account SID)
+                    </label>
+                    <input
+                      type="text"
+                      defaultValue={twilioConfigs.find((c) => c.key === 'account_sid')?.valuePlain || ''}
+                      onBlur={(e) => {
+                        const cur = twilioConfigs.find((c) => c.key === 'account_sid')?.valuePlain;
+                        if (e.target.value !== cur) {
+                          handleUpdatePlainConfig('twilio', 'account_sid', e.target.value);
+                        }
+                      }}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-slate-800 text-xs focus:outline-none focus:bg-white focus:ring-1 focus:ring-slate-900"
+                    />
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      Database field: <code className="text-slate-600">admin_configs.valuePlain</code>
+                    </span>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block font-bold text-slate-700">
+                      sender_phone (Outbound Caller/SMS Number E.164)
+                    </label>
+                    <input
+                      type="text"
+                      defaultValue={twilioConfigs.find((c) => c.key === 'sender_phone')?.valuePlain || ''}
+                      onBlur={(e) => {
+                        const cur = twilioConfigs.find((c) => c.key === 'sender_phone')?.valuePlain;
+                        if (e.target.value !== cur) {
+                          handleUpdatePlainConfig('twilio', 'sender_phone', e.target.value);
+                        }
+                      }}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-slate-800 text-xs focus:outline-none focus:bg-white focus:ring-1 focus:ring-slate-900"
+                    />
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      Must match a verified Twilio carrier caller ID.
+                    </span>
+                  </div>
+                </div>
+
+                {/* sms_log_only Toggle */}
+                <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <span className="text-xs font-bold text-slate-900 block">Mock Mode (sms_log_only)</span>
+                    <span className="text-[11px] text-slate-500">
+                      When enabled, verification codes & SMS notifications are written to server logs only without triggering paid cellular carrier dispatches.
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleUpdatePlainConfig('twilio', 'sms_log_only', 'false')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        twilioConfigs.find((c) => c.key === 'sms_log_only')?.valuePlain === 'false'
+                          ? 'bg-emerald-600 text-white shadow-xs'
+                          : 'text-slate-500 hover:text-slate-900'
+                      }`}
+                    >
+                      ● Live Dispatch
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleUpdatePlainConfig('twilio', 'sms_log_only', 'true')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        twilioConfigs.find((c) => c.key === 'sms_log_only')?.valuePlain === 'true'
+                          ? 'bg-amber-500 text-white shadow-xs'
+                          : 'text-slate-500 hover:text-slate-900'
+                      }`}
+                    >
+                      ● Log Only (Mock)
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 3: FIREBASE (FCM) CONFIGURATION (admin_configs group = 'firebase') */}
+          {configSubTab === 'firebase' && (
+            <div className="space-y-6">
+              {/* Security Storage Callout */}
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-slate-900 to-slate-800 text-white shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-600/30 border border-amber-500/40 text-amber-400 flex items-center justify-center shrink-0">
+                    <Flame className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold flex items-center gap-2">
+                      <span>Firebase Cloud Messaging: AES-256-GCM Encrypted RSA Private Key</span>
+                      <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-mono text-[10px]">
+                        group = 'firebase'
+                      </span>
+                    </h4>
+                    <p className="text-[11px] text-slate-300 mt-0.5">
+                      Service account RSA private key is encrypted in <code className="text-amber-300 font-mono">valueEncrypted</code> using AES-256-GCM with IV and tag. Project ID and client email are stored in <code className="text-amber-300 font-mono">valuePlain</code> for Google OAuth2 token signing.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-[11px] font-semibold text-slate-400">Environment:</span>
+                  <span className="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/30 font-mono text-xs font-bold flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+                    <span>fcm-v1-oauth2</span>
+                  </span>
+                </div>
+              </div>
+
+              {/* Secret Keys Cards (private_key) */}
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                      <Lock className="w-4 h-4 text-amber-600" />
+                      <span>Encrypted Service Account RSA Private Key</span>
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Stored with <code className="text-slate-600">isSecret = true</code> in the <code className="text-slate-600">admin_configs</code> table.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="divide-y divide-slate-100">
+                  {firebaseConfigs
+                    .filter((c) => c.isSecret)
+                    .map((cfg) => {
+                      const isRevealed = Boolean(revealedSecrets[cfg.key]);
+                      return (
+                        <div key={cfg.id} className="p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 hover:bg-slate-50/50 transition-colors">
+                          <div className="space-y-1.5 max-w-md">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-xs font-bold text-slate-900 bg-slate-100 px-2.5 py-1 rounded-lg">
+                                {cfg.key}
+                              </span>
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200/60 font-mono">
+                                AES-256-GCM
+                              </span>
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-600 font-mono">
+                                {cfg.environment}
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-600">{cfg.description}</p>
+                            <p className="text-[10px] text-slate-400 font-mono">
+                              Last updated: {new Date(cfg.updatedAt).toLocaleDateString()} by {cfg.updatedBy}
+                            </p>
+                          </div>
+
+                          {/* Key Display Box & Action */}
+                          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                            <div className="flex items-center gap-2 px-3 py-2 bg-slate-100/90 rounded-xl border border-slate-200/80 font-mono text-xs">
+                              <span className="text-slate-700 select-all">
+                                {isRevealed
+                                  ? `-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASC...${cfg.valueLast4}\n-----END PRIVATE KEY-----`
+                                  : `••••••••••••••••••••••••${cfg.valueLast4}`}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => toggleSecretReveal(cfg.key)}
+                                className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
+                                title={isRevealed ? 'Hide secret' : 'Reveal masked secret'}
+                              >
+                                {isRevealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard?.writeText(cfg.valueLast4 || '');
+                                  showToast(`Copied ${cfg.key} reference.`);
+                                }}
+                                className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
+                                title="Copy"
+                              >
+                                <Copy className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => openRotateKeyModal(cfg)}
+                              className="px-3.5 py-2 rounded-xl border border-slate-200 hover:bg-slate-100 text-xs font-bold text-slate-700 flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                            >
+                              <RefreshCw className="w-3.5 h-3.5 text-amber-600" />
+                              <span>Rotate Key</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+
+              {/* Non-Secret Parameters (project_id, client_email) */}
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-4">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-amber-600" />
+                    <span>Firebase Service Account Credentials</span>
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Stored as plaintext in <code className="text-slate-600">valuePlain</code> with <code className="text-slate-600">isSecret = false</code>.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs pt-1">
+                  <div className="space-y-1.5">
+                    <label className="block font-bold text-slate-700">
+                      project_id (Google Cloud Project Identifier)
+                    </label>
+                    <input
+                      type="text"
+                      defaultValue={firebaseConfigs.find((c) => c.key === 'project_id')?.valuePlain || ''}
+                      onBlur={(e) => {
+                        const cur = firebaseConfigs.find((c) => c.key === 'project_id')?.valuePlain;
+                        if (e.target.value !== cur) {
+                          handleUpdatePlainConfig('firebase', 'project_id', e.target.value);
+                        }
+                      }}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-slate-800 text-xs focus:outline-none focus:bg-white focus:ring-1 focus:ring-slate-900"
+                    />
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      Database field: <code className="text-slate-600">admin_configs.valuePlain</code>
+                    </span>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block font-bold text-slate-700">
+                      client_email (GCP Service Account Email)
+                    </label>
+                    <input
+                      type="text"
+                      defaultValue={firebaseConfigs.find((c) => c.key === 'client_email')?.valuePlain || ''}
+                      onBlur={(e) => {
+                        const cur = firebaseConfigs.find((c) => c.key === 'client_email')?.valuePlain;
+                        if (e.target.value !== cur) {
+                          handleUpdatePlainConfig('firebase', 'client_email', e.target.value);
+                        }
+                      }}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-slate-800 text-xs focus:outline-none focus:bg-white focus:ring-1 focus:ring-slate-900"
+                    />
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      Service account with Firebase Cloud Messaging API Admin role.
+                    </span>
+                  </div>
+                </div>
+
+                {/* FCM Push Capability Info Box */}
+                <div className="pt-4 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="p-3 bg-amber-50/50 rounded-xl border border-amber-200/50">
+                    <span className="text-xs font-bold text-amber-900 block flex items-center gap-1.5">
+                      <BellRing className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Booking Push Alerts</span>
+                    </span>
+                    <span className="text-[11px] text-slate-600 mt-1 block">
+                      Dispatched instantly to vendor mobile devices on new booking requests and payments.
+                    </span>
+                  </div>
+
+                  <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-200/50">
+                    <span className="text-xs font-bold text-blue-900 block flex items-center gap-1.5">
+                      <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
+                      <span>KYC Verification Alerts</span>
+                    </span>
+                    <span className="text-[11px] text-slate-600 mt-1 block">
+                      Sends approval or document re-upload push alerts when super admin updates status.
+                    </span>
+                  </div>
+
+                  <div className="p-3 bg-emerald-50/50 rounded-xl border border-emerald-200/50">
+                    <span className="text-xs font-bold text-emerald-900 block flex items-center gap-1.5">
+                      <CreditCard className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Escrow Disbursement</span>
+                    </span>
+                    <span className="text-[11px] text-slate-600 mt-1 block">
+                      Notifies vendor immediately when payout funds are wired via NMI or ACH.
+                    </span>
                   </div>
                 </div>
               </div>
@@ -1857,6 +2541,7 @@ export const AdminConfigurationTab: React.FC<AdminConfigurationTabProps> = ({
                     <tr className="border-b border-slate-100 bg-slate-50/70 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                       <th className="py-3 px-5">TIMESTAMP</th>
                       <th className="py-3 px-4">ACTION</th>
+                      <th className="py-3 px-3">GROUP</th>
                       <th className="py-3 px-4">KEY</th>
                       <th className="py-3 px-4">ENV</th>
                       <th className="py-3 px-4">VALUE CHANGE</th>
@@ -1884,6 +2569,21 @@ export const AdminConfigurationTab: React.FC<AdminConfigurationTabProps> = ({
                             }`}
                           >
                             {aud.action}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-3 whitespace-nowrap">
+                          <span
+                            className={`px-2 py-0.5 rounded-md font-mono text-[10px] font-extrabold uppercase border ${
+                              aud.group === 'nmi'
+                                ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                : aud.group === 'twilio'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : aud.group === 'firebase'
+                                ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                : 'bg-slate-100 text-slate-800 border-slate-200'
+                            }`}
+                          >
+                            {aud.group}
                           </span>
                         </td>
                         <td className="py-3.5 px-4 font-mono font-bold text-slate-900 whitespace-nowrap">
