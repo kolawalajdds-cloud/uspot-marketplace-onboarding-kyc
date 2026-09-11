@@ -38,20 +38,10 @@ export const AdminPaymentTab: React.FC<AdminPaymentTabProps> = ({ onSaveSuccess 
     approveWithdrawal,
     rejectWithdrawal,
     requestSuperAdminWithdrawal,
-    updateCommissionRate,
   } = useDemo();
 
   const commissionRate = platformLedger?.commissionRate ?? 10.0;
-  const [rateInput, setRateInput] = useState<string>(commissionRate.toString());
-  const [isSaved, setIsSaved] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [lastSavedTime, setLastSavedTime] = useState<string>('Just now');
-  const [sampleAmount, setSampleAmount] = useState<number>(100);
-
-  // Additional payment settings
-  const [payoutSchedule, setPayoutSchedule] = useState<'daily' | 'weekly' | 'biweekly'>('weekly');
-  const [minPayoutThreshold, setMinPayoutThreshold] = useState<number>(50);
-  const [autoHoldDisputes, setAutoHoldDisputes] = useState<boolean>(true);
 
   // Modals
   const [isAdminWithdrawModalOpen, setIsAdminWithdrawModalOpen] = useState(false);
@@ -60,51 +50,9 @@ export const AdminPaymentTab: React.FC<AdminPaymentTabProps> = ({ onSaveSuccess 
   const [rejectionReasonInput, setRejectionReasonInput] = useState<string>('');
   const [actionSuccessMessage, setActionSuccessMessage] = useState<string | null>(null);
 
-  // Sync rate input if commissionRate changes externally
-  useEffect(() => {
-    setRateInput(commissionRate.toString());
-  }, [commissionRate]);
-
   const showSuccessBanner = (msg: string) => {
     setActionSuccessMessage(msg);
     setTimeout(() => setActionSuccessMessage(null), 4000);
-  };
-
-  const handleSave = (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-
-    const parsed = parseFloat(rateInput);
-    if (isNaN(parsed)) {
-      setErrorMessage('Please enter a valid numeric percentage.');
-      return;
-    }
-
-    if (parsed < 0 || parsed > 100) {
-      setErrorMessage('Percentage must be between 0% and 100%.');
-      return;
-    }
-
-    setErrorMessage(null);
-    updateCommissionRate(parsed);
-
-    // Update timestamp
-    const now = new Date();
-    const formatted = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    setLastSavedTime(`Today at ${formatted}`);
-
-    setIsSaved(true);
-    if (onSaveSuccess) {
-      onSaveSuccess(parsed);
-    }
-
-    setTimeout(() => {
-      setIsSaved(false);
-    }, 3000);
-  };
-
-  const handlePresetClick = (preset: number) => {
-    setRateInput(preset.toString());
-    setErrorMessage(null);
   };
 
   // Dynamic Single Source of Truth Balances calculated from financial ledger
@@ -187,11 +135,6 @@ export const AdminPaymentTab: React.FC<AdminPaymentTabProps> = ({ onSaveSuccess 
     }
   };
 
-  // Live calculation based on current input rate
-  const activeRate = !isNaN(parseFloat(rateInput)) ? Math.max(0, Math.min(100, parseFloat(rateInput))) : commissionRate;
-  const calculatedPlatformFee = ((sampleAmount * activeRate) / 100).toFixed(2);
-  const calculatedVendorPayout = (sampleAmount - (sampleAmount * activeRate) / 100).toFixed(2);
-
   return (
     <div id="admin-payment-tab" className="space-y-6 animate-in fade-in duration-150 pb-16 max-w-7xl mx-auto">
       {/* 1. Header with Breadcrumb & Quick Badges */}
@@ -241,18 +184,6 @@ export const AdminPaymentTab: React.FC<AdminPaymentTabProps> = ({ onSaveSuccess 
             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
             <span>{actionSuccessMessage}</span>
           </div>
-        </div>
-      )}
-
-      {isSaved && (
-        <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 shadow-2xs flex items-center justify-between gap-3 text-emerald-900 animate-in fade-in slide-in-from-top-2">
-          <div className="flex items-center gap-2.5 text-xs font-semibold">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>
-              Platform commission rate updated to <strong>{commissionRate}%</strong>. All future customer bookings will apply this rate.
-            </span>
-          </div>
-          <span className="text-[11px] text-emerald-700 font-mono">{lastSavedTime}</span>
         </div>
       )}
 
@@ -330,7 +261,7 @@ export const AdminPaymentTab: React.FC<AdminPaymentTabProps> = ({ onSaveSuccess 
           <p className="text-2xl font-black text-violet-700 mt-1 font-mono">
             {commissionRate}%
           </p>
-          <span className="text-[10px] text-slate-400 mt-0.5 block">Configurable per transaction</span>
+          <span className="text-[10px] text-slate-400 mt-0.5 block">Managed in Configuration</span>
         </div>
       </div>
 
@@ -632,198 +563,6 @@ export const AdminPaymentTab: React.FC<AdminPaymentTabProps> = ({ onSaveSuccess 
             </table>
           </div>
         )}
-      </div>
-
-      {/* 7. Commission Percentage Configuration Form & Live Simulator */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left 2 Columns: Input Form */}
-        <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-2xs p-6 sm:p-7 space-y-6">
-          <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-slate-900 text-white flex items-center justify-center font-black text-sm shadow-2xs">
-                <Percent className="w-4 h-4" />
-              </div>
-              <div>
-                <h2 className="text-base font-extrabold text-slate-900">
-                  Platform Commission Percentage
-                </h2>
-                <p className="text-xs text-slate-500">
-                  Configure the dynamic platform commission fee collected on each booking.
-                </p>
-              </div>
-            </div>
-
-            <span className="text-[11px] font-medium text-slate-400">
-              Last saved: <strong className="text-slate-700">{lastSavedTime}</strong>
-            </span>
-          </div>
-
-          <form onSubmit={handleSave} className="space-y-6">
-            {/* Input Field Section */}
-            <div className="space-y-2">
-              <label htmlFor="payment-percentage-input" className="block text-xs font-bold text-slate-800 uppercase tracking-wider">
-                Platform Commission Rate (%)
-              </label>
-
-              <div className="relative max-w-md">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-                  <Percent className="w-4 h-4" />
-                </div>
-                <input
-                  id="payment-percentage-input"
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  max="100"
-                  value={rateInput}
-                  onChange={(e) => {
-                    setRateInput(e.target.value);
-                    if (errorMessage) setErrorMessage(null);
-                  }}
-                  placeholder="e.g. 10.0"
-                  className="w-full pl-10 pr-14 py-3 bg-slate-50 hover:bg-slate-100/60 focus:bg-white border border-slate-300 rounded-xl text-lg font-black text-slate-900 font-mono focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900 transition-all shadow-2xs"
-                />
-                <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none">
-                  <span className="text-xs font-bold text-slate-500 bg-slate-200/80 px-2 py-0.5 rounded-md font-mono">
-                    %
-                  </span>
-                </div>
-              </div>
-
-              <p className="text-xs text-slate-500 leading-relaxed">
-                Enter the commission percentage to collect from each transaction. For example, entering <code className="px-1.5 py-0.5 bg-slate-100 rounded text-slate-800 font-bold">10</code> means 10% platform fee ($10 on a $100 service) and 90% allocated to the business owner balance.
-              </p>
-            </div>
-
-            {/* Quick Percentage Presets */}
-            <div className="space-y-2 pt-1">
-              <span className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                Quick Presets
-              </span>
-              <div className="flex items-center gap-2 flex-wrap">
-                {[5, 7.5, 10, 12.5, 15, 20].map((preset) => (
-                  <button
-                    key={preset}
-                    type="button"
-                    onClick={() => handlePresetClick(preset)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                      parseFloat(rateInput) === preset
-                        ? 'bg-slate-900 text-white shadow-xs scale-102'
-                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                    }`}
-                  >
-                    {preset}%
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Action Row with Save Button */}
-            <div className="flex items-center justify-between pt-4 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => {
-                  setRateInput('10');
-                  setErrorMessage(null);
-                }}
-                className="text-xs font-semibold text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
-              >
-                Reset to Default (10%)
-              </button>
-
-              <button
-                id="btn-save-payment-settings"
-                type="submit"
-                className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs active:scale-95 ${
-                  isSaved
-                    ? 'bg-emerald-600 text-white'
-                    : 'bg-black hover:bg-slate-800 text-white'
-                }`}
-              >
-                {isSaved ? (
-                  <>
-                    <Check className="w-4 h-4" />
-                    <span>Saved!</span>
-                  </>
-                ) : (
-                  <>
-                    <Save className="w-4 h-4" />
-                    <span>Save Commission Rate</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </form>
-        </div>
-
-        {/* Right 1 Column: Interactive Live Fee Simulator */}
-        <div className="space-y-6">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-6 space-y-4">
-            <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-              <Sparkles className="w-4 h-4 text-blue-600" />
-              <h3 className="font-extrabold text-slate-900 text-xs uppercase tracking-wider">
-                Live Fee Simulator
-              </h3>
-            </div>
-
-            <p className="text-xs text-slate-500">
-              Test how the configured percentage impacts booking fees in real time.
-            </p>
-
-            <div>
-              <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                Sample Booking Total ($)
-              </label>
-              <div className="relative">
-                <span className="absolute left-3 top-2 text-xs font-bold text-slate-400">$</span>
-                <input
-                  type="number"
-                  value={sampleAmount}
-                  onChange={(e) => setSampleAmount(Math.max(0, Number(e.target.value)))}
-                  className="w-full pl-7 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-slate-900 font-mono shadow-2xs"
-                />
-              </div>
-            </div>
-
-            {/* Split Breakdown */}
-            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80 space-y-3">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-500">Customer Pays</span>
-                <strong className="text-slate-900 font-mono">${sampleAmount.toFixed(2)}</strong>
-              </div>
-
-              <div className="flex items-center justify-between text-xs text-blue-700">
-                <span className="flex items-center gap-1.5 font-medium">
-                  <Percent className="w-3 h-3" /> Platform Fee ({activeRate}%)
-                </span>
-                <strong className="font-mono">+${calculatedPlatformFee}</strong>
-              </div>
-
-              <div className="border-t border-slate-200 pt-2 flex items-center justify-between text-xs text-emerald-800">
-                <span className="flex items-center gap-1.5 font-bold">
-                  <Wallet className="w-3.5 h-3.5 text-emerald-600" /> Business Balance (W-9)
-                </span>
-                <strong className="font-mono text-sm font-black text-emerald-700">
-                  ${calculatedVendorPayout}
-                </strong>
-              </div>
-
-              <div className="border-t border-slate-200 pt-2 flex items-center justify-between text-xs text-amber-800">
-                <span className="flex items-center gap-1.5 font-medium">
-                  <AlertCircle className="w-3 h-3 text-amber-600" /> Business (If No W-9: -24%)
-                </span>
-                <strong className="font-mono text-xs font-bold text-amber-700">
-                  ${Math.max(0, sampleAmount - (sampleAmount * activeRate) / 100 - (sampleAmount * 24) / 100).toFixed(2)}
-                </strong>
-              </div>
-            </div>
-
-            <div className="text-[11px] text-slate-400 leading-relaxed bg-blue-50/50 p-2.5 rounded-xl border border-blue-100">
-              <strong className="text-blue-900 block mb-0.5">Platform Escrow Notice:</strong>
-              UrSpot collects the customer payment via NMI Payment Gateway and holds the full amount. Balances are distributed internally to business and platform balances.
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* ========================================================================= */}

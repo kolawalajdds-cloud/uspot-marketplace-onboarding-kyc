@@ -51,6 +51,7 @@ import {
   Flame,
   Phone,
   BellRing,
+  Wallet,
 } from 'lucide-react';
 import {
   IconAssetRecord,
@@ -70,11 +71,12 @@ import {
   INITIAL_NMI_ADMIN_AUDIT,
   INITIAL_TWILIO_ADMIN_CONFIGS,
   INITIAL_FIREBASE_ADMIN_CONFIGS,
+  INITIAL_MIDDESK_ADMIN_CONFIGS,
 } from '../../../data/configurationData';
 import { OperationalCoverageMap } from './OperationalCoverageMap';
 import { useDemo } from '../../../context/DemoContext';
 
-export type ConfigSubOption = 'reference-data' | 'icons' | 'geography' | 'configuration';
+export type ConfigSubOption = 'reference-data' | 'icons' | 'geography' | 'configuration' | 'commission';
 type IconViewMode = 'table' | 'grid';
 
 export interface AdminConfigurationTabProps {
@@ -544,9 +546,11 @@ export const AdminConfigurationTab: React.FC<AdminConfigurationTabProps> = ({
   const [twilioConfigs, setTwilioConfigs] = useState<AdminConfigRecord[]>(INITIAL_TWILIO_ADMIN_CONFIGS);
   // Firebase Configuration Variables (admin_configs under group = 'firebase')
   const [firebaseConfigs, setFirebaseConfigs] = useState<AdminConfigRecord[]>(INITIAL_FIREBASE_ADMIN_CONFIGS);
+  // Middesk Configuration Variables (admin_configs under group = 'middesk')
+  const [middeskConfigs, setMiddeskConfigs] = useState<AdminConfigRecord[]>(INITIAL_MIDDESK_ADMIN_CONFIGS);
 
   const [nmiAudits, setNmiAudits] = useState<AdminConfigAuditRecord[]>(INITIAL_NMI_ADMIN_AUDIT);
-  const [configSubTab, setConfigSubTab] = useState<'nmi' | 'twilio' | 'firebase' | 'audit' | 'fees'>('nmi');
+  const [configSubTab, setConfigSubTab] = useState<'nmi' | 'twilio' | 'firebase' | 'middesk' | 'audit'>('nmi');
   const [revealedSecrets, setRevealedSecrets] = useState<Record<string, boolean>>({});
 
   // Rotate Secret Key Modal State
@@ -641,6 +645,20 @@ export const AdminConfigurationTab: React.FC<AdminConfigurationTabProps> = ({
       );
     } else if (targetConfigForRotation.group === 'firebase') {
       setFirebaseConfigs((prev) =>
+        prev.map((cfg) => {
+          if (cfg.id === targetConfigForRotation.id) {
+            return {
+              ...cfg,
+              valueEncrypted: `aes256gcm:iv_${Math.random().toString(36).slice(2, 6)}:tag_${Math.random().toString(36).slice(2, 6)}:enc_${trimmed}`,
+              valueLast4: newLast4,
+              updatedAt: new Date().toISOString(),
+            };
+          }
+          return cfg;
+        })
+      );
+    } else if (targetConfigForRotation.group === 'middesk') {
+      setMiddeskConfigs((prev) =>
         prev.map((cfg) => {
           if (cfg.id === targetConfigForRotation.id) {
             return {
@@ -803,8 +821,61 @@ export const AdminConfigurationTab: React.FC<AdminConfigurationTabProps> = ({
     }, 750);
   };
 
+  // Run Test Ping (Middesk)
+  const [isTestingMiddesk, setIsTestingMiddesk] = useState(false);
+  const [middeskTestDiagnostic, setMiddeskTestDiagnostic] = useState<{
+    success: boolean;
+    statusText: string;
+    baseUrl: string;
+    apiKeyLast4: string;
+    latencyMs: number;
+    timestamp: string;
+    organizationId: string;
+  } | null>(null);
+
+  const handleRunMiddeskTest = () => {
+    setIsTestingMiddesk(true);
+    setMiddeskTestDiagnostic(null);
+
+    const baseUrl = middeskConfigs.find((c) => c.key === 'base_url')?.valuePlain || 'https://api-sandbox.middesk.com/v1';
+    const apiKeyCfg = middeskConfigs.find((c) => c.key === 'api_key');
+
+    setTimeout(() => {
+      setIsTestingMiddesk(false);
+      const latency = Math.floor(Math.random() * 35) + 65;
+      const diag = {
+        success: true,
+        statusText: '200 OK — Middesk API Connection Verified',
+        baseUrl,
+        apiKeyLast4: apiKeyCfg?.valueLast4 || '9142',
+        latencyMs: latency,
+        timestamp: new Date().toLocaleTimeString(),
+        organizationId: `org_test_${Math.random().toString(36).slice(2, 10)}`,
+      };
+      setMiddeskTestDiagnostic(diag);
+
+      const auditEntry: AdminConfigAuditRecord = {
+        id: `aud-${Date.now()}`,
+        configId: 'cfg-middesk-001',
+        group: 'middesk',
+        key: 'api_key',
+        environment: 'production',
+        action: 'TEST',
+        updatedBy: 'Super Admin (You)',
+        oldValueLast4: apiKeyCfg?.valueLast4 || '9142',
+        newValueLast4: apiKeyCfg?.valueLast4 || '9142',
+        ipAddress: '192.168.1.45',
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/128.0.0.0',
+        createdAt: new Date().toISOString(),
+      };
+      setNmiAudits((prev) => [auditEntry, ...prev]);
+
+      showToast(`✓ Middesk Business Verification API ping successful (${latency}ms). Logged to audit.`);
+    }, 750);
+  };
+
   // Handle URL & Plaintext changes across groups
-  const handleUpdatePlainConfig = (group: 'nmi' | 'twilio' | 'firebase', key: string, newVal: string) => {
+  const handleUpdatePlainConfig = (group: 'nmi' | 'twilio' | 'firebase' | 'middesk', key: string, newVal: string) => {
     if (group === 'nmi') {
       setNmiConfigs((prev) =>
         prev.map((c) => (c.key === key ? { ...c, valuePlain: newVal, updatedAt: new Date().toISOString() } : c))
@@ -815,6 +886,10 @@ export const AdminConfigurationTab: React.FC<AdminConfigurationTabProps> = ({
       );
     } else if (group === 'firebase') {
       setFirebaseConfigs((prev) =>
+        prev.map((c) => (c.key === key ? { ...c, valuePlain: newVal, updatedAt: new Date().toISOString() } : c))
+      );
+    } else if (group === 'middesk') {
+      setMiddeskConfigs((prev) =>
         prev.map((c) => (c.key === key ? { ...c, valuePlain: newVal, updatedAt: new Date().toISOString() } : c))
       );
     }
@@ -843,6 +918,62 @@ export const AdminConfigurationTab: React.FC<AdminConfigurationTabProps> = ({
     }
     showToast('✓ Platform system configuration updated successfully.');
   };
+
+  // =========================================================================
+  // 5. PLATFORM COMMISSION CONFIGURATION & LIVE SIMULATOR
+  // =========================================================================
+  const commissionRate = platformLedger?.commissionRate ?? 10.0;
+  const [commissionRateInput, setCommissionRateInput] = useState<string>(String(commissionRate));
+  const [isCommissionSaved, setIsCommissionSaved] = useState(false);
+  const [commissionErrorMessage, setCommissionErrorMessage] = useState<string | null>(null);
+  const [sampleBookingAmount, setSampleBookingAmount] = useState<number>(100);
+
+  useEffect(() => {
+    if (platformLedger?.commissionRate !== undefined) {
+      setCommissionRateInput(String(platformLedger.commissionRate));
+      setPlatformCommissionInput(platformLedger.commissionRate);
+    }
+  }, [platformLedger?.commissionRate]);
+
+  const handleCommissionPresetClick = (preset: number) => {
+    setCommissionRateInput(preset.toString());
+    setCommissionErrorMessage(null);
+  };
+
+  const handleCommissionSave = (e: React.FormEvent) => {
+    e.preventDefault();
+    const parsed = parseFloat(commissionRateInput);
+
+    if (isNaN(parsed)) {
+      setCommissionErrorMessage('Please enter a valid numeric percentage.');
+      return;
+    }
+
+    if (parsed < 0 || parsed > 100) {
+      setCommissionErrorMessage('Commission percentage must be between 0% and 100%.');
+      return;
+    }
+
+    setCommissionErrorMessage(null);
+    updateCommissionRate(parsed);
+    setPlatformCommissionInput(parsed);
+    setIsCommissionSaved(true);
+    showToast(`✓ Platform commission percentage updated to ${parsed}%.`);
+    setTimeout(() => {
+      setIsCommissionSaved(false);
+    }, 3000);
+  };
+
+  const activeCommissionRate = parseFloat(commissionRateInput) || 0;
+  const calculatedPlatformFee = ((sampleBookingAmount * activeCommissionRate) / 100).toFixed(2);
+  const calculatedVendorPayout = Math.max(
+    0,
+    sampleBookingAmount - (sampleBookingAmount * activeCommissionRate) / 100
+  ).toFixed(2);
+  const calculatedNoW9Payout = Math.max(
+    0,
+    sampleBookingAmount - (sampleBookingAmount * activeCommissionRate) / 100 - (sampleBookingAmount * 24) / 100
+  ).toFixed(2);
 
   return (
     <div id="admin-configuration-root" className="space-y-6 animate-in fade-in duration-200">
@@ -1706,7 +1837,7 @@ export const AdminConfigurationTab: React.FC<AdminConfigurationTabProps> = ({
                 Platform System Configuration
               </h1>
               <p className="text-xs text-slate-500 mt-1">
-                Database variables for NMI payment gateway, Twilio SMS carrier, and Firebase push notifications (<span className="font-mono font-semibold text-slate-700">admin_configs</span>), AES-256-GCM encryption keys, and change audit ledger (<span className="font-mono font-semibold text-slate-700">admin_config_audit</span>).
+                Database variables for NMI payment gateway, Twilio SMS carrier, Firebase push notifications, and Middesk business verification (<span className="font-mono font-semibold text-slate-700">admin_configs</span>), AES-256-GCM encryption keys, and change audit ledger (<span className="font-mono font-semibold text-slate-700">admin_config_audit</span>).
               </p>
             </div>
 
@@ -1745,6 +1876,18 @@ export const AdminConfigurationTab: React.FC<AdminConfigurationTabProps> = ({
                 >
                   <Activity className={`w-3.5 h-3.5 text-amber-400 ${isTestingFirebase ? 'animate-spin' : ''}`} />
                   <span>{isTestingFirebase ? 'Testing FCM OAuth2...' : 'Test FCM Handshake'}</span>
+                </button>
+              )}
+
+              {configSubTab === 'middesk' && (
+                <button
+                  type="button"
+                  onClick={handleRunMiddeskTest}
+                  disabled={isTestingMiddesk}
+                  className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2 disabled:opacity-50"
+                >
+                  <Activity className={`w-3.5 h-3.5 text-indigo-400 ${isTestingMiddesk ? 'animate-spin' : ''}`} />
+                  <span>{isTestingMiddesk ? 'Testing Middesk API...' : 'Test Middesk Ping'}</span>
                 </button>
               )}
             </div>
@@ -1817,6 +1960,29 @@ export const AdminConfigurationTab: React.FC<AdminConfigurationTabProps> = ({
             </div>
           )}
 
+          {middeskTestDiagnostic && configSubTab === 'middesk' && (
+            <div className="p-4 rounded-2xl bg-indigo-50 border border-indigo-200 shadow-2xs space-y-2 animate-in fade-in">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-indigo-600 shrink-0" />
+                  <span className="text-xs font-bold text-indigo-900">
+                    Middesk KYB Diagnostic: {middeskTestDiagnostic.statusText}
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full bg-indigo-200/80 text-indigo-800 text-[10px] font-mono font-bold">
+                    {middeskTestDiagnostic.latencyMs}ms latency
+                  </span>
+                </div>
+                <span className="text-[10px] text-indigo-700 font-mono">{middeskTestDiagnostic.timestamp}</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-4 text-[11px] text-indigo-900 font-mono bg-indigo-100/60 p-2.5 rounded-xl">
+                <span><strong>Base URL:</strong> {middeskTestDiagnostic.baseUrl}</span>
+                <span><strong>API Key:</strong> •••• {middeskTestDiagnostic.apiKeyLast4}</span>
+                <span><strong>API Connection:</strong> <span className="text-emerald-700 font-bold uppercase">Active & Verified</span></span>
+                <span><strong>Mock Org:</strong> {middeskTestDiagnostic.organizationId}</span>
+              </div>
+            </div>
+          )}
+
           {/* Configuration Segment Navigation Pills */}
           <div className="flex items-center gap-2 border-b border-slate-200 pb-3 overflow-x-auto">
             <button
@@ -1875,6 +2041,24 @@ export const AdminConfigurationTab: React.FC<AdminConfigurationTabProps> = ({
 
             <button
               type="button"
+              onClick={() => setConfigSubTab('middesk')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
+                configSubTab === 'middesk'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+              }`}
+            >
+              <Building className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Middesk (KYC)</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                configSubTab === 'middesk' ? 'bg-slate-800 text-slate-200' : 'bg-slate-100 text-slate-600'
+              }`}>
+                {middeskConfigs.length}
+              </span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => setConfigSubTab('audit')}
               className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
                 configSubTab === 'audit'
@@ -1889,19 +2073,6 @@ export const AdminConfigurationTab: React.FC<AdminConfigurationTabProps> = ({
               }`}>
                 {nmiAudits.length}
               </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setConfigSubTab('fees')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer whitespace-nowrap ${
-                configSubTab === 'fees'
-                  ? 'bg-slate-900 text-white shadow-xs'
-                  : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-              }`}
-            >
-              <Percent className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Commission & W-9 Rules</span>
             </button>
           </div>
 
@@ -2024,7 +2195,7 @@ export const AdminConfigurationTab: React.FC<AdminConfigurationTabProps> = ({
                 <div>
                   <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                     <Globe className="w-4 h-4 text-emerald-600" />
-                    <span>NMI Gateway URL Endpoints & Environment Mode</span>
+                    <span>NMI Gateway URL Endpoints</span>
                   </h3>
                   <p className="text-xs text-slate-400 mt-0.5">
                     Stored as plaintext in <code className="text-slate-600">valuePlain</code> with <code className="text-slate-600">isSecret = false</code>.
@@ -2056,41 +2227,6 @@ export const AdminConfigurationTab: React.FC<AdminConfigurationTabProps> = ({
                         </span>
                       </div>
                     ))}
-                </div>
-
-                {/* Gateway Environment Selector */}
-                <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div>
-                    <span className="text-xs font-bold text-slate-900 block">Active Gateway Environment</span>
-                    <span className="text-[11px] text-slate-500">
-                      Switches transaction routing between NMI Sandbox simulator and live payment production.
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl">
-                    <button
-                      type="button"
-                      onClick={() => handleUpdatePlainConfig('nmi', 'environment', 'sandbox')}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                        nmiConfigs.find((c) => c.key === 'environment')?.valuePlain === 'sandbox'
-                          ? 'bg-white text-slate-900 shadow-xs'
-                          : 'text-slate-500 hover:text-slate-900'
-                      }`}
-                    >
-                      ● Sandbox
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleUpdatePlainConfig('nmi', 'environment', 'production')}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                        nmiConfigs.find((c) => c.key === 'environment')?.valuePlain === 'production'
-                          ? 'bg-white text-slate-900 shadow-xs'
-                          : 'text-slate-500 hover:text-slate-900'
-                      }`}
-                    >
-                      ● Production
-                    </button>
-                  </div>
                 </div>
               </div>
             </div>
@@ -2512,6 +2648,181 @@ export const AdminConfigurationTab: React.FC<AdminConfigurationTabProps> = ({
             </div>
           )}
 
+          {/* TAB: MIDDESK BUSINESS VERIFICATION / KYB (admin_configs) */}
+          {configSubTab === 'middesk' && (
+            <div className="space-y-6">
+              {/* Security Storage Callout */}
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-slate-900 to-slate-800 text-white shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-indigo-600/30 border border-indigo-500/40 text-indigo-400 flex items-center justify-center shrink-0">
+                    <Building className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold flex items-center gap-2">
+                      <span>Middesk Business Verification & KYB Variables</span>
+                      <span className="px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-mono text-[10px]">
+                        group = 'middesk'
+                      </span>
+                    </h4>
+                    <p className="text-[11px] text-slate-300 mt-0.5">
+                      Secret API key (<code className="text-indigo-300 font-mono">MIDDESK_API_KEY</code>) and webhook signing secret (<code className="text-indigo-300 font-mono">MIDDESK_WEBHOOK_SECRET</code>) are stored with <code className="text-indigo-300 font-mono">isSecret = true</code> using AES-256-GCM encryption. The endpoint base URL (<code className="text-indigo-300 font-mono">MIDDESK_BASE_URL</code>) is stored in <code className="text-indigo-300 font-mono">valuePlain</code>.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Secret Keys Cards (api_key, webhook_secret) */}
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                      <Lock className="w-4 h-4 text-indigo-600" />
+                      <span>Encrypted Middesk Secret Keys</span>
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Stored with <code className="text-slate-600">isSecret = true</code> in the <code className="text-slate-600">admin_configs</code> table with AES-256-GCM authenticated cipher.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="divide-y divide-slate-100">
+                  {middeskConfigs
+                    .filter((c) => c.isSecret)
+                    .map((cfg) => {
+                      const isRevealed = Boolean(revealedSecrets[cfg.key]);
+                      return (
+                        <div key={cfg.id} className="p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4 hover:bg-slate-50/50 transition-colors">
+                          <div className="space-y-1.5 max-w-md">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-xs font-bold text-slate-900 bg-slate-100 px-2.5 py-1 rounded-lg">
+                                {cfg.key === 'api_key' ? 'MIDDESK_API_KEY' : 'MIDDESK_WEBHOOK_SECRET'}
+                              </span>
+                              <span className="font-mono text-[10px] text-slate-400">({cfg.key})</span>
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200/60 font-mono">
+                                AES-256-GCM
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-600">{cfg.description}</p>
+                            <p className="text-[10px] text-slate-400 font-mono">
+                              Last updated: {new Date(cfg.updatedAt).toLocaleDateString()} by {cfg.updatedBy}
+                            </p>
+                          </div>
+
+                          {/* Key Display Box & Action */}
+                          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                            <div className="flex items-center gap-2 px-3 py-2 bg-slate-100/90 rounded-xl border border-slate-200/80 font-mono text-xs">
+                              <span className="text-slate-700 select-all">
+                                {isRevealed
+                                  ? cfg.key === 'api_key'
+                                    ? `mddsk_sec_${cfg.valueLast4}8104294`
+                                    : `whsec_${cfg.valueLast4}9182041`
+                                  : `••••••••••••••••••••••••${cfg.valueLast4}`}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => toggleSecretReveal(cfg.key)}
+                                className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
+                                title={isRevealed ? 'Hide secret' : 'Reveal masked secret'}
+                              >
+                                {isRevealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard?.writeText(cfg.valueLast4 || '');
+                                  showToast(`Copied ${cfg.key} reference.`);
+                                }}
+                                className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
+                                title="Copy"
+                              >
+                                <Copy className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => openRotateKeyModal(cfg)}
+                              className="px-3.5 py-2 rounded-xl border border-slate-200 hover:bg-slate-100 text-xs font-bold text-slate-700 flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                            >
+                              <RefreshCw className="w-3.5 h-3.5 text-indigo-600" />
+                              <span>Rotate Key</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+
+              {/* Non-Secret Parameters (MIDDESK_BASE_URL) */}
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-4">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-indigo-600" />
+                    <span>Middesk Base API Gateway URL (MIDDESK_BASE_URL)</span>
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Stored as plaintext in <code className="text-slate-600">valuePlain</code> with <code className="text-slate-600">isSecret = false</code>.
+                  </p>
+                </div>
+
+                <div className="space-y-1.5 text-xs pt-1">
+                  <label className="block font-bold text-slate-700">
+                    MIDDESK_BASE_URL (Target API Endpoint)
+                  </label>
+                  <input
+                    type="text"
+                    defaultValue={middeskConfigs.find((c) => c.key === 'base_url')?.valuePlain || 'https://api-sandbox.middesk.com/v1'}
+                    onBlur={(e) => {
+                      const cur = middeskConfigs.find((c) => c.key === 'base_url')?.valuePlain;
+                      if (e.target.value !== cur) {
+                        handleUpdatePlainConfig('middesk', 'base_url', e.target.value);
+                      }
+                    }}
+                    placeholder="https://api-sandbox.middesk.com/v1"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-slate-800 text-xs focus:outline-none focus:bg-white focus:ring-1 focus:ring-slate-900"
+                  />
+                  <span className="text-[10px] text-slate-400 font-mono">
+                    Database field: <code className="text-slate-600">admin_configs.valuePlain</code> (Key: <code className="text-slate-600">base_url</code>)
+                  </span>
+                </div>
+
+                {/* Middesk KYB Verification Capabilities Card */}
+                <div className="pt-4 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="p-3 bg-indigo-50/50 rounded-xl border border-indigo-200/50">
+                    <span className="text-xs font-bold text-indigo-900 block flex items-center gap-1.5">
+                      <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>SOS & Registration Verification</span>
+                    </span>
+                    <span className="text-[11px] text-slate-600 mt-1 block">
+                      Queries 50 state Secretaries of State in real time to verify legal business entity standing and good standing status.
+                    </span>
+                  </div>
+
+                  <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-200/50">
+                    <span className="text-xs font-bold text-blue-900 block flex items-center gap-1.5">
+                      <Building className="w-3.5 h-3.5 text-blue-600" />
+                      <span>TIN & EIN Match Checks</span>
+                    </span>
+                    <span className="text-[11px] text-slate-600 mt-1 block">
+                      Directly verifies Taxpayer Identification Numbers against IRS master file records to confirm vendor identity before W-9 clearance.
+                    </span>
+                  </div>
+
+                  <div className="p-3 bg-amber-50/50 rounded-xl border border-amber-200/50">
+                    <span className="text-xs font-bold text-amber-900 block flex items-center gap-1.5">
+                      <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Watchlist & OFAC Screening</span>
+                    </span>
+                    <span className="text-[11px] text-slate-600 mt-1 block">
+                      Screens beneficial owners and businesses across international sanctions, OFAC lists, PEP, and adverse media registries.
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* TAB 2: AUDIT TRAIL (admin_config_audit) */}
           {configSubTab === 'audit' && (
             <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
@@ -2625,90 +2936,355 @@ export const AdminConfigurationTab: React.FC<AdminConfigurationTabProps> = ({
               </div>
             </div>
           )}
+        </div>
+      )}
 
-          {/* TAB 3: COMMISSION & W-9 PARAMETERS */}
-          {configSubTab === 'fees' && (
-            <form onSubmit={handleSavePlatformConfig} className="space-y-5">
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-4">
-                <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                  <Percent className="w-4 h-4 text-blue-600" />
-                  <span>Marketplace Financial & Commission Parameters</span>
-                </h3>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                      Super Admin Platform Commission Rate (%)
-                    </label>
-                    <div className="relative">
-                      <input
-                        type="number"
-                        step="0.5"
-                        min="0"
-                        max="100"
-                        value={platformCommissionInput}
-                        onChange={(e) => setPlatformCommissionInput(Number(e.target.value))}
-                        className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-900"
-                      />
-                      <span className="absolute right-3.5 top-2.5 text-xs text-slate-400 font-mono">%</span>
-                    </div>
-                    <p className="text-[11px] text-slate-500 mt-1">
-                      Applied automatically to all new customer bookings across all business venues.
-                    </p>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                      IRS Form W-9 Non-Compliance Backup Withholding Rate (%)
-                    </label>
-                    <div className="relative">
-                      <input
-                        type="number"
-                        disabled
-                        value={backupTaxRateInput}
-                        className="w-full px-3.5 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-500 cursor-not-allowed"
-                      />
-                      <span className="absolute right-3.5 top-2.5 text-xs text-slate-400 font-mono">%</span>
-                    </div>
-                    <p className="text-[11px] text-slate-500 mt-1">
-                      Mandated IRS statutory rate (24%) held in platform tax escrow if vendor lacks verified W-9.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
-                  <div>
-                    <span className="text-xs font-bold text-slate-900 block">Instant Withdrawal Requests</span>
-                    <span className="text-[11px] text-slate-500">Allow verified vendors to request disbursements immediately upon balance availability.</span>
-                  </div>
-                  <label className="inline-flex items-center cursor-pointer">
-                    <div
-                      onClick={() => setInstantPayoutAllowed(!instantPayoutAllowed)}
-                      className={`w-9 h-5 flex items-center rounded-full p-0.5 transition-colors cursor-pointer ${
-                        instantPayoutAllowed ? 'bg-black' : 'bg-slate-300'
-                      }`}
-                    >
-                      <div
-                        className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
-                          instantPayoutAllowed ? 'translate-x-4' : 'translate-x-0'
-                        }`}
-                      />
-                    </div>
-                  </label>
-                </div>
+      {/* ========================================================================= */}
+      {/* SUB-OPTION 5: PLATFORM COMMISSION PERCENTAGE & LIVE SIMULATOR              */}
+      {/* ========================================================================= */}
+      {activeSubOption === 'commission' && (
+        <div className="space-y-6">
+          {/* Header & Breadcrumb */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <div className="text-xs text-slate-400 font-medium mb-1 flex items-center gap-1.5">
+                <span>Configuration</span>
+                <span>›</span>
+                <span className="text-slate-600 font-semibold">Platform Commission</span>
               </div>
+              <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+                Platform Commission Percentage
+              </h1>
+              <p className="text-xs text-slate-500 mt-1">
+                Configure the global marketplace fee percentage retained by UrSpot on every customer transaction, IRS Form W-9 backup withholding rules, and test calculations in real time with the live fee simulator.
+              </p>
+            </div>
 
-              <div className="flex justify-end pt-2">
-                <button
-                  type="submit"
-                  className="px-6 py-2.5 rounded-xl bg-black hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-2"
-                >
-                  <Save className="w-4 h-4" />
-                  <span>Save Configuration Changes</span>
-                </button>
+            {/* Status Badge */}
+            <div className="flex items-center gap-2.5 self-start sm:self-auto">
+              <span className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/80 shadow-2xs">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                Active Commission Rate: <strong className="font-mono text-sm">{commissionRate}%</strong>
+              </span>
+            </div>
+          </div>
+
+          {/* Quick Metric Highlights */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Platform Rate</span>
+                <Percent className="w-4 h-4 text-blue-600" />
               </div>
-            </form>
+              <div className="text-2xl font-black text-slate-900 font-mono">{commissionRate}%</div>
+              <p className="text-[11px] text-slate-500">Collected on each transaction</p>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">W-9 Tax Escrow</span>
+                <ShieldCheck className="w-4 h-4 text-amber-600" />
+              </div>
+              <div className="text-2xl font-black text-slate-900 font-mono">24.0%</div>
+              <p className="text-[11px] text-slate-500">Statutory IRS backup withholding</p>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Instant Payouts</span>
+                <CreditCard className="w-4 h-4 text-emerald-600" />
+              </div>
+              <div className="text-2xl font-black text-emerald-600">
+                {instantPayoutAllowed ? 'Enabled' : 'Disabled'}
+              </div>
+              <p className="text-[11px] text-slate-500">Verified vendor balance withdrawals</p>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Gateway Sync</span>
+                <Activity className="w-4 h-4 text-indigo-600" />
+              </div>
+              <div className="text-2xl font-black text-slate-900">Live NMI</div>
+              <p className="text-[11px] text-slate-500">Instant escrow & split ledger</p>
+            </div>
+          </div>
+
+          {/* Success Banner */}
+          {isCommissionSaved && (
+            <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 shadow-2xs flex items-center gap-3 animate-in fade-in">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+              <div>
+                <strong className="text-xs font-bold text-emerald-900 block">Commission Rate Saved Successfully!</strong>
+                <span className="text-xs text-emerald-700">
+                  New customer bookings will automatically calculate and retain {commissionRateInput}% as the UrSpot platform fee.
+                </span>
+              </div>
+            </div>
           )}
+
+          {/* Error Banner */}
+          {commissionErrorMessage && (
+            <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 shadow-2xs flex items-center gap-3 animate-in fade-in">
+              <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
+              <div>
+                <strong className="text-xs font-bold text-rose-900 block">Validation Error</strong>
+                <span className="text-xs text-rose-700">{commissionErrorMessage}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Two Columns: Left Configuration Form (2 cols) & Right Fee Simulator (1 col) */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Left 2 Columns: Main Configuration Card */}
+            <div className="lg:col-span-2 space-y-6">
+              <form
+                onSubmit={handleCommissionSave}
+                className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-6 space-y-6"
+              >
+                {/* Header with Icon and Title */}
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="p-3 rounded-xl bg-slate-900 text-white shadow-xs">
+                      <Percent className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-extrabold text-slate-900 tracking-tight">
+                        Platform Commission Percentage
+                      </h3>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Set the global commission retained by UrSpot on every booking transaction.
+                      </p>
+                    </div>
+                  </div>
+
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200/80">
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+                    Active Rate: {activeCommissionRate}%
+                  </span>
+                </div>
+
+                {/* Input Field with Percentage Symbol */}
+                <div className="space-y-2">
+                  <label
+                    htmlFor="config-commission-percentage-input"
+                    className="block text-xs font-bold text-slate-700"
+                  >
+                    Platform Commission Rate (%)
+                  </label>
+                  <div className="relative max-w-sm">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                      <Percent className="w-4 h-4" />
+                    </div>
+                    <input
+                      id="config-commission-percentage-input"
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      max="100"
+                      value={commissionRateInput}
+                      onChange={(e) => {
+                        setCommissionRateInput(e.target.value);
+                        if (commissionErrorMessage) setCommissionErrorMessage(null);
+                      }}
+                      placeholder="e.g. 10.0"
+                      className="w-full pl-10 pr-14 py-3 bg-slate-50 hover:bg-slate-100/60 focus:bg-white border border-slate-300 rounded-xl text-lg font-black text-slate-900 font-mono focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900 transition-all shadow-2xs"
+                    />
+                    <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none">
+                      <span className="text-xs font-bold text-slate-500 bg-slate-200/80 px-2 py-0.5 rounded-md font-mono">
+                        %
+                      </span>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    Enter the commission percentage to collect from each transaction. For example, entering <code className="px-1.5 py-0.5 bg-slate-100 rounded text-slate-800 font-bold">10</code> means 10% platform fee ($10 on a $100 service) and 90% allocated to the business owner balance.
+                  </p>
+                </div>
+
+                {/* Quick Percentage Presets */}
+                <div className="space-y-2 pt-1">
+                  <span className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                    Quick Presets
+                  </span>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {[5, 7.5, 10, 12.5, 15, 20].map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => handleCommissionPresetClick(preset)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                          parseFloat(commissionRateInput) === preset
+                            ? 'bg-slate-900 text-white shadow-xs scale-102'
+                            : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                        }`}
+                      >
+                        {preset}%
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* W-9 Backup Withholding & Instant Payouts Sub-Card */}
+                <div className="pt-4 border-t border-slate-100 space-y-4">
+                  <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                    Statutory Tax & Payout Rules
+                  </h4>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-800">IRS Form W-9 Backup Withholding</span>
+                        <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[10px] font-mono font-bold">24% Mandated</span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 leading-normal">
+                        Vendors without a verified W-9 certification have 24% withheld automatically to platform tax escrow per IRS compliance rules.
+                      </p>
+                    </div>
+
+                    <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between">
+                      <div>
+                        <span className="text-xs font-bold text-slate-800 block">Instant Withdrawal Requests</span>
+                        <span className="text-[11px] text-slate-500 block mt-0.5">
+                          Allow verified businesses to request disbursements on balance availability.
+                        </span>
+                      </div>
+                      <label className="inline-flex items-center cursor-pointer shrink-0 ml-3">
+                        <div
+                          onClick={() => setInstantPayoutAllowed(!instantPayoutAllowed)}
+                          className={`w-9 h-5 flex items-center rounded-full p-0.5 transition-colors cursor-pointer ${
+                            instantPayoutAllowed ? 'bg-black' : 'bg-slate-300'
+                          }`}
+                        >
+                          <div
+                            className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
+                              instantPayoutAllowed ? 'translate-x-4' : 'translate-x-0'
+                            }`}
+                          />
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Action Row with Save Button */}
+                <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCommissionRateInput('10');
+                      setCommissionErrorMessage(null);
+                    }}
+                    className="text-xs font-semibold text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
+                  >
+                    Reset to Default (10%)
+                  </button>
+
+                  <button
+                    id="btn-save-commission-settings"
+                    type="submit"
+                    className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs active:scale-95 ${
+                      isCommissionSaved
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-black hover:bg-slate-800 text-white'
+                    }`}
+                  >
+                    {isCommissionSaved ? (
+                      <>
+                        <Check className="w-4 h-4" />
+                        <span>Saved!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-4 h-4" />
+                        <span>Save Commission Rate</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {/* Right 1 Column: Interactive Live Fee Simulator */}
+            <div className="space-y-6">
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-6 space-y-4">
+                <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+                  <Sparkles className="w-4 h-4 text-blue-600" />
+                  <h3 className="font-extrabold text-slate-900 text-xs uppercase tracking-wider">
+                    Live Fee Simulator
+                  </h3>
+                </div>
+
+                <p className="text-xs text-slate-500">
+                  Test how the configured percentage impacts booking fees and business owner payout in real time.
+                </p>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                    Sample Booking Total ($)
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-2 text-xs font-bold text-slate-400">$</span>
+                    <input
+                      type="number"
+                      value={sampleBookingAmount}
+                      onChange={(e) => setSampleBookingAmount(Math.max(0, Number(e.target.value)))}
+                      className="w-full pl-7 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 font-bold focus:outline-none focus:ring-2 focus:ring-slate-900 font-mono shadow-2xs"
+                    />
+                  </div>
+                </div>
+
+                {/* Split Breakdown */}
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80 space-y-3">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-500">Customer Pays</span>
+                    <strong className="text-slate-900 font-mono">${sampleBookingAmount.toFixed(2)}</strong>
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs text-blue-700">
+                    <span className="flex items-center gap-1.5 font-medium">
+                      <Percent className="w-3 h-3" /> Platform Fee ({activeCommissionRate}%)
+                    </span>
+                    <strong className="font-mono">+${calculatedPlatformFee}</strong>
+                  </div>
+
+                  <div className="border-t border-slate-200 pt-2 flex items-center justify-between text-xs text-emerald-800">
+                    <span className="flex items-center gap-1.5 font-bold">
+                      <Wallet className="w-3.5 h-3.5 text-emerald-600" /> Business Balance (W-9)
+                    </span>
+                    <strong className="font-mono text-sm font-black text-emerald-700">
+                      ${calculatedVendorPayout}
+                    </strong>
+                  </div>
+
+                  <div className="border-t border-slate-200 pt-2 flex items-center justify-between text-xs text-amber-800">
+                    <span className="flex items-center gap-1.5 font-medium">
+                      <AlertCircle className="w-3 h-3 text-amber-600" /> Business (If No W-9: -24%)
+                    </span>
+                    <strong className="font-mono text-xs font-bold text-amber-700">
+                      ${calculatedNoW9Payout}
+                    </strong>
+                  </div>
+                </div>
+
+                <div className="text-[11px] text-slate-400 leading-relaxed bg-blue-50/50 p-3 rounded-xl border border-blue-100">
+                  <strong className="text-blue-900 block mb-0.5">Platform Escrow Notice:</strong>
+                  UrSpot collects the customer payment via NMI Gateway and holds the total in escrow. Platform commission and business net proceeds are allocated automatically in the ledger.
+                </div>
+              </div>
+
+              {/* IRS 1099-K Compliance Notice */}
+              <div className="p-5 rounded-2xl bg-slate-900 text-white shadow-xs space-y-2">
+                <div className="flex items-center gap-2 text-amber-400 text-xs font-bold">
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>IRS 1099-K Statutory Compliance</span>
+                </div>
+                <p className="text-[11px] text-slate-300 leading-relaxed">
+                  Platforms with aggregate gross payments exceeding statutory reporting thresholds must file IRS Form 1099-K and issue copies to payees. Verified W-9 certifications are required prior to disbursement release.
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

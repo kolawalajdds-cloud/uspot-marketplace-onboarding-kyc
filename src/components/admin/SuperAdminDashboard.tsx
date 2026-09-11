@@ -71,6 +71,7 @@ export type SuperAdminNavTab =
   | 'config-icons'
   | 'config-geography'
   | 'config-general'
+  | 'config-commission'
   | 'settings';
 
 export const SuperAdminDashboard: React.FC = () => {
@@ -785,6 +786,23 @@ export const SuperAdminDashboard: React.FC = () => {
                     />
                     <span>Configuration</span>
                   </button>
+
+                  <button
+                    id="sidebar-subtab-platform-commission"
+                    onClick={() => setActiveNav('config-commission')}
+                    className={`w-full text-left px-3 py-2 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2.5 ${
+                      activeNav === 'config-commission'
+                        ? 'bg-white text-slate-900 font-bold shadow-xs'
+                        : 'text-slate-400 hover:text-white hover:bg-slate-800/40 font-medium'
+                    }`}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                        activeNav === 'config-commission' ? 'bg-blue-600' : 'bg-slate-500'
+                      }`}
+                    />
+                    <span>Platform Commission</span>
+                  </button>
                 </div>
               )}
             </div>
@@ -1142,7 +1160,7 @@ export const SuperAdminDashboard: React.FC = () => {
             </div>
           )}
 
-          {/* 7. Configuration Sub-Tabs (Reference Data, Icons, Geography, Configuration) */}
+          {/* 7. Configuration Sub-Tabs (Reference Data, Icons, Geography, Configuration, Platform Commission) */}
           {activeNav === 'config-reference' && (
             <AdminConfigurationTab
               initialSubOption="reference-data"
@@ -1151,6 +1169,7 @@ export const SuperAdminDashboard: React.FC = () => {
                 else if (sub === 'icons') setActiveNav('config-icons');
                 else if (sub === 'geography') setActiveNav('config-geography');
                 else if (sub === 'configuration') setActiveNav('config-general');
+                else if (sub === 'commission') setActiveNav('config-commission');
               }}
             />
           )}
@@ -1163,6 +1182,7 @@ export const SuperAdminDashboard: React.FC = () => {
                 else if (sub === 'icons') setActiveNav('config-icons');
                 else if (sub === 'geography') setActiveNav('config-geography');
                 else if (sub === 'configuration') setActiveNav('config-general');
+                else if (sub === 'commission') setActiveNav('config-commission');
               }}
             />
           )}
@@ -1175,6 +1195,7 @@ export const SuperAdminDashboard: React.FC = () => {
                 else if (sub === 'icons') setActiveNav('config-icons');
                 else if (sub === 'geography') setActiveNav('config-geography');
                 else if (sub === 'configuration') setActiveNav('config-general');
+                else if (sub === 'commission') setActiveNav('config-commission');
               }}
             />
           )}
@@ -1187,6 +1208,20 @@ export const SuperAdminDashboard: React.FC = () => {
                 else if (sub === 'icons') setActiveNav('config-icons');
                 else if (sub === 'geography') setActiveNav('config-geography');
                 else if (sub === 'configuration') setActiveNav('config-general');
+                else if (sub === 'commission') setActiveNav('config-commission');
+              }}
+            />
+          )}
+
+          {activeNav === 'config-commission' && (
+            <AdminConfigurationTab
+              initialSubOption="commission"
+              onSubOptionChange={(sub) => {
+                if (sub === 'reference-data') setActiveNav('config-reference');
+                else if (sub === 'icons') setActiveNav('config-icons');
+                else if (sub === 'geography') setActiveNav('config-geography');
+                else if (sub === 'configuration') setActiveNav('config-general');
+                else if (sub === 'commission') setActiveNav('config-commission');
               }}
             />
           )}
