@@ -227,15 +227,15 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                 </div>
               </div>
 
-              {/* Fake Payment Form */}
+              {/* Payment Form */}
               <div className="pt-2 border-t border-slate-100">
                 <div className="flex items-center justify-between mb-3">
                   <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                    2. Payment Method (Simulated Sandbox Card)
+                    2. Payment Method (Credit / Debit Card)
                   </label>
                   <span className="inline-flex items-center gap-1 text-[11px] text-slate-400">
                     <Lock className="w-3 h-3 text-slate-400" />
-                    256-bit Demo Encryption
+                    256-bit SSL Encryption
                   </span>
                 </div>
 

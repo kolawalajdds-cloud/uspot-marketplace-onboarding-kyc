@@ -701,7 +701,7 @@ export const AdminConfigurationTab: React.FC<AdminConfigurationTabProps> = ({
     setIsTestingNmiConnection(true);
     setNmiTestDiagnostic(null);
 
-    const apiUrl = nmiConfigs.find((c) => c.key === 'api_url')?.valuePlain || 'https://sandbox.nmi.com/api/transact.php';
+    const apiUrl = nmiConfigs.find((c) => c.key === 'api_url')?.valuePlain || 'https://secure.nmi.com/api/transact.php';
 
     setTimeout(() => {
       setIsTestingNmiConnection(false);
@@ -722,7 +722,7 @@ export const AdminConfigurationTab: React.FC<AdminConfigurationTabProps> = ({
         configId: 'cfg-nmi-001',
         group: 'nmi',
         key: 'security_key',
-        environment: 'sandbox',
+        environment: 'production',
         action: 'TEST',
         updatedBy: 'Super Admin (You)',
         oldValueLast4: '0873',
@@ -763,7 +763,7 @@ export const AdminConfigurationTab: React.FC<AdminConfigurationTabProps> = ({
         configId: 'cfg-twilio-002',
         group: 'twilio',
         key: 'auth_token',
-        environment: 'sandbox',
+        environment: 'production',
         action: 'TEST',
         updatedBy: 'Super Admin (You)',
         oldValueLast4: '0831',
@@ -806,7 +806,7 @@ export const AdminConfigurationTab: React.FC<AdminConfigurationTabProps> = ({
         configId: 'cfg-firebase-003',
         group: 'firebase',
         key: 'private_key',
-        environment: 'sandbox',
+        environment: 'production',
         action: 'TEST',
         updatedBy: 'Super Admin (You)',
         oldValueLast4: '8192',
@@ -837,7 +837,7 @@ export const AdminConfigurationTab: React.FC<AdminConfigurationTabProps> = ({
     setIsTestingMiddesk(true);
     setMiddeskTestDiagnostic(null);
 
-    const baseUrl = middeskConfigs.find((c) => c.key === 'base_url')?.valuePlain || 'https://api-sandbox.middesk.com/v1';
+    const baseUrl = middeskConfigs.find((c) => c.key === 'base_url')?.valuePlain || 'https://api.middesk.com/v1';
     const apiKeyCfg = middeskConfigs.find((c) => c.key === 'api_key');
 
     setTimeout(() => {
@@ -900,7 +900,7 @@ export const AdminConfigurationTab: React.FC<AdminConfigurationTabProps> = ({
       configId: `cfg-${group}-${key}`,
       group,
       key,
-      environment: 'sandbox',
+      environment: 'production',
       action: 'UPDATE',
       updatedBy: 'Super Admin (You)',
       ipAddress: '192.168.1.45',
@@ -2102,7 +2102,7 @@ export const AdminConfigurationTab: React.FC<AdminConfigurationTabProps> = ({
                   <span className="text-[11px] font-semibold text-slate-400">Environment:</span>
                   <span className="px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-mono text-xs font-bold flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                    <span>sandbox</span>
+                    <span>production</span>
                   </span>
                 </div>
               </div>
@@ -2772,14 +2772,14 @@ export const AdminConfigurationTab: React.FC<AdminConfigurationTabProps> = ({
                   </label>
                   <input
                     type="text"
-                    defaultValue={middeskConfigs.find((c) => c.key === 'base_url')?.valuePlain || 'https://api-sandbox.middesk.com/v1'}
+                    defaultValue={middeskConfigs.find((c) => c.key === 'base_url')?.valuePlain || 'https://api.middesk.com/v1'}
                     onBlur={(e) => {
                       const cur = middeskConfigs.find((c) => c.key === 'base_url')?.valuePlain;
                       if (e.target.value !== cur) {
                         handleUpdatePlainConfig('middesk', 'base_url', e.target.value);
                       }
                     }}
-                    placeholder="https://api-sandbox.middesk.com/v1"
+                    placeholder="https://api.middesk.com/v1"
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-slate-800 text-xs focus:outline-none focus:bg-white focus:ring-1 focus:ring-slate-900"
                   />
                   <span className="text-[10px] text-slate-400 font-mono">
