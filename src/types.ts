@@ -244,6 +244,25 @@ export interface NotificationItem {
   actionRequired?: 'go_live' | 'edit_kyc' | 'continue_setup';
 }
 
+export type NmiOnboardingStatus = 'NOT_STARTED' | 'SKIPPED' | 'ACTIVE';
+
+export interface NmiPaymentAccountData {
+  vendorId: string;
+  nmiOnboardingStatus: NmiOnboardingStatus;
+  nmiGatewayId: string | null;
+  companyName: string;
+  federalTaxId: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  bankRoutingNumber: string;
+  bankAccountNumber: string;
+  accountType: 'checking' | 'savings';
+  accountHolderType: 'business' | 'individual';
+  createdAt?: string;
+  activatedAt?: string;
+}
+
 export interface Business {
   id: string;
   status: BusinessStatus;
@@ -257,6 +276,7 @@ export interface Business {
   payment: PaymentData;
   notifications: NotificationItem[];
   w9?: W9Data;
+  nmiPaymentAccount?: NmiPaymentAccountData;
   // Enhanced sync fields across Super Admin & Business Portal
   subTab?: 'kyc-requests' | 'approved' | 'non-subscription';
   subscription?: string | null;

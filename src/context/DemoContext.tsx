@@ -20,12 +20,14 @@ import {
   WithdrawalRequest,
   BusinessBalance,
   PlatformLedgerState,
+  NmiPaymentAccountData,
+  NmiOnboardingStatus,
 } from '../types';
 import { getSeedBusinesses } from '../data/seedData';
 import { getSeedUsers } from '../data/seedUsers';
 import { calculateLedgerBalances, normalizeTransactionType } from '../utils/ledgerAccounting';
 
-const LOCAL_STORAGE_KEY = 'uspot_demo_state';
+const LOCAL_STORAGE_KEY = 'uspot_marketplace_demo_v5';
 const PAYMENT_RATE_STORAGE_KEY = 'urspot_superadmin_payment_rate';
 
 export const DEFAULT_LEDGER_STATE: PlatformLedgerState = {
@@ -91,6 +93,7 @@ interface DemoContextType {
   setAdminView: (view: 'queue' | 'all' | 'detail') => void;
   setWizardTab: (tab: StoredState['wizardTab']) => void;
   selectBusinessForVendor: (businessId: string, tab?: StoredState['wizardTab']) => void;
+  setActiveBusinessId: (businessId: string) => void;
   selectBusinessForAdmin: (businessId: string) => void;
   resetDemoData: () => void;
   // Business CRUD
@@ -134,6 +137,9 @@ interface DemoContextType {
   saveW9Data: (businessId: string, w9Data: Partial<W9Data>) => void;
   submitW9Data: (businessId: string, w9Data: W9Data) => Promise<void>;
   resetW9Data: (businessId: string) => void;
+  // NMI Payment Account
+  saveNmiPaymentAccount: (businessId: string, accountData: Partial<NmiPaymentAccountData>) => void;
+  getNmiPaymentAccount: (businessId: string) => NmiPaymentAccountData | undefined;
   // Marketplace Ledger, Balances & Withdrawals
   platformLedger: PlatformLedgerState;
   getBusinessBalance: (businessId: string) => BusinessBalance;
@@ -183,110 +189,52 @@ const RANDOM_IMAGE_SAMPLES = [
 export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [state, setState] = useState<StoredState>(() => {
     const seedUsers = getSeedUsers();
+    const seedBusinesses = getSeedBusinesses();
     try {
+      // Clean up previous localStorage keys that had duplicate test registrations
+      try {
+        localStorage.removeItem('uspot_demo_state');
+        localStorage.removeItem('uspot_marketplace_state_v2');
+        localStorage.removeItem('uspot_nmi_vendor_accounts');
+      } catch (e) {}
+
       const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
       if (stored) {
         const parsed = JSON.parse(stored);
         if (parsed && Array.isArray(parsed.businesses) && parsed.businesses.length > 0) {
-          const storedUsers: UserProfile[] = Array.isArray(parsed.users) ? parsed.users : [];
-          // Deprecated extra seed IDs from previous revisions (should not linger)
-          const DEPRECATED_IDS = new Set([
-            'user-admin-sarah',
-            'user-partner-devon',
-            'user-partner-clara',
-            'user-customer-marcus',
-            'user-customer-sofia',
-            'user-staff-jordan',
-          ]);
-          const filteredStoredUsers = storedUsers.filter((u) => !DEPRECATED_IDS.has(u.id));
-          const storedIds = new Set(filteredStoredUsers.map((u) => u.id));
-          const missingSeedUsers = seedUsers.filter((s) => !storedIds.has(s.id));
-          const baseUsers = filteredStoredUsers.length > 0 ? [...filteredStoredUsers, ...missingSeedUsers] : seedUsers;
-          const loadedUsers = baseUsers.map((u) => {
-            const seedMatch = seedUsers.find((s) => s.id === u.id);
-            if (seedMatch) {
+          // Exactly the canonical 5 users: 2 business, 1 customer, 1 staff, 1 super admin
+          const loadedUsers = seedUsers.map((s) => {
+            const match = (parsed.users || []).find((u: UserProfile) => u.id === s.id);
+            if (match) {
               return {
-                ...u,
-                role: seedMatch.role,
-                roleLabel: seedMatch.roleLabel,
-                fullName: seedMatch.fullName,
-                email: seedMatch.email,
-                username: seedMatch.username,
-                phone: seedMatch.phone,
-                avatarInitials: seedMatch.avatarInitials,
-                primaryServiceCategory: seedMatch.primaryServiceCategory,
-                yearsOfExperience: seedMatch.yearsOfExperience,
+                ...s,
+                status: match.status || s.status,
               };
             }
-            return u;
+            return s;
           });
+
           let loadedCurrent: UserProfile | null =
-            parsed.hasExplicitLogin && parsed.currentUser ? parsed.currentUser : null;
-          if (loadedCurrent && DEPRECATED_IDS.has(loadedCurrent.id)) {
-            loadedCurrent = null;
-          } else if (loadedCurrent) {
-            const seedMatch = seedUsers.find((s) => s.id === loadedCurrent?.id);
-            if (seedMatch) {
-              loadedCurrent = {
-                ...loadedCurrent,
-                role: seedMatch.role,
-                roleLabel: seedMatch.roleLabel,
-                fullName: seedMatch.fullName,
-                email: seedMatch.email,
-                username: seedMatch.username,
-                phone: seedMatch.phone,
-                avatarInitials: seedMatch.avatarInitials,
-                primaryServiceCategory: seedMatch.primaryServiceCategory,
-                yearsOfExperience: seedMatch.yearsOfExperience,
+            parsed.hasExplicitLogin && parsed.currentUser
+              ? seedUsers.find((s) => s.id === parsed.currentUser.id) || null
+              : null;
+
+          // Exactly the canonical 2 businesses: The Nexus Workspace & Lab (biz-001) and Apex Creative Studios (biz-002)
+          const loadedBusinesses = seedBusinesses.map((seedBiz) => {
+            const match = (parsed.businesses || []).find((b: Business) => b.id === seedBiz.id);
+            if (match) {
+              return {
+                ...seedBiz,
+                ...match,
+                email: seedBiz.email,
+                coreDetails: seedBiz.coreDetails,
+                nmiPaymentAccount:
+                  seedBiz.id === 'biz-002'
+                    ? seedBiz.nmiPaymentAccount // Apex Creative Studios is always ACTIVE for Devon Lane
+                    : (match.nmiPaymentAccount || seedBiz.nmiPaymentAccount),
               };
             }
-          }
-          const LEGACY_DUMMY_IDS = new Set([
-            'biz-003',
-            'biz-004',
-            'biz-005',
-            'biz-006',
-            'biz-007',
-            'biz-008',
-            'mbiz-1',
-            'mbiz-2',
-            'mbiz-3',
-            'mbiz-4',
-            'biz-app-1',
-            'biz-app-2',
-            'biz-app-3',
-            'biz-app-4',
-            'biz-app-5',
-            'biz-app-6',
-            'biz-app-7',
-            'biz-app-8',
-            'biz-app-9',
-            'biz-app-10',
-          ]);
-          const seeds = getSeedBusinesses();
-          const validStoredBusinesses = (parsed.businesses || []).filter(
-            (b: Business) => !LEGACY_DUMMY_IDS.has(b.id)
-          );
-          const storedBizIds = new Set(validStoredBusinesses.map((b: Business) => b.id));
-          const missingBizSeeds = seeds.filter((s) => !storedBizIds.has(s.id));
-          const loadedBusinesses = [...validStoredBusinesses, ...missingBizSeeds].map((b: Business) => {
-            const rCount = b.rejectionCount ?? b.verification?.rejectionCount ?? 0;
-            const rHist = b.rejectionHistory ?? b.verification?.rejectionHistory ?? [];
-            const payment =
-              b.id === 'biz-002' && b.payment?.paidAt === '2026-09-02T16:40:00Z'
-                ? { ...b.payment, paidAt: null }
-                : b.payment;
-            return {
-              ...b,
-              payment,
-              rejectionCount: rCount,
-              rejectionHistory: rHist,
-              verification: {
-                ...b.verification,
-                rejectionCount: rCount,
-                rejectionHistory: rHist,
-              },
-            };
+            return seedBiz;
           });
 
           // Load or initialize platform ledger
@@ -318,7 +266,7 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
             users: loadedUsers,
             currentUser: loadedCurrent,
             activeRole: parsed.activeRole || (loadedCurrent?.role === 'super_admin' ? 'admin' : 'vendor'),
-            activeBusinessId: parsed.activeBusinessId || loadedBusinesses[0]?.id || seeds[0].id,
+            activeBusinessId: parsed.activeBusinessId || loadedBusinesses[0]?.id || seedBusinesses[0].id,
             vendorView: parsed.vendorView || 'list',
             adminView: parsed.adminView || 'queue',
             adminSelectedBusinessId: parsed.adminSelectedBusinessId || null,
@@ -333,15 +281,14 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.error('Failed to load local demo state:', e);
     }
 
-    const seeds = getSeedBusinesses();
     const savedRate = localStorage.getItem(PAYMENT_RATE_STORAGE_KEY);
     const initialRate = savedRate !== null && !isNaN(parseFloat(savedRate)) ? parseFloat(savedRate) : 10.0;
     return {
-      businesses: seeds,
+      businesses: seedBusinesses,
       users: seedUsers,
       currentUser: null,
       activeRole: 'vendor',
-      activeBusinessId: seeds[0].id,
+      activeBusinessId: seedBusinesses[0].id,
       vendorView: 'list',
       adminView: 'queue',
       adminSelectedBusinessId: null,
@@ -383,31 +330,75 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const loginAsUser = (identifier: string) => {
     setState((prev) => {
       const lower = identifier.toLowerCase().trim();
-      const matched =
-        prev.users.find(
+
+      // 1. Exact ID match first (highest precedence - ensures switching between same-role users works)
+      let matched = prev.users.find((u) => u.id.toLowerCase() === lower);
+
+      // 2. Exact email match
+      if (!matched) {
+        matched = prev.users.find((u) => u.email.toLowerCase() === lower);
+      }
+
+      // 3. Exact username match
+      if (!matched) {
+        matched = prev.users.find((u) => u.username.toLowerCase() === lower);
+      }
+
+      // 4. Exact full name match
+      if (!matched) {
+        matched = prev.users.find((u) => u.fullName.toLowerCase() === lower);
+      }
+
+      // 5. Fallback generic role match
+      if (!matched) {
+        matched = prev.users.find(
           (u) =>
-            u.id === identifier ||
             u.role.toLowerCase() === lower ||
             u.roleLabel.toLowerCase() === lower ||
-            u.email.toLowerCase() === lower ||
-            u.username.toLowerCase() === lower ||
-            (lower.includes('staff') && (u.role === 'specialist' || u.roleLabel.toLowerCase().includes('staff'))) ||
-            (lower.includes('admin') && u.role === 'super_admin') ||
-            (lower.includes('business') && u.role === 'business') ||
-            (lower.includes('customer') && u.role === 'customer')
-        ) || prev.users[0];
+            (lower === 'staff' && (u.role === 'specialist' || u.roleLabel.toLowerCase().includes('staff'))) ||
+            (lower === 'admin' && u.role === 'super_admin') ||
+            (lower === 'business' && u.role === 'business') ||
+            (lower === 'customer' && u.role === 'customer')
+        );
+      }
+
+      if (!matched) {
+        matched = prev.users[0];
+      }
 
       const newRole: 'vendor' | 'admin' =
         matched.role === 'super_admin' || matched.role === 'specialist' ? 'admin' : 'vendor';
+
+      // Automatically identify user business if available
+      let userBiz = prev.businesses.find(
+        (b) => b.email?.toLowerCase() === matched.email?.toLowerCase()
+      );
+      if (!userBiz) {
+        if (matched.id === 'user-business-2' || matched.email.includes('devon')) {
+          userBiz = prev.businesses.find((b) => b.id === 'biz-002');
+        } else if (matched.id === 'user-business' || matched.email.includes('alex')) {
+          userBiz = prev.businesses.find((b) => b.id === 'biz-001');
+        }
+      }
+
+      const targetBizId = userBiz ? userBiz.id : (prev.activeBusinessId || prev.businesses[0]?.id);
 
       return {
         ...prev,
         currentUser: matched,
         activeRole: newRole,
+        activeBusinessId: targetBizId,
         isAuthModalOpen: false,
         hasExplicitLogin: true,
       };
     });
+  };
+
+  const setActiveBusinessId = (businessId: string) => {
+    setState((prev) => ({
+      ...prev,
+      activeBusinessId: businessId,
+    }));
   };
 
   const logout = () => {
@@ -1682,6 +1673,59 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   };
 
+  const saveNmiPaymentAccount = (businessId: string, accountData: Partial<NmiPaymentAccountData>) => {
+    updateBusinessInState(businessId, (b) => {
+      const existing: NmiPaymentAccountData = b.nmiPaymentAccount || {
+        vendorId: businessId,
+        nmiOnboardingStatus: 'NOT_STARTED' as NmiOnboardingStatus,
+        nmiGatewayId: null,
+        companyName: b.coreDetails?.legalEntityName || b.coreDetails?.businessName || '',
+        federalTaxId: b.verification?.einVerification?.einEntered || '',
+        firstName: b.verification?.beneficialOwner?.fullName?.split(' ')[0] || '',
+        lastName: b.verification?.beneficialOwner?.fullName?.split(' ').slice(1).join(' ') || '',
+        email: b.email || '',
+        bankRoutingNumber: b.verification?.bankAccount?.routingNumber || '',
+        bankAccountNumber: '',
+        accountType: 'checking' as const,
+        accountHolderType: 'business' as const,
+      };
+      const updatedAccount: NmiPaymentAccountData = {
+        ...existing,
+        ...accountData,
+        vendorId: businessId,
+      };
+
+      try {
+        const backup = JSON.parse(localStorage.getItem('uspot_nmi_vendor_accounts') || '{}');
+        backup[businessId] = updatedAccount;
+        localStorage.setItem('uspot_nmi_vendor_accounts', JSON.stringify(backup));
+      } catch (e) {}
+
+      const newNotif: NotificationItem | null =
+        updatedAccount.nmiOnboardingStatus === 'ACTIVE'
+          ? {
+              id: `notif-${Date.now()}`,
+              message: `✓ NMI Payment Account connected successfully (Gateway ID: ${updatedAccount.nmiGatewayId}). Balance withdrawals and payouts are now active.`,
+              type: 'success',
+              read: false,
+              timestamp: 'Just now',
+              businessId,
+            }
+          : null;
+
+      return {
+        ...b,
+        nmiPaymentAccount: updatedAccount,
+        notifications: newNotif ? [newNotif, ...b.notifications] : b.notifications,
+      };
+    });
+  };
+
+  const getNmiPaymentAccount = (businessId: string): NmiPaymentAccountData | undefined => {
+    const biz = state.businesses.find((b) => b.id === businessId);
+    return biz?.nmiPaymentAccount;
+  };
+
   // Helper to compute total platform balance
   const computeTotalPlatformBalance = (
     commBal: number,
@@ -1842,9 +1886,21 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
     }
 
-    const maskedBank = biz.verification?.bankAccount?.accountNumberMasked || '•••• •••• 9382';
+    // Mandatory NMI Payment Account Verification Gate
+    if (!biz.nmiPaymentAccount || biz.nmiPaymentAccount.nmiOnboardingStatus !== 'ACTIVE') {
+      return {
+        success: false,
+        error: 'Payment Account Setup Required: To withdraw funds, please complete your payment account setup.',
+      };
+    }
+
+    const maskedBank =
+      biz.nmiPaymentAccount.bankAccountNumber
+        ? `•••• •••• ${biz.nmiPaymentAccount.bankAccountNumber.slice(-4)}`
+        : biz.verification?.bankAccount?.accountNumberMasked || '•••• •••• 9382';
     const bankHolder =
       biz.verification?.bankAccount?.accountHolderName ||
+      biz.nmiPaymentAccount.companyName ||
       biz.coreDetails.legalEntityName ||
       biz.coreDetails.businessName;
 
@@ -2221,6 +2277,7 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setAdminView,
         setWizardTab,
         selectBusinessForVendor,
+        setActiveBusinessId,
         selectBusinessForAdmin,
         resetDemoData,
         createNewBusiness,
@@ -2255,6 +2312,8 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
         saveW9Data,
         submitW9Data,
         resetW9Data,
+        saveNmiPaymentAccount,
+        getNmiPaymentAccount,
         // Marketplace Ledger, Balances & Withdrawals
         platformLedger: state.platformLedger || DEFAULT_LEDGER_STATE,
         getBusinessBalance,

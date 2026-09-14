@@ -64,6 +64,8 @@ import { BusinessMultiStepPage, DEFAULT_FORM_DATA } from './multistep/BusinessMu
 import { BusinessFormData, MultiStepTab } from './multistep/types';
 import { W9TaxCertification } from './W9TaxCertification';
 import { BusinessDetailsView } from './BusinessDetailsView';
+import { NmiPaymentAccountSetup } from './NmiPaymentAccountSetup';
+import { NmiPaymentAccountData } from '../../types';
 import {
   normalizeTransactionType,
   getTransactionTypeMeta,
@@ -96,6 +98,7 @@ export const BusinessPortal: React.FC = () => {
     logout,
     state,
     selectBusinessForVendor,
+    setActiveBusinessId,
     createNewBusiness,
     setVendorView,
     saveVendorBusiness,
@@ -111,6 +114,8 @@ export const BusinessPortal: React.FC = () => {
     getBusinessBalance,
     requestBusinessWithdrawal,
     resetW9Data,
+    saveNmiPaymentAccount,
+    getNmiPaymentAccount,
   } = useDemo();
 
   // Active Tab State
@@ -167,14 +172,53 @@ export const BusinessPortal: React.FC = () => {
   // ==========================================
   // BUSINESSES TAB STATE (My Businesses 2 View Options)
   // ==========================================
-  const [selectedBusinessId, setSelectedBusinessId] = useState<string>(
-    state.businesses[0]?.id || ''
-  );
+  const [selectedBusinessId, setSelectedBusinessId] = useState<string>(() => {
+    if (currentUser?.email) {
+      let userBiz = state.businesses.find(
+        (b) => b.email?.toLowerCase() === currentUser.email?.toLowerCase()
+      );
+      if (!userBiz) {
+        if (currentUser.id === 'user-business-2' || currentUser.email.includes('devon')) {
+          userBiz = state.businesses.find((b) => b.id === 'biz-002');
+        } else if (currentUser.id === 'user-business' || currentUser.email.includes('alex')) {
+          userBiz = state.businesses.find((b) => b.id === 'biz-001');
+        }
+      }
+      if (userBiz) return userBiz.id;
+    }
+    return state.activeBusinessId || state.businesses[0]?.id || '';
+  });
+
+  // Keep selected business in sync when current user switches or state activeBusinessId changes
+  useEffect(() => {
+    if (currentUser?.email) {
+      let userBiz = state.businesses.find(
+        (b) => b.email?.toLowerCase() === currentUser.email?.toLowerCase()
+      );
+      if (!userBiz) {
+        if (currentUser.id === 'user-business-2' || currentUser.email.includes('devon')) {
+          userBiz = state.businesses.find((b) => b.id === 'biz-002');
+        } else if (currentUser.id === 'user-business' || currentUser.email.includes('alex')) {
+          userBiz = state.businesses.find((b) => b.id === 'biz-001');
+        }
+      }
+      if (userBiz && userBiz.id !== selectedBusinessId) {
+        setSelectedBusinessId(userBiz.id);
+        setActiveBusinessId(userBiz.id);
+      }
+    } else if (state.activeBusinessId && state.activeBusinessId !== selectedBusinessId) {
+      setSelectedBusinessId(state.activeBusinessId);
+    }
+  }, [currentUser?.id, currentUser?.email, state.activeBusinessId, state.businesses]);
+
   const [viewingBusinessId, setViewingBusinessId] = useState<string | null>(null);
   const [businessSearchFilter, setBusinessSearchFilter] = useState('');
   const [businessStatusFilter, setBusinessStatusFilter] = useState<string>('All');
   const [isPayoutModalOpen, setIsPayoutModalOpen] = useState(false);
   const [payoutAmount, setPayoutAmount] = useState('2,450.00');
+  const [isNmiSetupModalOpen, setIsNmiSetupModalOpen] = useState(false);
+  const [isNmiRequiredModalOpen, setIsNmiRequiredModalOpen] = useState(false);
+  const [proceedToWithdrawAfterNmi, setProceedToWithdrawAfterNmi] = useState(false);
 
   // 2 View Options for "My Businesses": 'table' (Image 1) or 'grid' (Image 2)
   const [businessesViewMode, setBusinessesViewMode] = useState<'table' | 'grid'>('grid');
@@ -827,6 +871,13 @@ export const BusinessPortal: React.FC = () => {
   );
 
   const handleOpenWithdrawalModal = () => {
+    // Intercept withdrawal if NMI sub-account is not active
+    const nmiAccount = selectedBusiness?.nmiPaymentAccount;
+    if (!nmiAccount || nmiAccount.nmiOnboardingStatus !== 'ACTIVE') {
+      setIsNmiRequiredModalOpen(true);
+      return;
+    }
+
     const bal = getBusinessBalance(selectedBusiness?.id || '');
     setPayoutAmount(bal.availableBalance > 0 ? bal.availableBalance.toFixed(2) : '0.00');
     setIsPayoutModalOpen(true);
@@ -914,16 +965,39 @@ export const BusinessPortal: React.FC = () => {
         } bg-[#0A0E17] text-slate-300 flex flex-col justify-between shrink-0 transition-all duration-200 border-r border-slate-800/80 z-30 h-full overflow-hidden select-none`}
       >
         <div className="flex flex-col flex-1 overflow-y-auto min-h-0 overscroll-contain scrollbar-none">
-          {/* Brand Logo matching Image 2 */}
-          <div className="p-5 border-b border-slate-800/80 flex items-center justify-between">
-            <div className="flex items-center gap-2.5 overflow-hidden">
-              <span className="text-white font-black text-xl tracking-wider uppercase font-mono">
-                URSPOT
-              </span>
+          {/* Brand Logo Header */}
+          <div
+            className={`border-b border-slate-800/80 transition-all ${
+              isSidebarCollapsed
+                ? 'py-3.5 px-2 flex flex-col items-center gap-2.5'
+                : 'p-5 flex items-center justify-between'
+            }`}
+          >
+            <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-2.5'} overflow-hidden`}>
+              <div
+                onClick={isSidebarCollapsed ? () => setIsSidebarCollapsed(false) : undefined}
+                className={`w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white font-black text-sm shrink-0 shadow-xs transition-colors ${
+                  isSidebarCollapsed ? 'cursor-pointer hover:bg-blue-500' : ''
+                }`}
+                title={isSidebarCollapsed ? 'Click to expand sidebar' : 'UrSpot'}
+              >
+                U
+              </div>
+              {!isSidebarCollapsed && (
+                <div>
+                  <div className="flex items-center">
+                    <span className="text-white font-extrabold text-base tracking-tight font-sans">Ur</span>
+                    <span className="text-blue-500 font-extrabold text-base tracking-tight font-sans">SPOT</span>
+                  </div>
+                  <p className="text-[10px] font-bold text-slate-400 tracking-[0.2em] uppercase mt-0.5">
+                    BUSINESS PORTAL
+                  </p>
+                </div>
+              )}
             </div>
             <button
               onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-              className="w-7 h-7 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/80 flex items-center justify-center transition-colors cursor-pointer"
+              className="w-7 h-7 rounded-lg bg-slate-900/60 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-800 hover:border-slate-700 flex items-center justify-center transition-all cursor-pointer focus:outline-none shadow-xs shrink-0"
               title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             >
               {isSidebarCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
@@ -936,11 +1010,14 @@ export const BusinessPortal: React.FC = () => {
             <button
               id="sidebar-tab-dashboard"
               onClick={() => setActiveTab('dashboard')}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+              className={`w-full flex items-center ${
+                isSidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'
+              } py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                 activeTab === 'dashboard'
                   ? 'bg-slate-800/90 text-white font-bold shadow-xs'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
               }`}
+              title={isSidebarCollapsed ? 'Dashboard' : undefined}
             >
               <LayoutDashboard className="w-4 h-4 shrink-0" />
               {!isSidebarCollapsed && <span>Dashboard</span>}
@@ -951,20 +1028,28 @@ export const BusinessPortal: React.FC = () => {
               <button
                 id="sidebar-tab-businesses-toggle"
                 onClick={() => {
-                  setIsBusinessesMenuOpen(!isBusinessesMenuOpen);
+                  if (isSidebarCollapsed) {
+                    setIsSidebarCollapsed(false);
+                    setIsBusinessesMenuOpen(true);
+                  } else {
+                    setIsBusinessesMenuOpen(!isBusinessesMenuOpen);
+                  }
                   if (activeTab !== 'my-businesses' && activeTab !== 'business-details' && activeTab !== 'followed-businesses') {
                     setActiveTab('my-businesses');
                   }
                 }}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                className={`w-full flex items-center ${
+                  isSidebarCollapsed ? 'justify-center px-0' : 'justify-between px-3'
+                } py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                   activeTab === 'my-businesses' ||
                   activeTab === 'business-details' ||
                   activeTab === 'followed-businesses'
                     ? 'text-white font-bold bg-slate-800/60'
                     : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
                 }`}
+                title={isSidebarCollapsed ? 'Businesses' : undefined}
               >
-                <div className="flex items-center gap-3">
+                <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
                   <Building2 className="w-4 h-4 shrink-0" />
                   {!isSidebarCollapsed && <span>Businesses</span>}
                 </div>
@@ -1034,7 +1119,12 @@ export const BusinessPortal: React.FC = () => {
               <button
                 id="sidebar-tab-bookings-toggle"
                 onClick={() => {
-                  setIsBookingsMenuOpen(!isBookingsMenuOpen);
+                  if (isSidebarCollapsed) {
+                    setIsSidebarCollapsed(false);
+                    setIsBookingsMenuOpen(true);
+                  } else {
+                    setIsBookingsMenuOpen(!isBookingsMenuOpen);
+                  }
                   if (
                     activeTab !== 'bookings' &&
                     activeTab !== 'booking-management' &&
@@ -1043,15 +1133,18 @@ export const BusinessPortal: React.FC = () => {
                     setActiveTab('booking-management');
                   }
                 }}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                className={`w-full flex items-center ${
+                  isSidebarCollapsed ? 'justify-center px-0' : 'justify-between px-3'
+                } py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                   activeTab === 'bookings' ||
                   activeTab === 'booking-management' ||
                   activeTab === 'advanced-booking-workflow'
                     ? 'text-white font-bold bg-slate-800/60'
                     : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
                 }`}
+                title={isSidebarCollapsed ? 'Bookings' : undefined}
               >
-                <div className="flex items-center gap-3">
+                <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
                   <Calendar className="w-4 h-4 shrink-0" />
                   {!isSidebarCollapsed && <span>Bookings</span>}
                 </div>
@@ -1101,18 +1194,26 @@ export const BusinessPortal: React.FC = () => {
               <button
                 id="sidebar-tab-my-services-toggle"
                 onClick={() => {
-                  setIsMyServicesMenuOpen(!isMyServicesMenuOpen);
+                  if (isSidebarCollapsed) {
+                    setIsSidebarCollapsed(false);
+                    setIsMyServicesMenuOpen(true);
+                  } else {
+                    setIsMyServicesMenuOpen(!isMyServicesMenuOpen);
+                  }
                   if (activeTab !== 'my-services' && activeTab !== 'service-availability') {
                     setActiveTab('service-availability');
                   }
                 }}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                className={`w-full flex items-center ${
+                  isSidebarCollapsed ? 'justify-center px-0' : 'justify-between px-3'
+                } py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                   activeTab === 'my-services' || activeTab === 'service-availability'
                     ? 'text-white font-bold bg-slate-800/60'
                     : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
                 }`}
+                title={isSidebarCollapsed ? 'My Services' : undefined}
               >
-                <div className="flex items-center gap-3">
+                <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
                   <Layers className="w-4 h-4 shrink-0" />
                   {!isSidebarCollapsed && <span>My Services</span>}
                 </div>
@@ -1147,11 +1248,14 @@ export const BusinessPortal: React.FC = () => {
             {/* 6. Workers */}
             <button
               onClick={() => setActiveTab('workers')}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+              className={`w-full flex items-center ${
+                isSidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'
+              } py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                 activeTab === 'workers'
                   ? 'bg-slate-800/90 text-white font-bold'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
               }`}
+              title={isSidebarCollapsed ? 'Workers' : undefined}
             >
               <Users className="w-4 h-4 shrink-0" />
               {!isSidebarCollapsed && <span>Workers</span>}
@@ -1160,11 +1264,14 @@ export const BusinessPortal: React.FC = () => {
             {/* 7. Payouts */}
             <button
               onClick={() => setActiveTab('payouts')}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+              className={`w-full flex items-center ${
+                isSidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'
+              } py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                 activeTab === 'payouts'
                   ? 'bg-slate-800/90 text-white font-bold'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
               }`}
+              title={isSidebarCollapsed ? 'Payouts' : undefined}
             >
               <DollarSign className="w-4 h-4 shrink-0" />
               {!isSidebarCollapsed && <span>Payouts</span>}
@@ -1173,11 +1280,14 @@ export const BusinessPortal: React.FC = () => {
             {/* 8. Customers */}
             <button
               onClick={() => setActiveTab('customers')}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+              className={`w-full flex items-center ${
+                isSidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'
+              } py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                 activeTab === 'customers'
                   ? 'bg-slate-800/90 text-white font-bold'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
               }`}
+              title={isSidebarCollapsed ? 'Customers' : undefined}
             >
               <UsersRound className="w-4 h-4 shrink-0" />
               {!isSidebarCollapsed && <span>Customers</span>}
@@ -1186,11 +1296,14 @@ export const BusinessPortal: React.FC = () => {
             {/* 9. Reviews */}
             <button
               onClick={() => setActiveTab('reviews')}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+              className={`w-full flex items-center ${
+                isSidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'
+              } py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                 activeTab === 'reviews'
                   ? 'bg-slate-800/90 text-white font-bold'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
               }`}
+              title={isSidebarCollapsed ? 'Reviews' : undefined}
             >
               <MessageSquare className="w-4 h-4 shrink-0" />
               {!isSidebarCollapsed && <span>Reviews</span>}
@@ -1199,11 +1312,14 @@ export const BusinessPortal: React.FC = () => {
             {/* 10. Subscriptions */}
             <button
               onClick={() => setActiveTab('subscriptions')}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+              className={`w-full flex items-center ${
+                isSidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'
+              } py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                 activeTab === 'subscriptions'
                   ? 'bg-slate-800/90 text-white font-bold'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
               }`}
+              title={isSidebarCollapsed ? 'Subscriptions' : undefined}
             >
               <BadgeCheck className="w-4 h-4 shrink-0" />
               {!isSidebarCollapsed && <span>Subscriptions</span>}
@@ -1212,11 +1328,14 @@ export const BusinessPortal: React.FC = () => {
             {/* 11. Account */}
             <button
               onClick={() => setActiveTab('account')}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+              className={`w-full flex items-center ${
+                isSidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'
+              } py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                 activeTab === 'account'
                   ? 'bg-slate-800/90 text-white font-bold'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
               }`}
+              title={isSidebarCollapsed ? 'Account' : undefined}
             >
               <User className="w-4 h-4 shrink-0" />
               {!isSidebarCollapsed && <span>Account</span>}
@@ -1225,11 +1344,14 @@ export const BusinessPortal: React.FC = () => {
             {/* 12. Settings */}
             <button
               onClick={() => setActiveTab('settings')}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+              className={`w-full flex items-center ${
+                isSidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'
+              } py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                 activeTab === 'settings'
                   ? 'bg-slate-800/90 text-white font-bold'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
               }`}
+              title={isSidebarCollapsed ? 'Settings' : undefined}
             >
               <Settings className="w-4 h-4 shrink-0" />
               {!isSidebarCollapsed && <span>Settings</span>}
@@ -1243,7 +1365,7 @@ export const BusinessPortal: React.FC = () => {
           {!isSidebarCollapsed ? (
             <button
               id="sidebar-create-payout-btn"
-              onClick={() => setIsPayoutModalOpen(true)}
+              onClick={handleOpenWithdrawalModal}
               className="w-full bg-white hover:bg-slate-100 text-slate-900 text-xs font-bold py-2.5 px-3 rounded-full transition-colors cursor-pointer shadow-sm flex items-center justify-center gap-1.5"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -1251,8 +1373,8 @@ export const BusinessPortal: React.FC = () => {
             </button>
           ) : (
             <button
-              onClick={() => setIsPayoutModalOpen(true)}
-              className="w-10 h-10 mx-auto rounded-full bg-white text-slate-900 flex items-center justify-center font-bold cursor-pointer"
+              onClick={handleOpenWithdrawalModal}
+              className="w-10 h-10 mx-auto rounded-full bg-white text-slate-900 flex items-center justify-center font-bold cursor-pointer hover:bg-slate-100 transition-colors"
               title="Create Payout Request"
             >
               +
@@ -1262,7 +1384,10 @@ export const BusinessPortal: React.FC = () => {
           {/* Help Center */}
           <button
             onClick={() => showToast('Connecting to 24/7 Merchant Support Help Center...')}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+            className={`w-full flex items-center ${
+              isSidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'
+            } py-2 rounded-xl text-xs text-slate-400 hover:text-slate-200 transition-colors cursor-pointer`}
+            title={isSidebarCollapsed ? 'Help Center' : undefined}
           >
             <HelpCircle className="w-4 h-4 shrink-0" />
             {!isSidebarCollapsed && <span>Help Center</span>}
@@ -1272,7 +1397,10 @@ export const BusinessPortal: React.FC = () => {
           <button
             id="sidebar-logout-btn"
             onClick={logout}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs text-red-400 hover:text-red-300 hover:bg-red-950/30 transition-colors cursor-pointer"
+            className={`w-full flex items-center ${
+              isSidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'
+            } py-2 rounded-xl text-xs text-red-400 hover:text-red-300 hover:bg-red-950/30 transition-colors cursor-pointer`}
+            title={isSidebarCollapsed ? 'Logout' : undefined}
           >
             <LogOut className="w-4 h-4 shrink-0" />
             {!isSidebarCollapsed && <span>Logout</span>}
@@ -1323,6 +1451,30 @@ export const BusinessPortal: React.FC = () => {
               {activeTab === 'account' && 'Merchant Profile'}
               {activeTab === 'settings' && 'System Preferences'}
             </span>
+          </div>
+
+          {/* Active Business Switcher Pill */}
+          <div className="hidden xl:flex items-center gap-2 pl-3 border-l border-slate-200">
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Business:</span>
+            <div className="relative">
+              <select
+                id="portal-active-business-select"
+                value={selectedBusinessId}
+                onChange={(e) => {
+                  const newId = e.target.value;
+                  setSelectedBusinessId(newId);
+                  setActiveBusinessId(newId);
+                }}
+                className="bg-slate-100 hover:bg-slate-200/80 transition-colors border border-slate-200 text-slate-900 text-xs font-bold rounded-xl pl-2.5 pr-7 py-1.5 focus:outline-none focus:ring-2 focus:ring-slate-900 cursor-pointer appearance-none"
+              >
+                {state.businesses.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.coreDetails.businessName} {b.nmiPaymentAccount?.nmiOnboardingStatus === 'ACTIVE' ? '(✓ NMI Active)' : '(⚠️ NMI Skipped)'}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="w-3.5 h-3.5 text-slate-500 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </div>
           </div>
 
           {/* Center: Search Bar matching Image 1 & 2 */}
@@ -1495,39 +1647,95 @@ export const BusinessPortal: React.FC = () => {
                     onClick={() => setIsProfileMenuOpen(false)}
                     onPointerDown={() => setIsProfileMenuOpen(false)}
                   />
-                  <div className="absolute right-0 mt-2 w-64 bg-white rounded-2xl border border-slate-200 shadow-2xl p-3 z-50 text-xs space-y-3 animate-in fade-in zoom-in-95">
-                  <div className="pb-2 border-b border-slate-100">
-                    <p className="font-bold text-slate-900 text-sm">{currentUser?.fullName || 'Alex Vance'}</p>
-                    <p className="text-slate-400 text-[11px]">{currentUser?.email || 'alex.vance@uspot.com'}</p>
-                    <span className="inline-block mt-1 px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-bold border border-blue-200/60">
-                      Role: business (active)
-                    </span>
+                  <div className="absolute right-0 mt-2 w-80 bg-white rounded-2xl border border-slate-200 shadow-2xl p-3.5 z-50 text-xs space-y-3 animate-in fade-in zoom-in-95">
+                  <div className="pb-2.5 border-b border-slate-100">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-bold text-slate-900 text-sm">{currentUser?.fullName || 'Alex Vance'}</p>
+                        <p className="text-slate-400 text-[11px]">{currentUser?.email || 'alex.vance@uspot.com'}</p>
+                      </div>
+                      <span className="px-2 py-0.5 rounded-full bg-slate-900 text-white text-[10px] font-bold">
+                        {currentUser?.roleLabel || currentUser?.role || 'business'}
+                      </span>
+                    </div>
                   </div>
 
                   {/* Switch Demo Role */}
                   <div>
-                    <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-1.5">
-                      Switch Role (Demo)
+                    <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block mb-2">
+                      Switch Demo User Account
                     </span>
-                    <div className="space-y-1">
-                      {users.map((u) => (
-                        <button
-                          key={u.id}
-                          onClick={() => {
-                            loginAsUser(u.id);
-                            setIsProfileMenuOpen(false);
-                          }}
-                          className={`w-full text-left p-2 rounded-xl text-xs transition-colors flex items-center justify-between ${
-                            u.id === currentUser?.id ? 'bg-slate-100 font-bold' : 'hover:bg-slate-50'
-                          }`}
-                        >
-                          <div>
-                            <span className="font-semibold text-slate-800 block">{u.fullName}</span>
-                            <span className="text-[10px] text-slate-400 capitalize">{u.role}</span>
-                          </div>
-                          {u.id === currentUser?.id && <CheckCircle2 className="w-3.5 h-3.5 text-indigo-600" />}
-                        </button>
-                      ))}
+                    <div className="space-y-1.5 max-h-72 overflow-y-auto pr-0.5">
+                      {users.map((u) => {
+                        const isCurrent = u.id === currentUser?.id;
+                        let userBiz = state.businesses.find(
+                          (b) => b.email?.toLowerCase() === u.email?.toLowerCase()
+                        );
+                        if (!userBiz) {
+                          if (u.id === 'user-business-2' || u.email.includes('devon')) {
+                            userBiz = state.businesses.find((b) => b.id === 'biz-002');
+                          } else if (u.id === 'user-business' || u.email.includes('alex')) {
+                            userBiz = state.businesses.find((b) => b.id === 'biz-001');
+                          }
+                        }
+                        const isNmiActive = userBiz?.nmiPaymentAccount?.nmiOnboardingStatus === 'ACTIVE';
+
+                        return (
+                          <button
+                            key={u.id}
+                            id={`profile-switch-user-${u.id}`}
+                            onClick={() => {
+                              loginAsUser(u.id);
+                              setIsProfileMenuOpen(false);
+                            }}
+                            className={`w-full text-left p-2.5 rounded-xl text-xs transition-colors flex items-center justify-between cursor-pointer ${
+                              isCurrent
+                                ? 'bg-slate-100 font-bold text-slate-900 ring-1 ring-slate-300'
+                                : 'hover:bg-slate-50 text-slate-700'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                              <div
+                                className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${
+                                  isCurrent
+                                    ? 'bg-slate-900 text-white'
+                                    : 'bg-slate-100 text-slate-700 border border-slate-200'
+                                }`}
+                              >
+                                {u.avatarInitials}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="font-bold truncate">{u.fullName}</span>
+                                  <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.2 rounded bg-slate-100 text-slate-600">
+                                    {u.roleLabel || u.role}
+                                  </span>
+                                </div>
+                                {userBiz && (
+                                  <div className="flex items-center gap-1.5 mt-0.5">
+                                    <span className="text-[11px] font-medium text-slate-600 truncate max-w-[140px]">
+                                      {userBiz.coreDetails.businessName}
+                                    </span>
+                                    <span
+                                      className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full border ${
+                                        isNmiActive
+                                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                          : 'bg-amber-50 text-amber-700 border-amber-200'
+                                      }`}
+                                    >
+                                      {isNmiActive ? 'NMI Active' : 'NMI Skipped'}
+                                    </span>
+                                  </div>
+                                )}
+                                <span className="text-[10px] text-slate-400 font-mono block truncate">
+                                  {u.email}
+                                </span>
+                              </div>
+                            </div>
+                            {isCurrent && <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 ml-1" />}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -1677,19 +1885,85 @@ export const BusinessPortal: React.FC = () => {
                 </div>
               </div>
 
-              {/* Quick Navigation Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Status Alert Banner if NMI Setup is required or active */}
+              {selectedBusiness && (
+                selectedBusiness.nmiPaymentAccount?.nmiOnboardingStatus === 'ACTIVE' ? (
+                  <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex items-start sm:items-center gap-3.5">
+                      <div className="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center shrink-0 shadow-2xs">
+                        <CheckCircle2 className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-bold text-sm text-slate-900">Payment Account Connected</h3>
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            ACTIVE
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Direct NMI Gateway: <span className="font-mono font-bold text-slate-800">{selectedBusiness.nmiPaymentAccount.nmiGatewayId}</span> • Automated ACH balance disbursements are active.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      id="btn-update-nmi-account"
+                      onClick={() => {
+                        setProceedToWithdrawAfterNmi(false);
+                        setIsNmiSetupModalOpen(true);
+                      }}
+                      className="px-4 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-semibold transition shadow-2xs cursor-pointer self-start sm:self-auto shrink-0"
+                    >
+                      Account Details
+                    </button>
+                  </div>
+                ) : (
+                  <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex items-start sm:items-center gap-3.5">
+                      <div className="w-10 h-10 rounded-2xl bg-amber-50 border border-amber-200 text-amber-700 flex items-center justify-center shrink-0 shadow-2xs">
+                        <AlertCircle className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-bold text-sm text-slate-900">Payment Account Setup Required</h3>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-200">
+                            {selectedBusiness.nmiPaymentAccount?.nmiOnboardingStatus || 'SKIPPED'}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Set up your NMI merchant sub-account to receive direct ACH payouts. Withdrawals remain locked until connected.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      id="btn-complete-dashboard-nmi"
+                      onClick={() => {
+                        setProceedToWithdrawAfterNmi(false);
+                        setIsNmiSetupModalOpen(true);
+                      }}
+                      className="px-5 py-2.5 rounded-xl bg-black hover:bg-slate-800 text-white text-xs font-bold transition shadow-xs shrink-0 cursor-pointer flex items-center gap-1.5 self-start sm:self-auto"
+                    >
+                      <span>Complete Setup</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )
+              )}
+
+              {/* Quick Navigation Cards (4 Grid Cards) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {/* Card 1: W9 Tax Form CTA */}
-                <div className="p-5 bg-white rounded-2xl border border-slate-200 shadow-2xs flex flex-col justify-between hover:shadow-xs transition-shadow">
+                <div className="p-5 bg-white rounded-2xl border border-slate-200/80 shadow-2xs flex flex-col justify-between hover:shadow-xs transition-shadow">
                   <div>
-                    <div className="w-9 h-9 rounded-xl bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center mb-3">
+                    <div className="w-9 h-9 rounded-xl bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center mb-3 shadow-2xs">
                       <FileText className="w-4 h-4" />
                     </div>
-                    <h3 className="font-bold text-sm text-slate-900">W-9 Tax Certification</h3>
+                    <h3 className="font-bold text-sm text-slate-900">W-9 Tax Form</h3>
                     <p className="text-xs text-slate-500 mt-1">
-                      Required for payouts and disbursements. Currently{' '}
+                      Tax certification status:{' '}
                       <strong className="text-amber-600 font-semibold">
-                        {selectedBusiness?.w9?.status || 'Pending Verification'}
+                        {selectedBusiness?.w9?.status || 'Pending'}
                       </strong>.
                     </p>
                   </div>
@@ -1702,31 +1976,72 @@ export const BusinessPortal: React.FC = () => {
                   </button>
                 </div>
 
-                {/* Card 2: Manage My Businesses */}
-                <div className="p-5 bg-white rounded-2xl border border-slate-200 shadow-2xs flex flex-col justify-between hover:shadow-xs transition-shadow">
+                {/* Card 2: NMI Payout Account */}
+                <div className="p-5 bg-white rounded-2xl border border-slate-200/80 shadow-2xs flex flex-col justify-between hover:shadow-xs transition-shadow">
                   <div>
-                    <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center mb-3">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center shadow-2xs border ${
+                        selectedBusiness?.nmiPaymentAccount?.nmiOnboardingStatus === 'ACTIVE'
+                          ? 'bg-emerald-50 border-emerald-200 text-emerald-600'
+                          : 'bg-amber-50 border-amber-200 text-amber-600'
+                      }`}>
+                        <CreditCard className="w-4 h-4" />
+                      </div>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                        selectedBusiness?.nmiPaymentAccount?.nmiOnboardingStatus === 'ACTIVE'
+                          ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                          : 'bg-amber-100 text-amber-800 border-amber-200'
+                      }`}>
+                        {selectedBusiness?.nmiPaymentAccount?.nmiOnboardingStatus || 'SKIPPED'}
+                      </span>
+                    </div>
+                    <h3 className="font-bold text-sm text-slate-900">Payout Account</h3>
+                    <p className="text-xs text-slate-500 mt-1">
+                      {selectedBusiness?.nmiPaymentAccount?.nmiOnboardingStatus === 'ACTIVE' ? (
+                        <>NMI Sub-Account <strong className="font-mono text-slate-800">{selectedBusiness.nmiPaymentAccount.nmiGatewayId}</strong> connected.</>
+                      ) : (
+                        <>Direct settlement via NMI. Setup required for withdrawals.</>
+                      )}
+                    </p>
+                  </div>
+                  <button
+                    id="btn-card-payout-setup"
+                    onClick={() => {
+                      setProceedToWithdrawAfterNmi(false);
+                      setIsNmiSetupModalOpen(true);
+                    }}
+                    className="mt-4 text-xs font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>{selectedBusiness?.nmiPaymentAccount?.nmiOnboardingStatus === 'ACTIVE' ? 'Manage Account' : 'Set Up Account'}</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                {/* Card 3: Manage My Businesses */}
+                <div className="p-5 bg-white rounded-2xl border border-slate-200/80 shadow-2xs flex flex-col justify-between hover:shadow-xs transition-shadow">
+                  <div>
+                    <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center mb-3 shadow-2xs">
                       <Building2 className="w-4 h-4" />
                     </div>
-                    <h3 className="font-bold text-sm text-slate-900">Registered Businesses</h3>
+                    <h3 className="font-bold text-sm text-slate-900">Businesses</h3>
                     <p className="text-xs text-slate-500 mt-1">
-                      You have <strong className="text-slate-900 font-semibold">{state.businesses.length} commercial venue(s)</strong> active on the marketplace.
+                      <strong className="text-slate-900 font-semibold">{state.businesses.length} commercial venue(s)</strong> active on the marketplace.
                     </p>
                   </div>
                   <button
                     onClick={() => setActiveTab('my-businesses')}
                     className="mt-4 text-xs font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1 cursor-pointer"
                   >
-                    <span>View My Businesses</span>
+                    <span>View Venues</span>
                     <ArrowRight className="w-3.5 h-3.5" />
                   </button>
                 </div>
 
-                {/* Card 3: Payout Balance */}
-                <div className="p-5 bg-white rounded-2xl border border-slate-200 shadow-2xs flex flex-col justify-between hover:shadow-xs transition-shadow">
+                {/* Card 4: Payout Balance */}
+                <div className="p-5 bg-white rounded-2xl border border-slate-200/80 shadow-2xs flex flex-col justify-between hover:shadow-xs transition-shadow">
                   <div>
                     <div className="flex items-center justify-between mb-3">
-                      <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center">
+                      <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center shadow-2xs">
                         <DollarSign className="w-4 h-4" />
                       </div>
                       {currentBusinessBalance.pendingWithdrawal > 0 && (
@@ -1739,8 +2054,8 @@ export const BusinessPortal: React.FC = () => {
                     <p className="text-2xl font-black text-emerald-600 mt-1 font-mono">
                       ${currentBusinessBalance.availableBalance.toFixed(2)}
                     </p>
-                    <p className="text-[11px] text-slate-500 mt-1 font-mono">
-                      Bank: {selectedBusiness.verification?.bankAccount?.accountNumberMasked || '•••• •••• 9382'}
+                    <p className="text-[11px] text-slate-500 mt-1 font-mono truncate">
+                      Bank: ••••{selectedBusiness?.nmiPaymentAccount?.bankAccountNumber ? selectedBusiness.nmiPaymentAccount.bankAccountNumber.slice(-4) : (selectedBusiness.verification?.bankAccount?.accountNumberMasked?.slice(-4) || '9382')}
                     </p>
                   </div>
                   <button
@@ -2830,6 +3145,70 @@ export const BusinessPortal: React.FC = () => {
                 </div>
               )}
 
+              {/* NMI Sub-Account Status Alert in Payouts */}
+              {selectedBusiness && (
+                selectedBusiness.nmiPaymentAccount?.nmiOnboardingStatus !== 'ACTIVE' ? (
+                  <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-900">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center shrink-0 font-bold">
+                        <AlertCircle className="w-4 h-4 text-slate-950" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-amber-950">
+                          Payment Account Setup Required — Payouts Locked
+                        </h4>
+                        <p className="text-[11px] text-amber-800 mt-0.5">
+                          To withdraw funds, please complete your payment account setup. Direct ACH disbursements require an active NMI vendor sub-account.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      id="btn-complete-payouts-nmi"
+                      onClick={() => {
+                        setProceedToWithdrawAfterNmi(true);
+                        setIsNmiSetupModalOpen(true);
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition-colors cursor-pointer self-start sm:self-auto whitespace-nowrap flex items-center gap-1"
+                    >
+                      <span>Complete Setup</span>
+                      <ArrowRight className="w-3 h-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-emerald-900">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 font-bold">
+                        <CheckCircle2 className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-xs font-bold text-emerald-950">
+                            NMI Payment Account Connected
+                          </h4>
+                          <span className="font-mono text-[11px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded">
+                            {selectedBusiness.nmiPaymentAccount.nmiGatewayId}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-emerald-800 mt-0.5">
+                          Sub-account is fully configured. Available balance can be disbursed directly to your bank account.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProceedToWithdrawAfterNmi(false);
+                        setIsNmiSetupModalOpen(true);
+                      }}
+                      className="text-xs font-bold text-emerald-700 hover:text-emerald-900 underline self-start sm:self-auto whitespace-nowrap"
+                    >
+                      Edit Account Details
+                    </button>
+                  </div>
+                )
+              )}
+
               {/* 4 Balance Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {/* Available Balance */}
@@ -3524,17 +3903,24 @@ export const BusinessPortal: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Destination Bank Account</label>
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+                <label className="block text-xs font-bold text-slate-700 mb-1">Destination NMI Settlement Bank</label>
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5">
                   <div className="flex items-center justify-between text-xs font-mono font-bold text-slate-800">
-                    <span>{selectedBusiness.verification?.bankAccount?.accountHolderName || selectedBusiness.coreDetails.businessName}</span>
-                    <span className="text-[10px] font-sans px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">Verified</span>
+                    <span>{selectedBusiness.nmiPaymentAccount?.companyName || selectedBusiness.verification?.bankAccount?.accountHolderName || selectedBusiness.coreDetails.businessName}</span>
+                    <span className="text-[10px] font-sans font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3" /> NMI Sub-Account Active
+                    </span>
                   </div>
-                  <div className="text-xs text-slate-600 font-mono">
-                    Account: {selectedBusiness.verification?.bankAccount?.accountNumberMasked || '•••• •••• 9382'}
+                  <div className="flex items-center justify-between text-xs text-slate-600 font-mono">
+                    <span>
+                      Routing: •••• {selectedBusiness.nmiPaymentAccount?.bankRoutingNumber ? selectedBusiness.nmiPaymentAccount.bankRoutingNumber.slice(-4) : (selectedBusiness.verification?.bankAccount?.routingNumber?.slice(-4) || '0024')} | Acc: •••• {selectedBusiness.nmiPaymentAccount?.bankAccountNumber ? selectedBusiness.nmiPaymentAccount.bankAccountNumber.slice(-4) : '4321'}
+                    </span>
+                    <span className="text-blue-600 text-[11px] font-bold">
+                      {selectedBusiness.nmiPaymentAccount?.nmiGatewayId || 'NMI-ACTIVE'}
+                    </span>
                   </div>
                   <div className="text-[10px] text-slate-400">
-                    Bank details are verified and saved. Users do not re-enter bank details.
+                    Direct ACH transfer via NMI Gateway. Settlement automatically routes to this verified sub-account.
                   </div>
                 </div>
               </div>
@@ -4177,6 +4563,120 @@ export const BusinessPortal: React.FC = () => {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: PAYMENT ACCOUNT SETUP REQUIRED (Withdrawal Intercept Prompt)       */}
+      {/* ========================================================================= */}
+      {isNmiRequiredModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-md w-full overflow-hidden animate-in zoom-in-95 duration-150">
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-50 border border-amber-200 text-amber-700 flex items-center justify-center shadow-2xs">
+                  <AlertCircle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-slate-900 text-base">Payment Account Setup Required</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">NMI Sub-Account Verification</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsNmiRequiredModalOpen(false)}
+                className="w-8 h-8 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4 text-xs">
+              <p className="text-slate-600 text-sm leading-relaxed">
+                To withdraw funds, please complete your payment account setup. You must configure your direct settlement account with NMI Gateway to receive marketplace earnings.
+              </p>
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="font-bold flex items-center gap-1.5 text-xs text-slate-900">
+                    <ShieldCheck className="w-4 h-4 text-amber-600" />
+                    Withdrawal Currently Locked
+                  </p>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-200">
+                    {selectedBusiness?.nmiPaymentAccount?.nmiOnboardingStatus || 'SKIPPED'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Connecting an NMI vendor sub-account enables automated ACH settlement and unlocks transfers immediately.
+                </p>
+              </div>
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsNmiRequiredModalOpen(false)}
+                  className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  id="btn-complete-nmi-setup"
+                  onClick={() => {
+                    setIsNmiRequiredModalOpen(false);
+                    setProceedToWithdrawAfterNmi(true);
+                    setIsNmiSetupModalOpen(true);
+                  }}
+                  className="px-5 py-2.5 rounded-xl bg-black hover:bg-slate-800 text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  <span>Set Up Payment Account</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: NMI PAYMENT ACCOUNT SETUP MODAL                                    */}
+      {/* ========================================================================= */}
+      {isNmiSetupModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="max-w-3xl w-full my-8">
+            <NmiPaymentAccountSetup
+              businessId={selectedBusiness?.id || 'biz-001'}
+              initialData={selectedBusiness?.nmiPaymentAccount || {
+                companyName: selectedBusiness?.coreDetails?.legalEntityName || selectedBusiness?.coreDetails?.businessName,
+                email: selectedBusiness?.email || currentUser?.email,
+                firstName: currentUser?.fullName?.split(' ')[0] || 'Alex',
+                lastName: currentUser?.fullName?.split(' ').slice(1).join(' ') || 'Vance',
+                federalTaxId: '12-3456789',
+                bankRoutingNumber: '',
+                bankAccountNumber: '',
+                accountType: 'checking',
+                accountHolderType: 'business',
+              }}
+              allowSkip={!proceedToWithdrawAfterNmi}
+              isModal={true}
+              onSuccess={(accountData) => {
+                saveNmiPaymentAccount(selectedBusiness.id, accountData);
+                showToast('✓ Payment Account connected successfully via NMI Gateway!');
+                setIsNmiSetupModalOpen(false);
+                if (proceedToWithdrawAfterNmi) {
+                  setProceedToWithdrawAfterNmi(false);
+                  const bal = getBusinessBalance(selectedBusiness?.id || '');
+                  setPayoutAmount(bal.availableBalance > 0 ? bal.availableBalance.toFixed(2) : '0.00');
+                  setIsPayoutModalOpen(true);
+                }
+              }}
+              onSkip={() => {
+                saveNmiPaymentAccount(selectedBusiness.id, { nmiOnboardingStatus: 'SKIPPED' });
+                setIsNmiSetupModalOpen(false);
+                setProceedToWithdrawAfterNmi(false);
+              }}
+              onCancel={() => {
+                setIsNmiSetupModalOpen(false);
+                setProceedToWithdrawAfterNmi(false);
+              }}
+            />
           </div>
         </div>
       )}

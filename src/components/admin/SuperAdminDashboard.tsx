@@ -222,9 +222,21 @@ export const SuperAdminDashboard: React.FC = () => {
       >
         <div className="flex flex-col flex-1 overflow-y-auto min-h-0 overscroll-contain scrollbar-none">
           {/* Brand Logo Header matching screenshot */}
-          <div className="p-5 border-b border-slate-800/80 flex items-center justify-between">
-            <div className="flex items-center gap-2.5 overflow-hidden">
-              <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white font-black text-sm shrink-0 shadow-xs">
+          <div
+            className={`border-b border-slate-800/80 transition-all ${
+              isSidebarCollapsed
+                ? 'py-3.5 px-2 flex flex-col items-center gap-2.5'
+                : 'p-5 flex items-center justify-between'
+            }`}
+          >
+            <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-2.5'} overflow-hidden`}>
+              <div
+                onClick={isSidebarCollapsed ? () => setIsSidebarCollapsed(false) : undefined}
+                className={`w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white font-black text-sm shrink-0 shadow-xs transition-colors ${
+                  isSidebarCollapsed ? 'cursor-pointer hover:bg-blue-500' : ''
+                }`}
+                title={isSidebarCollapsed ? 'Click to expand sidebar' : 'UrSpot'}
+              >
                 U
               </div>
               {!isSidebarCollapsed && (
@@ -241,7 +253,7 @@ export const SuperAdminDashboard: React.FC = () => {
             </div>
             <button
               onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-              className="w-7 h-7 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/80 flex items-center justify-center transition-colors cursor-pointer"
+              className="w-7 h-7 rounded-lg bg-slate-900/60 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-800 hover:border-slate-700 flex items-center justify-center transition-all cursor-pointer focus:outline-none shadow-xs shrink-0"
               title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             >
               {isSidebarCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
@@ -254,7 +266,9 @@ export const SuperAdminDashboard: React.FC = () => {
             <button
               id="sidebar-admin-dashboard"
               onClick={() => setActiveNav('dashboard')}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+              className={`w-full flex items-center ${
+                isSidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'
+              } py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                 activeNav === 'dashboard'
                   ? 'bg-white text-slate-900 font-bold shadow-xs'
                   : 'text-slate-400 hover:text-white hover:bg-slate-800/40 border border-transparent'
@@ -270,19 +284,26 @@ export const SuperAdminDashboard: React.FC = () => {
               <button
                 id="sidebar-admin-users-toggle"
                 onClick={() => {
-                  setIsUsersOpen(!isUsersOpen);
+                  if (isSidebarCollapsed) {
+                    setIsSidebarCollapsed(false);
+                    setIsUsersOpen(true);
+                  } else {
+                    setIsUsersOpen(!isUsersOpen);
+                  }
                   if (!isUsersOpen && !activeNav.startsWith('users-')) {
                     setActiveNav('users-customers');
                   }
                 }}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+                className={`w-full flex items-center ${
+                  isSidebarCollapsed ? 'justify-center px-0' : 'justify-between px-3.5'
+                } py-2.5 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
                   isUsersOpen
                     ? 'bg-[#131d2e] text-white shadow-xs'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800/40 rounded-xl font-semibold'
                 }`}
                 title={isSidebarCollapsed ? 'Users' : undefined}
               >
-                <div className="flex items-center gap-3">
+                <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
                   <Users className={`w-4 h-4 shrink-0 ${isUsersOpen ? 'text-white' : 'text-slate-400'}`} />
                   {!isSidebarCollapsed && <span>Users</span>}
                 </div>
@@ -357,19 +378,26 @@ export const SuperAdminDashboard: React.FC = () => {
               <button
                 id="sidebar-admin-assets-toggle"
                 onClick={() => {
-                  setIsAssetsOpen(!isAssetsOpen);
+                  if (isSidebarCollapsed) {
+                    setIsSidebarCollapsed(false);
+                    setIsAssetsOpen(true);
+                  } else {
+                    setIsAssetsOpen(!isAssetsOpen);
+                  }
                   if (!isAssetsOpen && !activeNav.startsWith('assets-')) {
                     setActiveNav('assets-categories');
                   }
                 }}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+                className={`w-full flex items-center ${
+                  isSidebarCollapsed ? 'justify-center px-0' : 'justify-between px-3.5'
+                } py-2.5 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
                   isAssetsOpen
                     ? 'bg-[#131d2e] text-white shadow-xs'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800/40 rounded-xl font-semibold'
                 }`}
                 title={isSidebarCollapsed ? 'Business Assets' : undefined}
               >
-                <div className="flex items-center gap-3">
+                <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
                   <Layers className={`w-4 h-4 shrink-0 ${isAssetsOpen ? 'text-white' : 'text-slate-400'}`} />
                   {!isSidebarCollapsed && <span>Business Assets</span>}
                 </div>
@@ -386,7 +414,7 @@ export const SuperAdminDashboard: React.FC = () => {
               {isAssetsOpen && !isSidebarCollapsed && (
                 <div className="pl-6 pr-2 py-1 space-y-1">
                   <button
-                    id="sidebar-subtab-onboarding"
+                    id="sidebar-subtab-assets-onboarding"
                     onClick={() => setActiveNav('assets-onboarding')}
                     className={`w-full text-left px-3 py-2 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2.5 ${
                       activeNav === 'assets-onboarding'
@@ -399,11 +427,11 @@ export const SuperAdminDashboard: React.FC = () => {
                         activeNav === 'assets-onboarding' ? 'bg-blue-600' : 'bg-slate-500'
                       }`}
                     />
-                    <span>Business Onboarding</span>
+                    <span>Onboarding</span>
                   </button>
 
                   <button
-                    id="sidebar-subtab-organizations"
+                    id="sidebar-subtab-assets-organizations"
                     onClick={() => setActiveNav('assets-organizations')}
                     className={`w-full text-left px-3 py-2 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2.5 ${
                       activeNav === 'assets-organizations'
@@ -420,7 +448,7 @@ export const SuperAdminDashboard: React.FC = () => {
                   </button>
 
                   <button
-                    id="sidebar-subtab-industries"
+                    id="sidebar-subtab-assets-industries"
                     onClick={() => setActiveNav('assets-industries')}
                     className={`w-full text-left px-3 py-2 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2.5 ${
                       activeNav === 'assets-industries'
@@ -437,7 +465,7 @@ export const SuperAdminDashboard: React.FC = () => {
                   </button>
 
                   <button
-                    id="sidebar-subtab-categories"
+                    id="sidebar-subtab-assets-categories"
                     onClick={() => setActiveNav('assets-categories')}
                     className={`w-full text-left px-3 py-2 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2.5 ${
                       activeNav === 'assets-categories'
@@ -454,7 +482,7 @@ export const SuperAdminDashboard: React.FC = () => {
                   </button>
 
                   <button
-                    id="sidebar-subtab-services"
+                    id="sidebar-subtab-assets-services"
                     onClick={() => setActiveNav('assets-services')}
                     className={`w-full text-left px-3 py-2 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2.5 ${
                       activeNav === 'assets-services'
@@ -471,20 +499,20 @@ export const SuperAdminDashboard: React.FC = () => {
                   </button>
 
                   <button
-                    id="sidebar-subtab-cat-requests"
-                    onClick={() => setActiveNav('assets-cat-requests')}
+                    id="sidebar-subtab-assets-category-requests"
+                    onClick={() => setActiveNav('assets-category-requests')}
                     className={`w-full text-left px-3 py-2 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2.5 ${
-                      activeNav === 'assets-cat-requests'
+                      activeNav === 'assets-category-requests'
                         ? 'bg-white text-slate-900 font-bold shadow-xs'
                         : 'text-slate-400 hover:text-white hover:bg-slate-800/40 font-medium'
                     }`}
                   >
                     <span
                       className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                        activeNav === 'assets-cat-requests' ? 'bg-blue-600' : 'bg-slate-500'
+                        activeNav === 'assets-category-requests' ? 'bg-blue-600' : 'bg-slate-500'
                       }`}
                     />
-                    <span>Cat. Requests</span>
+                    <span>Category Requests</span>
                   </button>
                 </div>
               )}
@@ -495,19 +523,26 @@ export const SuperAdminDashboard: React.FC = () => {
               <button
                 id="sidebar-admin-management-toggle"
                 onClick={() => {
-                  setIsManagementOpen(!isManagementOpen);
+                  if (isSidebarCollapsed) {
+                    setIsSidebarCollapsed(false);
+                    setIsManagementOpen(true);
+                  } else {
+                    setIsManagementOpen(!isManagementOpen);
+                  }
                   if (!isManagementOpen && !activeNav.startsWith('management')) {
                     setActiveNav('management-all');
                   }
                 }}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+                className={`w-full flex items-center ${
+                  isSidebarCollapsed ? 'justify-center px-0' : 'justify-between px-3.5'
+                } py-2.5 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
                   isManagementOpen
                     ? 'bg-[#131d2e] text-white shadow-xs'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800/40 rounded-xl font-semibold'
                 }`}
                 title={isSidebarCollapsed ? 'Business Management' : undefined}
               >
-                <div className="flex items-center gap-3">
+                <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
                   <CheckCircle2 className={`w-4 h-4 shrink-0 ${isManagementOpen ? 'text-white' : 'text-slate-400'}`} />
                   {!isSidebarCollapsed && <span>Business Management</span>}
                 </div>
@@ -600,7 +635,9 @@ export const SuperAdminDashboard: React.FC = () => {
             <button
               id="sidebar-admin-plans"
               onClick={() => setActiveNav('plans')}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+              className={`w-full flex items-center ${
+                isSidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'
+              } py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                 activeNav === 'plans'
                   ? 'bg-white text-slate-900 font-bold shadow-xs'
                   : 'text-slate-400 hover:text-white hover:bg-slate-800/40 border border-transparent'
@@ -615,7 +652,9 @@ export const SuperAdminDashboard: React.FC = () => {
             <button
               id="sidebar-admin-bookings"
               onClick={() => setActiveNav('bookings')}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+              className={`w-full flex items-center ${
+                isSidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'
+              } py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                 activeNav === 'bookings'
                   ? 'bg-white text-slate-900 font-bold shadow-xs'
                   : 'text-slate-400 hover:text-white hover:bg-slate-800/40 border border-transparent'
@@ -630,7 +669,9 @@ export const SuperAdminDashboard: React.FC = () => {
             <button
               id="sidebar-admin-payment"
               onClick={() => setActiveNav('payment')}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+              className={`w-full flex items-center ${
+                isSidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'
+              } py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                 activeNav === 'payment'
                   ? 'bg-white text-slate-900 font-bold shadow-xs'
                   : 'text-slate-400 hover:text-white hover:bg-slate-800/40 border border-transparent'
@@ -645,7 +686,9 @@ export const SuperAdminDashboard: React.FC = () => {
             <button
               id="sidebar-admin-support"
               onClick={() => setActiveNav('support')}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+              className={`w-full flex items-center ${
+                isSidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'
+              } py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                 activeNav === 'support'
                   ? 'bg-white text-slate-900 font-bold shadow-xs'
                   : 'text-slate-400 hover:text-white hover:bg-slate-800/40 border border-transparent'
@@ -660,7 +703,9 @@ export const SuperAdminDashboard: React.FC = () => {
             <button
               id="sidebar-admin-subscription"
               onClick={() => setActiveNav('subscription')}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+              className={`w-full flex items-center ${
+                isSidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'
+              } py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                 activeNav === 'subscription'
                   ? 'bg-white text-slate-900 font-bold shadow-xs'
                   : 'text-slate-400 hover:text-white hover:bg-slate-800/40 border border-transparent'
@@ -675,7 +720,9 @@ export const SuperAdminDashboard: React.FC = () => {
             <button
               id="sidebar-admin-content"
               onClick={() => setActiveNav('content')}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+              className={`w-full flex items-center ${
+                isSidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'
+              } py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                 activeNav === 'content'
                   ? 'bg-white text-slate-900 font-bold shadow-xs'
                   : 'text-slate-400 hover:text-white hover:bg-slate-800/40 border border-transparent'
@@ -691,19 +738,26 @@ export const SuperAdminDashboard: React.FC = () => {
               <button
                 id="sidebar-admin-configuration-toggle"
                 onClick={() => {
-                  setIsConfigOpen(!isConfigOpen);
+                  if (isSidebarCollapsed) {
+                    setIsSidebarCollapsed(false);
+                    setIsConfigOpen(true);
+                  } else {
+                    setIsConfigOpen(!isConfigOpen);
+                  }
                   if (!isConfigOpen && !activeNav.startsWith('config-')) {
                     setActiveNav('config-reference');
                   }
                 }}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+                className={`w-full flex items-center ${
+                  isSidebarCollapsed ? 'justify-center px-0' : 'justify-between px-3.5'
+                } py-2.5 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
                   isConfigOpen
                     ? 'bg-[#131d2e] text-white shadow-xs'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800/40 rounded-xl font-semibold'
                 }`}
                 title={isSidebarCollapsed ? 'Configuration' : undefined}
               >
-                <div className="flex items-center gap-3">
+                <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
                   <Settings className={`w-4 h-4 shrink-0 ${isConfigOpen ? 'text-white' : 'text-slate-400'}`} />
                   {!isSidebarCollapsed && <span>Configuration</span>}
                 </div>
@@ -832,11 +886,14 @@ export const SuperAdminDashboard: React.FC = () => {
           <button
             id="sidebar-admin-settings"
             onClick={() => setActiveNav('settings')}
-            className={`w-full flex items-center gap-3 px-3.5 py-2 rounded-xl text-xs transition-colors cursor-pointer ${
+            className={`w-full flex items-center ${
+              isSidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3.5'
+            } py-2 rounded-xl text-xs transition-colors cursor-pointer ${
               activeNav === 'settings'
                 ? 'bg-white text-slate-900 font-bold shadow-xs'
                 : 'text-slate-400 hover:text-white hover:bg-slate-800/40 font-medium'
             }`}
+            title={isSidebarCollapsed ? 'Settings' : undefined}
           >
             <Settings className="w-4 h-4 shrink-0" />
             {!isSidebarCollapsed && <span>Settings</span>}
@@ -846,7 +903,10 @@ export const SuperAdminDashboard: React.FC = () => {
           <button
             id="sidebar-admin-logout"
             onClick={logout}
-            className="w-full flex items-center gap-3 px-3.5 py-2 rounded-xl text-xs text-slate-400 hover:text-white hover:bg-slate-800/40 transition-colors cursor-pointer font-medium"
+            className={`w-full flex items-center ${
+              isSidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3.5'
+            } py-2 rounded-xl text-xs text-slate-400 hover:text-white hover:bg-slate-800/40 transition-colors cursor-pointer font-medium`}
+            title={isSidebarCollapsed ? 'Logout' : undefined}
           >
             <LogOut className="w-4 h-4 shrink-0" />
             {!isSidebarCollapsed && <span>Logout</span>}
@@ -1001,27 +1061,34 @@ export const SuperAdminDashboard: React.FC = () => {
 
                     {/* Fast Demo Role Switcher */}
                     <div className="py-1">
-                      <p className="text-[10px] uppercase font-bold text-slate-400 px-2 mb-1">
-                        Switch Active Role
+                      <p className="text-[10px] uppercase font-bold text-slate-400 px-2 mb-1.5">
+                        Switch Active User
                       </p>
-                      {users
-                        .filter((u) => u.id !== currentUser?.id)
-                        .slice(0, 4)
-                        .map((user) => (
-                          <button
-                            key={user.id}
-                            onClick={() => {
-                              loginAsUser(user.id);
-                              setIsProfileMenuOpen(false);
-                            }}
-                            className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs hover:bg-slate-50 flex items-center justify-between text-slate-700 cursor-pointer"
-                          >
-                            <span className="truncate">{user.fullName}</span>
-                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 uppercase">
-                              {user.role}
-                            </span>
-                          </button>
-                        ))}
+                      <div className="space-y-1 max-h-60 overflow-y-auto pr-0.5">
+                        {users
+                          .filter((u) => u.id !== currentUser?.id)
+                          .map((user) => (
+                            <button
+                              key={user.id}
+                              id={`admin-switch-user-${user.id}`}
+                              onClick={() => {
+                                loginAsUser(user.id);
+                                setIsProfileMenuOpen(false);
+                              }}
+                              className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs hover:bg-slate-100 flex items-center justify-between text-slate-700 cursor-pointer transition-colors"
+                            >
+                              <div className="min-w-0 pr-1">
+                                <span className="font-semibold block truncate">{user.fullName}</span>
+                                <span className="text-[10px] text-slate-400 block truncate font-mono">
+                                  {user.email}
+                                </span>
+                              </div>
+                              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 uppercase font-bold shrink-0">
+                                {user.roleLabel || user.role}
+                              </span>
+                            </button>
+                          ))}
+                      </div>
                     </div>
 
                     <div className="border-t border-slate-100 pt-2 mt-2">

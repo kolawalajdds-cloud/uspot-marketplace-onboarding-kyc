@@ -206,7 +206,7 @@ export const Navbar: React.FC = () => {
                   <Users className="w-3.5 h-3.5 text-indigo-600" />
                   <span>Switch Seeded User Role</span>
                 </div>
-                <span className="text-[10px] text-slate-400 font-medium">4 Demo Users</span>
+                <span className="text-[10px] text-slate-400 font-medium">Demo Accounts</span>
               </div>
 
               {/* Seeded Users List */}
@@ -216,7 +216,7 @@ export const Navbar: React.FC = () => {
                   return (
                     <button
                       key={u.id}
-                      id={`switch-to-user-${u.role}`}
+                      id={`switch-to-user-${u.id}`}
                       onClick={() => {
                         loginAsUser(u.id);
                         setUserDropdownOpen(false);
