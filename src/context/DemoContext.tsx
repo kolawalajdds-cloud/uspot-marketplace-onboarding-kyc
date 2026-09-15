@@ -27,7 +27,7 @@ import { getSeedBusinesses } from '../data/seedData';
 import { getSeedUsers } from '../data/seedUsers';
 import { calculateLedgerBalances, normalizeTransactionType } from '../utils/ledgerAccounting';
 
-const LOCAL_STORAGE_KEY = 'uspot_marketplace_demo_v5';
+const LOCAL_STORAGE_KEY = 'uspot_marketplace_demo_v6';
 const PAYMENT_RATE_STORAGE_KEY = 'urspot_superadmin_payment_rate';
 
 export const DEFAULT_LEDGER_STATE: PlatformLedgerState = {
@@ -196,6 +196,7 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.removeItem('uspot_demo_state');
         localStorage.removeItem('uspot_marketplace_state_v2');
         localStorage.removeItem('uspot_nmi_vendor_accounts');
+        localStorage.removeItem('uspot_marketplace_demo_v5');
       } catch (e) {}
 
       const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
@@ -219,15 +220,21 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
               ? seedUsers.find((s) => s.id === parsed.currentUser.id) || null
               : null;
 
-          // Exactly the canonical 2 businesses: The Nexus Workspace & Lab (biz-001) and Apex Creative Studios (biz-002)
+          // Distinct businesses mapped to canonical seeds with unique owners
           const loadedBusinesses = seedBusinesses.map((seedBiz) => {
             const match = (parsed.businesses || []).find((b: Business) => b.id === seedBiz.id);
             if (match) {
               return {
                 ...seedBiz,
                 ...match,
+                userId: seedBiz.userId || match.userId,
                 email: seedBiz.email,
                 coreDetails: seedBiz.coreDetails,
+                verification: {
+                  ...seedBiz.verification,
+                  ...(match.verification || {}),
+                  beneficialOwner: seedBiz.verification.beneficialOwner,
+                },
                 nmiPaymentAccount:
                   seedBiz.id === 'biz-002'
                     ? seedBiz.nmiPaymentAccount // Apex Creative Studios is always ACTIVE for Devon Lane
@@ -565,6 +572,8 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const newId = `biz-${Date.now().toString().slice(-4)}`;
     const newBiz: Business = {
       id: newId,
+      userId: state.currentUser?.id,
+      email: state.currentUser?.email || 'vendor@uspot.com',
       status: 'Draft',
       coreDetails: {
         businessName: 'Untitled Venture Space',
@@ -1392,6 +1401,7 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (existing) {
       resultBiz = {
         ...existing,
+        userId: existing.userId || state.currentUser?.id,
         coreDetails: core,
         verification,
         status: computedStatus,
@@ -1421,6 +1431,8 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } else {
       resultBiz = {
         id: businessId,
+        userId: state.currentUser?.id,
+        email: formData.email || state.currentUser?.email || 'vendor@uspot.com',
         status: computedStatus,
         subTab: computedSubTab,
         coreDetails: core,
@@ -1464,7 +1476,6 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
           },
         ],
         phone: formData.phone || '+1 (415) 555-0199',
-        email: formData.email || 'contact@mybusiness.com',
         website: formData.website || '',
         date: formattedDate,
         rejectionCount: 0,

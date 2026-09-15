@@ -265,6 +265,7 @@ export interface NmiPaymentAccountData {
 
 export interface Business {
   id: string;
+  userId?: string;
   status: BusinessStatus;
   coreDetails: BusinessCoreDetails;
   operatingHours: OperatingDay[];

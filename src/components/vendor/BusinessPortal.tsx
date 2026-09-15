@@ -290,9 +290,38 @@ export const BusinessPortal: React.FC = () => {
     }
   };
 
+  // Filter businesses strictly for the currently logged-in vendor user
+  const vendorOwnedBusinesses = useMemo(() => {
+    if (!currentUser) return state.businesses;
+    if (currentUser.role === 'business') {
+      const isDevon = currentUser.id === 'user-business-2' || currentUser.email?.toLowerCase().includes('devon');
+      const isAlex = currentUser.id === 'user-business' || currentUser.email?.toLowerCase().includes('alex');
+
+      const matched = state.businesses.filter((b) => {
+        if (b.userId && b.userId === currentUser.id) return true;
+        if (b.email && b.email.toLowerCase() === currentUser.email?.toLowerCase()) return true;
+        if (isDevon && b.id === 'biz-002') return true;
+        if (isAlex && b.id === 'biz-001') return true;
+        return false;
+      });
+
+      if (matched.length > 0) return matched;
+      if (isDevon) {
+        const devonBiz = state.businesses.find((b) => b.id === 'biz-002');
+        if (devonBiz) return [devonBiz];
+      }
+      if (isAlex) {
+        const alexBiz = state.businesses.find((b) => b.id === 'biz-001');
+        if (alexBiz) return [alexBiz];
+      }
+      return [state.businesses[0]];
+    }
+    return state.businesses;
+  }, [state.businesses, currentUser]);
+
   // Synchronized directly with DemoContext so changes in Business User reflect in Super Admin and vice versa!
   const myBusinessesList = useMemo(() => {
-    return state.businesses.map((b) => {
+    return vendorOwnedBusinesses.map((b) => {
       let status: 'Active' | 'Pending' | 'Inactive' = 'Active';
       if (b.status === 'Pending KYC Review') {
         status = 'Pending';
@@ -341,7 +370,7 @@ export const BusinessPortal: React.FC = () => {
         avatarChar: b.avatarChar || (b.coreDetails.businessName || 'B').charAt(0).toUpperCase(),
       };
     });
-  }, [state.businesses]);
+  }, [vendorOwnedBusinesses]);
 
   // Modals for CRUD operations & details
   const [multistepMode, setMultistepMode] = useState<'create' | 'edit' | null>(null);
@@ -862,7 +891,9 @@ export const BusinessPortal: React.FC = () => {
   };
 
   const selectedBusiness =
-    state.businesses.find((b) => b.id === selectedBusinessId) || state.businesses[0];
+    vendorOwnedBusinesses.find((b) => b.id === selectedBusinessId) ||
+    vendorOwnedBusinesses[0] ||
+    state.businesses[0];
 
   const currentBusinessBalance = getBusinessBalance(selectedBusiness?.id || '');
   const isSelectedBizW9Certified = Boolean(
@@ -913,7 +944,7 @@ export const BusinessPortal: React.FC = () => {
     ? state.businesses.find((b) => b.id === payingBusinessId)
     : selectedBusiness;
 
-  const filteredBusinesses = state.businesses.filter((b) => {
+  const filteredBusinesses = vendorOwnedBusinesses.filter((b) => {
     const matchesSearch =
       b.coreDetails.businessName.toLowerCase().includes(businessSearchFilter.toLowerCase()) ||
       b.coreDetails.city.toLowerCase().includes(businessSearchFilter.toLowerCase()) ||
@@ -1453,29 +1484,6 @@ export const BusinessPortal: React.FC = () => {
             </span>
           </div>
 
-          {/* Active Business Switcher Pill */}
-          <div className="hidden xl:flex items-center gap-2 pl-3 border-l border-slate-200">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Business:</span>
-            <div className="relative">
-              <select
-                id="portal-active-business-select"
-                value={selectedBusinessId}
-                onChange={(e) => {
-                  const newId = e.target.value;
-                  setSelectedBusinessId(newId);
-                  setActiveBusinessId(newId);
-                }}
-                className="bg-slate-100 hover:bg-slate-200/80 transition-colors border border-slate-200 text-slate-900 text-xs font-bold rounded-xl pl-2.5 pr-7 py-1.5 focus:outline-none focus:ring-2 focus:ring-slate-900 cursor-pointer appearance-none"
-              >
-                {state.businesses.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.coreDetails.businessName} {b.nmiPaymentAccount?.nmiOnboardingStatus === 'ACTIVE' ? '(✓ NMI Active)' : '(⚠️ NMI Skipped)'}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-500 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
-            </div>
-          </div>
 
           {/* Center: Search Bar matching Image 1 & 2 */}
           <div className="flex-1 max-w-md mx-auto hidden md:block">
@@ -1669,8 +1677,13 @@ export const BusinessPortal: React.FC = () => {
                       {users.map((u) => {
                         const isCurrent = u.id === currentUser?.id;
                         let userBiz = state.businesses.find(
-                          (b) => b.email?.toLowerCase() === u.email?.toLowerCase()
+                          (b) => b.userId && b.userId === u.id
                         );
+                        if (!userBiz) {
+                          userBiz = state.businesses.find(
+                            (b) => b.email?.toLowerCase() === u.email?.toLowerCase()
+                          );
+                        }
                         if (!userBiz) {
                           if (u.id === 'user-business-2' || u.email.includes('devon')) {
                             userBiz = state.businesses.find((b) => b.id === 'biz-002');
@@ -2025,7 +2038,7 @@ export const BusinessPortal: React.FC = () => {
                     </div>
                     <h3 className="font-bold text-sm text-slate-900">Businesses</h3>
                     <p className="text-xs text-slate-500 mt-1">
-                      <strong className="text-slate-900 font-semibold">{state.businesses.length} commercial venue(s)</strong> active on the marketplace.
+                      <strong className="text-slate-900 font-semibold">{vendorOwnedBusinesses.length} commercial venue(s)</strong> active on the marketplace.
                     </p>
                   </div>
                   <button
@@ -2094,7 +2107,7 @@ export const BusinessPortal: React.FC = () => {
                     onChange={(e) => setSelectedBusinessId(e.target.value)}
                     className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 cursor-pointer"
                   >
-                    {state.businesses.map((biz) => {
+                    {vendorOwnedBusinesses.map((biz) => {
                       const isW9Done = Boolean(biz.w9 && (biz.w9.status === 'submitted' || biz.w9.status === 'verified'));
                       return (
                         <option key={biz.id} value={biz.id}>
@@ -3107,7 +3120,7 @@ export const BusinessPortal: React.FC = () => {
                     onChange={(e) => setSelectedBusinessId(e.target.value)}
                     className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 cursor-pointer"
                   >
-                    {state.businesses.map((biz) => {
+                    {vendorOwnedBusinesses.map((biz) => {
                       const isW9Done = Boolean(biz.w9 && (biz.w9.status === 'submitted' || biz.w9.status === 'verified'));
                       const bizBal = getBusinessBalance(biz.id);
                       return (

@@ -340,8 +340,13 @@ export const LoginView: React.FC<LoginViewProps> = ({ isModal = false, onClose }
                 const isSelected = selectedUserId === user.id;
 
                 let userBiz = state.businesses.find(
-                  (b) => b.email?.toLowerCase() === user.email?.toLowerCase()
+                  (b) => b.userId && b.userId === user.id
                 );
+                if (!userBiz) {
+                  userBiz = state.businesses.find(
+                    (b) => b.email?.toLowerCase() === user.email?.toLowerCase()
+                  );
+                }
                 if (!userBiz) {
                   if (user.id === 'user-business-2' || user.email.includes('devon')) {
                     userBiz = state.businesses.find((b) => b.id === 'biz-002');
