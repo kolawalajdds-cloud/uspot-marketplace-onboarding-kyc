@@ -22,12 +22,27 @@ import {
   PlatformLedgerState,
   NmiPaymentAccountData,
   NmiOnboardingStatus,
+  BusinessHours,
+  BusinessService,
+  Booking,
+  BookingItem,
+  BookingStatus,
+  BookingPaymentStatus,
+  BookingPaymentMethod,
 } from '../types';
-import { getSeedBusinesses } from '../data/seedData';
+import {
+  getSeedBusinesses,
+  getSeedBusinessServices,
+  getSeedBookings,
+  getSalonPresetServices,
+  getSpaPresetServices,
+  getSeedServiceCategories,
+} from '../data/seedData';
 import { getSeedUsers } from '../data/seedUsers';
 import { calculateLedgerBalances, normalizeTransactionType } from '../utils/ledgerAccounting';
+import { timeToMinutes, minutesToTimeString } from '../utils/serviceBookingUtils';
 
-const LOCAL_STORAGE_KEY = 'uspot_marketplace_demo_v6';
+const LOCAL_STORAGE_KEY = 'uspot_marketplace_demo_v8';
 const PAYMENT_RATE_STORAGE_KEY = 'urspot_superadmin_payment_rate';
 
 export const DEFAULT_LEDGER_STATE: PlatformLedgerState = {
@@ -67,6 +82,9 @@ interface StoredState {
   hasExplicitLogin?: boolean;
   notifications?: NotificationItem[];
   platformLedger: PlatformLedgerState;
+  // Unified Relational Schema State
+  businessServices: BusinessService[];
+  bookings: Booking[];
 }
 
 interface DemoContextType {
@@ -171,6 +189,30 @@ interface DemoContextType {
   prefillWizardWithDummyData: (id: string) => void;
   markNotificationAsRead: (notificationId: string) => void;
   markAllNotificationsAsRead: () => void;
+  // Unified Schema Service & Booking Management
+  businessServices: BusinessService[];
+  bookings: Booking[];
+  addBusinessService: (service: Omit<BusinessService, 'id'>) => BusinessService;
+  updateBusinessService: (serviceId: string, updates: Partial<BusinessService>) => void;
+  deleteBusinessService: (serviceId: string) => void;
+  toggleBusinessServiceStatus: (serviceId: string) => void;
+  loadSalonPresets: (businessId: string) => void;
+  loadSpaPresets: (businessId: string) => void;
+  updateBusinessHours: (businessId: string, hours: BusinessHours[]) => void;
+  createBooking: (params: {
+    customerId?: string;
+    customerName: string;
+    customerEmail: string;
+    customerPhone?: string;
+    businessId: string;
+    selectedServiceIds: string[];
+    dateStr: string;
+    startTime: string;
+    paymentMethod: BookingPaymentMethod;
+    notes?: string;
+  }) => Promise<{ success: boolean; booking: Booking; message: string }>;
+  updateBookingStatus: (bookingId: string, status: BookingStatus) => void;
+  cancelBooking: (bookingId: string) => void;
 }
 
 const DemoContext = createContext<DemoContextType | undefined>(undefined);
@@ -197,6 +239,8 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.removeItem('uspot_marketplace_state_v2');
         localStorage.removeItem('uspot_nmi_vendor_accounts');
         localStorage.removeItem('uspot_marketplace_demo_v5');
+        localStorage.removeItem('uspot_marketplace_demo_v6');
+        localStorage.removeItem('uspot_marketplace_demo_v7');
       } catch (e) {}
 
       const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
@@ -281,6 +325,18 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
             isAuthModalOpen: false,
             hasExplicitLogin: Boolean(loadedCurrent && parsed.hasExplicitLogin),
             platformLedger: parsedLedger,
+            businessServices: (() => {
+              const seedServices = getSeedBusinessServices();
+              const storedServices = Array.isArray(parsed.businessServices) ? parsed.businessServices : [];
+              const existingServiceIds = new Set(storedServices.map((s: BusinessService) => s.id));
+              return [
+                ...storedServices,
+                ...seedServices.filter((s) => !existingServiceIds.has(s.id)),
+              ];
+            })(),
+            bookings: Array.isArray(parsed.bookings) && parsed.bookings.length > 0
+              ? parsed.bookings
+              : getSeedBookings(),
           };
         }
       }
@@ -306,6 +362,8 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
         ...DEFAULT_LEDGER_STATE,
         commissionRate: initialRate,
       },
+      businessServices: getSeedBusinessServices(),
+      bookings: getSeedBookings(),
     };
   });
 
@@ -2264,6 +2322,284 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   };
 
+  // --------------------------------------------------------------------------
+  // UNIFIED RELATIONAL SCHEMA: SERVICE & BOOKING ACTIONS
+  // --------------------------------------------------------------------------
+
+  const addBusinessService = (serviceData: Omit<BusinessService, 'id'>): BusinessService => {
+    const newService: BusinessService = {
+      ...serviceData,
+      id: `srv-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`,
+    };
+
+    setState((prev) => ({
+      ...prev,
+      businessServices: [newService, ...prev.businessServices],
+      businesses: prev.businesses.map((b) =>
+        b.id === newService.business_id
+          ? {
+              ...b,
+              business_services: [newService, ...(b.business_services || [])],
+              servicesCount: (b.servicesCount || 0) + 1,
+            }
+          : b
+      ),
+    }));
+
+    return newService;
+  };
+
+  const updateBusinessService = (serviceId: string, updates: Partial<BusinessService>) => {
+    setState((prev) => ({
+      ...prev,
+      businessServices: prev.businessServices.map((s) =>
+        s.id === serviceId ? { ...s, ...updates } : s
+      ),
+      businesses: prev.businesses.map((b) => ({
+        ...b,
+        business_services: (b.business_services || []).map((s) =>
+          s.id === serviceId ? { ...s, ...updates } : s
+        ),
+      })),
+    }));
+  };
+
+  const deleteBusinessService = (serviceId: string) => {
+    setState((prev) => ({
+      ...prev,
+      businessServices: prev.businessServices.filter((s) => s.id !== serviceId),
+      businesses: prev.businesses.map((b) => ({
+        ...b,
+        business_services: (b.business_services || []).filter((s) => s.id !== serviceId),
+        servicesCount: Math.max(0, (b.servicesCount || 1) - 1),
+      })),
+    }));
+  };
+
+  const toggleBusinessServiceStatus = (serviceId: string) => {
+    setState((prev) => ({
+      ...prev,
+      businessServices: prev.businessServices.map((s) =>
+        s.id === serviceId
+          ? { ...s, status: s.status === 'active' ? 'inactive' : 'active' }
+          : s
+      ),
+      businesses: prev.businesses.map((b) => ({
+        ...b,
+        business_services: (b.business_services || []).map((s) =>
+          s.id === serviceId
+            ? { ...s, status: s.status === 'active' ? 'inactive' : 'active' }
+            : s
+        ),
+      })),
+    }));
+  };
+
+  const loadSalonPresets = (businessId: string) => {
+    const presets = getSalonPresetServices(businessId);
+    setState((prev) => {
+      const otherServices = prev.businessServices.filter((s) => s.business_id !== businessId);
+      return {
+        ...prev,
+        businessServices: [...presets, ...otherServices],
+        businesses: prev.businesses.map((b) =>
+          b.id === businessId
+            ? {
+                ...b,
+                business_services: presets,
+                servicesCount: presets.length,
+              }
+            : b
+        ),
+      };
+    });
+  };
+
+  const loadSpaPresets = (businessId: string) => {
+    const presets = getSpaPresetServices(businessId);
+    setState((prev) => {
+      const otherServices = prev.businessServices.filter((s) => s.business_id !== businessId);
+      return {
+        ...prev,
+        businessServices: [...presets, ...otherServices],
+        businesses: prev.businesses.map((b) =>
+          b.id === businessId
+            ? {
+                ...b,
+                business_services: presets,
+                servicesCount: presets.length,
+              }
+            : b
+        ),
+      };
+    });
+  };
+
+  const updateBusinessHours = (businessId: string, hours: BusinessHours[]) => {
+    setState((prev) => ({
+      ...prev,
+      businesses: prev.businesses.map((b) =>
+        b.id === businessId
+          ? {
+              ...b,
+              business_hours: hours,
+            }
+          : b
+      ),
+    }));
+  };
+
+  const createBooking = async (params: {
+    customerId?: string;
+    customerName: string;
+    customerEmail: string;
+    customerPhone?: string;
+    businessId: string;
+    selectedServiceIds: string[];
+    dateStr: string;
+    startTime: string;
+    paymentMethod: BookingPaymentMethod;
+    notes?: string;
+  }): Promise<{ success: boolean; booking: Booking; message: string }> => {
+    const {
+      customerId,
+      customerName,
+      customerEmail,
+      customerPhone,
+      businessId,
+      selectedServiceIds,
+      dateStr,
+      startTime,
+      paymentMethod,
+      notes,
+    } = params;
+
+    const targetBiz = state.businesses.find((b) => b.id === businessId) || state.businesses[0];
+    const catalogServices = [
+      ...state.businessServices,
+      ...(targetBiz.business_services || []),
+      ...getSalonPresetServices(targetBiz.id),
+      ...getSeedBusinessServices(),
+    ];
+    const bizServices = selectedServiceIds
+      .map((id) => catalogServices.find((s) => s.id === id))
+      .filter((s): s is BusinessService => Boolean(s));
+
+    if (bizServices.length === 0) {
+      throw new Error('At least one service must be selected.');
+    }
+
+    const bookingId = `BK-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 900)}`;
+    const startMins = timeToMinutes(startTime);
+
+    let runningMins = startMins;
+    const items: BookingItem[] = bizServices.map((s, idx) => {
+      const itemStartMins = runningMins;
+      const itemEndMins = itemStartMins + s.duration_minutes;
+      runningMins = itemEndMins;
+      const priceVal = typeof s.base_price === 'number' ? s.base_price : parseFloat(s.base_price as any) || 0;
+
+      return {
+        id: `bki-${Date.now()}-${idx + 1}`,
+        booking_id: bookingId,
+        business_service_id: s.id,
+        service_name: s.name,
+        scheduled_start: `${dateStr}T${minutesToTimeString(itemStartMins)}`,
+        scheduled_end: `${dateStr}T${minutesToTimeString(itemEndMins)}`,
+        price_charged: priceVal,
+        price: priceVal,
+        duration_minutes: s.duration_minutes,
+      };
+    });
+
+    const totalDuration = items.reduce((sum, item) => sum + item.duration_minutes, 0);
+    const totalAmount = Number(items.reduce((sum, item) => sum + item.price_charged, 0).toFixed(2));
+    const endTime = minutesToTimeString(startMins + totalDuration);
+
+    const isPaidOnline = paymentMethod === 'credit_card';
+
+    const newBooking: Booking = {
+      id: bookingId,
+      customer_id: customerId || state.currentUser?.id || 'user-customer',
+      customer_name: customerName || state.currentUser?.fullName || 'Valued Customer',
+      customer_email: customerEmail || state.currentUser?.email || 'customer@uspot.com',
+      customer_phone: customerPhone || state.currentUser?.phone || '+1 (555) 019-2831',
+      business_id: targetBiz.id,
+      business_name: targetBiz.coreDetails?.businessName || (targetBiz as any).name || 'Business',
+      total_amount: totalAmount,
+      total_price: totalAmount,
+      discount_amount: 0,
+      net_amount: totalAmount,
+      status: 'confirmed',
+      payment_status: isPaidOnline ? 'paid' : 'unpaid',
+      payment_method: paymentMethod,
+      booking_date: dateStr,
+      scheduled_date: dateStr,
+      scheduled_start_time: startTime,
+      scheduled_end_time: endTime,
+      scheduled_time_slot: `${startTime} - ${endTime} (${totalDuration}m)`,
+      total_duration_minutes: totalDuration,
+      items,
+      notes,
+      created_at: new Date().toISOString(),
+    };
+
+    // If paying online with NMI card gateway, trigger financial ledger transaction
+    if (isPaidOnline) {
+      await bookServiceWithNmi({
+        businessId: targetBiz.id,
+        serviceName: items.map((i) => i.service_name).join(' + '),
+        amount: totalAmount,
+        customerName: newBooking.customer_name,
+        customerEmail: newBooking.customer_email,
+      });
+    }
+
+    const newNotif: NotificationItem = {
+      id: `notif-${Date.now()}`,
+      message: `📅 New service booking! ${newBooking.customer_name} booked ${items.length} service(s) (${items.map((i) => i.service_name).join(', ')}) on ${dateStr} at ${startTime}.`,
+      type: 'success',
+      read: false,
+      timestamp: 'Just now',
+      businessId: targetBiz.id,
+    };
+
+    setState((prev) => ({
+      ...prev,
+      bookings: [newBooking, ...prev.bookings],
+      businesses: prev.businesses.map((b) =>
+        b.id === targetBiz.id
+          ? {
+              ...b,
+              notifications: [newNotif, ...(b.notifications || [])],
+            }
+          : b
+      ),
+    }));
+
+    return {
+      success: true,
+      booking: newBooking,
+      message: `Appointment ${bookingId} successfully confirmed!`,
+    };
+  };
+
+  const updateBookingStatus = (bookingId: string, status: BookingStatus) => {
+    setState((prev) => ({
+      ...prev,
+      bookings: prev.bookings.map((b) => (b.id === bookingId ? { ...b, status } : b)),
+    }));
+  };
+
+  const cancelBooking = (bookingId: string) => {
+    setState((prev) => ({
+      ...prev,
+      bookings: prev.bookings.map((b) =>
+        b.id === bookingId ? { ...b, status: 'cancelled' as const } : b
+      ),
+    }));
+  };
+
   return (
     <DemoContext.Provider
       value={{
@@ -2337,6 +2673,19 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
         prefillWizardWithDummyData,
         markNotificationAsRead,
         markAllNotificationsAsRead,
+        // Unified Schema Service & Booking Management
+        businessServices: state.businessServices,
+        bookings: state.bookings,
+        addBusinessService,
+        updateBusinessService,
+        deleteBusinessService,
+        toggleBusinessServiceStatus,
+        loadSalonPresets,
+        loadSpaPresets,
+        updateBusinessHours,
+        createBooking,
+        updateBookingStatus,
+        cancelBooking,
       }}
     >
       {children}

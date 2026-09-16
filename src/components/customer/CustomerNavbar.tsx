@@ -2,9 +2,18 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useDemo } from '../../context/DemoContext';
 import { User, LogOut, Shield, Building2, Users, Check } from 'lucide-react';
 
+export type CustomerNavPage =
+  | 'home'
+  | 'spots'
+  | 'categories'
+  | 'cities'
+  | 'spot-detail'
+  | 'booking'
+  | 'my-bookings';
+
 interface CustomerNavbarProps {
-  activePage: 'home' | 'categories' | 'cities';
-  setActivePage: (page: 'home' | 'categories' | 'cities') => void;
+  activePage: CustomerNavPage;
+  setActivePage: (page: CustomerNavPage) => void;
 }
 
 export const CustomerNavbar: React.FC<CustomerNavbarProps> = ({ activePage, setActivePage }) => {
@@ -36,57 +45,76 @@ export const CustomerNavbar: React.FC<CustomerNavbarProps> = ({ activePage, setA
     };
   }, [isProfileOpen]);
 
-  const navItems: Array<{ id: 'home' | 'categories' | 'cities'; label: string }> = [
+  const navItems: Array<{ id: 'home' | 'categories' | 'cities' | 'my-bookings'; label: string }> = [
     { id: 'home', label: 'Home' },
     { id: 'categories', label: 'Categories' },
     { id: 'cities', label: 'Cities' },
+    { id: 'my-bookings', label: 'My Bookings' },
   ];
 
   return (
     <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-xs border-b border-slate-100">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-        {/* Logo */}
-        <div className="flex items-center">
+        {/* Left: Logo & Nav Links */}
+        <div className="flex items-center space-x-8">
           <button
             onClick={() => setActivePage('home')}
-            className="text-lg font-black tracking-[0.22em] text-slate-950 uppercase hover:opacity-85 transition-opacity cursor-pointer"
+            className="text-lg font-black tracking-[0.05em] text-slate-950 uppercase hover:opacity-85 transition-opacity cursor-pointer flex items-center gap-0.5"
           >
-            U R S P O T
+            <span>URSPOT</span>
           </button>
+
+          {/* Navigation: Home, Categories, Cities, My Bookings */}
+          <nav className="flex items-center space-x-6 sm:space-x-8">
+            {navItems.map((item) => {
+              const isActive =
+                activePage === item.id ||
+                (item.id === 'cities' && (activePage === 'spot-detail' || activePage === 'booking'));
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setActivePage(item.id)}
+                  className={`text-xs sm:text-sm font-semibold transition-all relative py-1 cursor-pointer ${
+                    isActive
+                      ? 'text-slate-950 font-bold'
+                      : 'text-slate-500 hover:text-slate-900 font-medium'
+                  }`}
+                >
+                  {item.label}
+                  {isActive && (
+                    <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-slate-950 rounded-full" />
+                  )}
+                </button>
+              );
+            })}
+          </nav>
         </div>
 
-        {/* Center Navigation: Home, Categories, Cities */}
-        <nav className="flex items-center space-x-8">
-          {navItems.map((item) => {
-            const isActive = activePage === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => setActivePage(item.id)}
-                className={`text-xs sm:text-sm font-semibold transition-all relative py-1 cursor-pointer ${
-                  isActive
-                    ? 'text-slate-950 font-bold'
-                    : 'text-slate-500 hover:text-slate-900 font-medium'
-                }`}
-              >
-                {item.label}
-                {isActive && (
-                  <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-slate-950 rounded-full" />
-                )}
-              </button>
-            );
-          })}
-        </nav>
-
-        {/* Right User Avatar */}
-        <div className="relative" ref={profileRef}>
+        {/* Right: Login, Sign Up & Profile Switcher */}
+        <div className="flex items-center space-x-4">
           <button
-            onClick={() => setIsProfileOpen(!isProfileOpen)}
-            className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-slate-950 text-white flex items-center justify-center hover:bg-slate-800 transition-colors shadow-2xs cursor-pointer"
-            title="User Profile & Roles"
+            onClick={() => setIsProfileOpen(true)}
+            className="text-xs sm:text-sm font-semibold text-slate-700 hover:text-slate-950 transition cursor-pointer"
           >
-            <User className="w-4 h-4 text-white" />
+            Login
           </button>
+
+          <button
+            onClick={() => setIsProfileOpen(true)}
+            className="bg-black hover:bg-slate-800 text-white text-xs font-bold px-4 py-2 rounded-xl transition cursor-pointer shadow-2xs"
+          >
+            Sign Up
+          </button>
+
+          {/* Profile Switcher Trigger */}
+          <div className="relative" ref={profileRef}>
+            <button
+              onClick={() => setIsProfileOpen(!isProfileOpen)}
+              className="w-8 h-8 rounded-full bg-slate-100 border border-slate-200 text-slate-700 flex items-center justify-center hover:bg-slate-200 transition-colors shadow-2xs cursor-pointer"
+              title="Switch Workspace / Profile"
+            >
+              <User className="w-4 h-4 text-slate-700" />
+            </button>
 
           {/* Profile & Switcher Dropdown */}
           {isProfileOpen && (
@@ -170,6 +198,7 @@ export const CustomerNavbar: React.FC<CustomerNavbarProps> = ({ activePage, setA
               </div>
             </>
           )}
+          </div>
         </div>
       </div>
     </header>

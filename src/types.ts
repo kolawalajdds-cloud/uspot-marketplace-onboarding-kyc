@@ -296,6 +296,11 @@ export interface Business {
   avatarChar?: string;
   signature?: string;
   signatureDate?: string;
+  // Schema-aligned services, hours and slots
+  business_hours?: BusinessHours[];
+  business_services?: BusinessService[];
+  slotIntervalMinutes?: number;
+  bufferMinutes?: number;
 }
 
 export interface DemoAppState {
@@ -376,7 +381,7 @@ export function computeRiskTier(
 }
 
 export type UserRole = 'super_admin' | 'business' | 'customer' | 'specialist';
-export type UserRoleLabel = 'Superadmin' | 'Super Admin' | 'Business' | 'Customer' | 'Specalist' | 'Staff';
+export type UserRoleLabel = 'Superadmin' | 'Super Admin' | 'Business' | 'Business (Salon)' | 'Business (Spa)' | 'Customer' | 'Specalist' | 'Staff';
 
 export interface UserProfile {
   id: string;
@@ -485,4 +490,95 @@ export interface PlatformLedgerState {
   withdrawals: WithdrawalRequest[];
   commissionRate: number;
 }
+
+// ============================================================================
+// USPOT PLATFORM UNIFIED RELATIONAL SCHEMA TYPES (MILESTONES 1 & 2)
+// ============================================================================
+
+export interface BusinessHours {
+  id?: string;
+  business_id?: string;
+  day_of_week: number; // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+  open_time: string;   // e.g. "08:00" or "08:00:00"
+  close_time: string;  // e.g. "19:00" or "19:00:00"
+  is_closed: boolean;
+}
+
+export interface ServiceCategory {
+  id: string;
+  business_category_id?: string;
+  name: string; // e.g. 'Haircuts', 'Shaving & Beard', 'Hair Coloring', 'Washing & Treatments', 'Face & Spa'
+  description?: string;
+  photo_url?: string;
+  status: 'active' | 'inactive';
+}
+
+export interface BusinessService {
+  id: string;
+  business_id: string;
+  service_id?: string;
+  service_category_id: string;
+  category_name: string;
+  name: string;
+  description?: string;
+  photo_url?: string;
+  pricing_type: 'fixed' | 'time_based';
+  base_price: number;
+  hourly_rate?: number;
+  min_billing_duration_minutes?: number;
+  rounding_rule?: string;
+  duration_minutes: number;
+  requires_approval: boolean;
+  status: 'active' | 'inactive';
+  assigned_workers_count?: number;
+  service_hours?: BusinessHours[];
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface BookingItem {
+  id: string;
+  booking_id: string;
+  business_service_id: string;
+  service_name: string;
+  worker_id?: string;
+  worker_name?: string;
+  scheduled_start: string; // e.g. "2026-09-17T10:00:00"
+  scheduled_end: string;   // e.g. "2026-09-17T10:45:00"
+  price_charged: number;
+  price?: number;
+  duration_minutes: number;
+}
+
+export type BookingStatus = 'pending' | 'confirmed' | 'visited' | 'cancelled' | 'noshow';
+export type BookingPaymentStatus = 'unpaid' | 'paid' | 'refunded' | 'failed';
+export type BookingPaymentMethod = 'credit_card' | 'cash';
+
+export interface Booking {
+  id: string;
+  customer_id: string;
+  customer_name: string;
+  customer_email: string;
+  customer_phone?: string;
+  business_id: string;
+  business_name: string;
+  total_amount: number;
+  total_price?: number;
+  discount_amount: number;
+  net_amount: number;
+  status: BookingStatus;
+  payment_status: BookingPaymentStatus;
+  payment_method: BookingPaymentMethod;
+  booking_date: string; // YYYY-MM-DD
+  scheduled_date?: string;
+  scheduled_start_time: string; // e.g. "10:00 AM"
+  scheduled_end_time: string;   // e.g. "11:20 AM"
+  scheduled_time_slot?: string;
+  total_duration_minutes: number;
+  items: BookingItem[];
+  notes?: string;
+  created_at: string;
+  updated_at?: string;
+}
+
 

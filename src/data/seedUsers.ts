@@ -4,7 +4,7 @@ export const SEEDED_USERS: UserProfile[] = [
   {
     id: 'user-business',
     role: 'business',
-    roleLabel: 'Business',
+    roleLabel: 'Business (Salon)',
     status: 'active',
     email: 'alex.vance@uspot.com',
     username: 'alexvance_biz',
@@ -17,12 +17,12 @@ export const SEEDED_USERS: UserProfile[] = [
     timezone: 'America/New_York',
     memberSince: 'Aug 15, 2026',
     avatarInitials: 'AV',
-    department: 'Business Operations',
+    department: 'Glow Salon & Hair Studio',
   },
   {
     id: 'user-business-2',
     role: 'business',
-    roleLabel: 'Business',
+    roleLabel: 'Business (Spa)',
     status: 'active',
     email: 'devon.lane@example.com',
     username: 'devon_lane_biz',
@@ -35,7 +35,7 @@ export const SEEDED_USERS: UserProfile[] = [
     timezone: 'America/Los_Angeles',
     memberSince: 'Aug 22, 2026',
     avatarInitials: 'DL',
-    department: 'Creative Operations',
+    department: 'Onyx Luxury Spa & Wellness',
   },
   {
     id: 'user-customer',

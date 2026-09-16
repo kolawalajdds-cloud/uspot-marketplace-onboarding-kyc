@@ -1,6 +1,21 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useDemo } from '../../context/DemoContext';
-import { Business, UserProfile, PlanTier } from '../../types';
+import {
+  Business,
+  UserProfile,
+  PlanTier,
+  BusinessHours,
+  BusinessService,
+  Booking,
+  BookingItem,
+  BookingStatus,
+} from '../../types';
+import {
+  DAY_NAMES,
+  getDefaultBusinessHours,
+  minutesToTimeString,
+  calculateMultiServiceAvailability,
+} from '../../utils/serviceBookingUtils';
 import {
   LayoutDashboard,
   FileText,
@@ -54,10 +69,15 @@ import {
   Zap,
   Play,
   RefreshCw,
+  RotateCw,
   Sparkles,
   CalendarCheck,
   AlertCircle,
   Wallet,
+  Scissors,
+  Copy,
+  CheckCircle,
+  XCircle,
 } from 'lucide-react';
 import { BusinessWizard } from './BusinessWizard';
 import { BusinessMultiStepPage, DEFAULT_FORM_DATA } from './multistep/BusinessMultiStepPage';
@@ -116,6 +136,17 @@ export const BusinessPortal: React.FC = () => {
     resetW9Data,
     saveNmiPaymentAccount,
     getNmiPaymentAccount,
+    businessServices,
+    bookings,
+    addBusinessService,
+    updateBusinessService,
+    deleteBusinessService,
+    toggleBusinessServiceStatus,
+    loadSalonPresets,
+    loadSpaPresets,
+    updateBusinessHours,
+    updateBookingStatus,
+    cancelBooking,
   } = useDemo();
 
   // Active Tab State
@@ -290,34 +321,42 @@ export const BusinessPortal: React.FC = () => {
     }
   };
 
-  // Filter businesses strictly for the currently logged-in vendor user
+  // Filter businesses strictly for the currently logged-in vendor user (Strict 1:1 Business Ownership)
   const vendorOwnedBusinesses = useMemo(() => {
     if (!currentUser) return state.businesses;
     if (currentUser.role === 'business') {
       const isDevon = currentUser.id === 'user-business-2' || currentUser.email?.toLowerCase().includes('devon');
       const isAlex = currentUser.id === 'user-business' || currentUser.email?.toLowerCase().includes('alex');
 
-      const matched = state.businesses.filter((b) => {
-        if (b.userId && b.userId === currentUser.id) return true;
-        if (b.email && b.email.toLowerCase() === currentUser.email?.toLowerCase()) return true;
-        if (isDevon && b.id === 'biz-002') return true;
-        if (isAlex && b.id === 'biz-001') return true;
-        return false;
-      });
-
-      if (matched.length > 0) return matched;
       if (isDevon) {
-        const devonBiz = state.businesses.find((b) => b.id === 'biz-002');
-        if (devonBiz) return [devonBiz];
+        const spaBiz = state.businesses.filter((b) => b.id === 'biz-002' || b.userId === 'user-business-2');
+        if (spaBiz.length > 0) return spaBiz;
       }
       if (isAlex) {
-        const alexBiz = state.businesses.find((b) => b.id === 'biz-001');
-        if (alexBiz) return [alexBiz];
+        const salonBiz = state.businesses.filter((b) => b.id === 'biz-001' || b.userId === 'user-business');
+        if (salonBiz.length > 0) return salonBiz;
       }
+
+      const matched = state.businesses.filter((b) => b.userId === currentUser.id);
+      if (matched.length > 0) return matched;
       return [state.businesses[0]];
     }
     return state.businesses;
   }, [state.businesses, currentUser]);
+
+  const selectedBusiness =
+    vendorOwnedBusinesses.find((b) => b.id === selectedBusinessId) ||
+    state.businesses.find((b) => b.id === selectedBusinessId) ||
+    vendorOwnedBusinesses[0] ||
+    state.businesses[0];
+
+  const selectedServiceBiz = selectedBusiness;
+  const selectedServiceBizId = selectedBusiness?.id || 'biz-001';
+
+  const setSelectedServiceBizId = (id: string) => {
+    setSelectedBusinessId(id);
+    setActiveBusinessId(id);
+  };
 
   // Synchronized directly with DemoContext so changes in Business User reflect in Super Admin and vice versa!
   const myBusinessesList = useMemo(() => {
@@ -768,65 +807,406 @@ export const BusinessPortal: React.FC = () => {
   };
 
   // ==========================================
-  // MY SERVICES / SERVICE AVAILABILITY STATE (matching Image 1 & Image 2)
+  // UNIFIED SCHEMA SERVICES, WORKING HOURS & BOOKINGS STATE
   // ==========================================
-  const [selectedServiceBizId, setSelectedServiceBizId] = useState<string>('mbiz-1'); // Default 'mbiz-1' (Urban Roast Coffee)
   const [isServiceBizDropdownOpen, setIsServiceBizDropdownOpen] = useState(false);
-  const [isAddServiceModalOpen, setIsAddServiceModalOpen] = useState(false);
-  const [newServiceName, setNewServiceName] = useState('');
-  const [newServicePrice, setNewServicePrice] = useState('');
-  const [newServiceDuration, setNewServiceDuration] = useState('30');
 
-  // Business services repository - starts empty to exactly match Image 1
-  const [businessServices, setBusinessServices] = useState<
-    Array<{
-      id: string;
-      businessId: string;
-      name: string;
-      price: string;
-      duration: string;
-    }>
-  >([]);
+  // Service View Mode: 'list' (Catalog Image 1) vs 'create' | 'edit' (Form Images 2 & 3)
+  const [serviceViewMode, setServiceViewMode] = useState<'list' | 'create' | 'edit'>('list');
+  const [serviceStatusFilter, setServiceStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const [serviceSortPriceAsc, setServiceSortPriceAsc] = useState<boolean | null>(null);
+  const [serviceCurrentPage, setServiceCurrentPage] = useState<number>(1);
+  const [previewingService, setPreviewingService] = useState<BusinessService | null>(null);
+  const [assigningWorkersService, setAssigningWorkersService] = useState<BusinessService | null>(null);
+  const SERVICE_ITEMS_PER_PAGE = 5;
 
-  const handleAddServiceSubmit = (e: React.FormEvent) => {
+  // Service Form Inputs (Images 2 & 3)
+  const [isServiceModalOpen, setIsServiceModalOpen] = useState(false);
+  const [editingService, setEditingService] = useState<BusinessService | null>(null);
+  const [serviceNameInput, setServiceNameInput] = useState('');
+  const [serviceCategoryInput, setServiceCategoryInput] = useState('Haircuts & Styling');
+  const [serviceBusinessIdInput, setServiceBusinessIdInput] = useState('');
+  const [servicePriceInput, setServicePriceInput] = useState('65.00');
+  const [serviceHourlyRateInput, setServiceHourlyRateInput] = useState('85.00');
+  const [serviceDurationInput, setServiceDurationInput] = useState('45');
+  const [serviceMinBillingDurationInput, setServiceMinBillingDurationInput] = useState('30');
+  const [serviceRoundingRuleInput, setServiceRoundingRuleInput] = useState('Round up to nearest 15 min');
+  const [servicePricingType, setServicePricingType] = useState<'fixed' | 'time_based'>('fixed');
+  const [serviceRequiresApprovalInput, setServiceRequiresApprovalInput] = useState(false);
+  const [serviceDescriptionInput, setServiceDescriptionInput] = useState('');
+  const [serviceImageInput, setServiceImageInput] = useState('');
+  const [serviceAvailabilitySchedule, setServiceAvailabilitySchedule] = useState<BusinessHours[]>([]);
+
+  const [serviceCategoryFilter, setServiceCategoryFilter] = useState('All');
+  const [serviceSearchTerm, setServiceSearchTerm] = useState('');
+
+  // Service Availability / Working Hours Editing State
+  const [editingScheduleHours, setEditingScheduleHours] = useState<BusinessHours[]>([]);
+  const [hoursSaveSuccess, setHoursSaveSuccess] = useState(false);
+
+  // Booking Management State
+  const [bookingStatusFilter, setBookingStatusFilter] = useState<'all' | 'confirmed' | 'visited' | 'cancelled'>('all');
+  const [bookingSearchTerm, setBookingSearchTerm] = useState('');
+  const [selectedBookingDetails, setSelectedBookingDetails] = useState<Booking | null>(null);
+
+  // Live Slot Preview / Simulator State for Availability Tab
+  const [simDate, setSimDate] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().split('T')[0];
+  });
+
+  // Default Service Hours Weekday schedule helper
+  const DEFAULT_SERVICE_SCHEDULE: BusinessHours[] = [
+    { day_of_week: 1, open_time: '09:00', close_time: '17:00', is_closed: false },
+    { day_of_week: 2, open_time: '09:00', close_time: '17:00', is_closed: false },
+    { day_of_week: 3, open_time: '09:00', close_time: '17:00', is_closed: false },
+    { day_of_week: 4, open_time: '09:00', close_time: '17:00', is_closed: false },
+    { day_of_week: 5, open_time: '09:00', close_time: '18:00', is_closed: false },
+    { day_of_week: 6, open_time: '10:00', close_time: '18:00', is_closed: false },
+    { day_of_week: 0, open_time: '10:00', close_time: '16:00', is_closed: true },
+  ];
+
+  const WEEKDAYS_CONFIG = [
+    { day_of_week: 1, name: 'Monday' },
+    { day_of_week: 2, name: 'Tuesday' },
+    { day_of_week: 3, name: 'Wednesday' },
+    { day_of_week: 4, name: 'Thursday' },
+    { day_of_week: 5, name: 'Friday' },
+    { day_of_week: 6, name: 'Saturday' },
+    { day_of_week: 0, name: 'Sunday' },
+  ];
+
+  const TIME_PICKER_OPTIONS = [
+    '06:00 AM', '06:30 AM', '07:00 AM', '07:30 AM', '08:00 AM', '08:30 AM',
+    '09:00 AM', '09:30 AM', '10:00 AM', '10:30 AM', '11:00 AM', '11:30 AM',
+    '12:00 PM', '12:30 PM', '01:00 PM', '01:30 PM', '02:00 PM', '02:30 PM',
+    '03:00 PM', '03:30 PM', '04:00 PM', '04:30 PM', '05:00 PM', '05:30 PM',
+    '06:00 PM', '06:30 PM', '07:00 PM', '07:30 PM', '08:00 PM', '08:30 PM',
+    '09:00 PM', '09:30 PM', '10:00 PM'
+  ];
+
+  const serviceImageFileInputRef = useRef<HTMLInputElement>(null);
+
+  const formatTime24To12 = (time24?: string): string => {
+    if (!time24) return '09:00 AM';
+    const parts = time24.split(':');
+    if (parts.length < 2) return time24;
+    let hours = parseInt(parts[0], 10);
+    const minutes = parts[1].padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    return `${hours.toString().padStart(2, '0')}:${minutes} ${ampm}`;
+  };
+
+  const formatTime12To24 = (time12: string): string => {
+    const match = time12.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    if (!match) return time12;
+    let hours = parseInt(match[1], 10);
+    const minutes = match[2];
+    const ampm = match[3].toUpperCase();
+    if (ampm === 'PM' && hours < 12) hours += 12;
+    if (ampm === 'AM' && hours === 12) hours = 0;
+    return `${hours.toString().padStart(2, '0')}:${minutes}`;
+  };
+
+  const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        showToast('Image file size must be less than 5MB.');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          setServiceImageInput(reader.result);
+          showToast('Service image attached!');
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // Sync editingScheduleHours whenever selected business changes
+  useEffect(() => {
+    if (selectedBusiness) {
+      if (selectedBusiness.business_hours && selectedBusiness.business_hours.length > 0) {
+        setEditingScheduleHours(selectedBusiness.business_hours);
+      } else {
+        setEditingScheduleHours(getDefaultBusinessHours(selectedBusiness.id));
+      }
+    }
+  }, [selectedBusiness?.id, selectedBusiness?.business_hours]);
+
+  const servicesForSelectedBiz = useMemo(() => {
+    if (!selectedBusiness?.id) return [];
+    return businessServices.filter((s) => s.business_id === selectedBusiness.id);
+  }, [businessServices, selectedBusiness?.id]);
+
+  // Filtered and Sorted list for Image 1 Catalog
+  const filteredServicesForSelectedBiz = useMemo(() => {
+    let list = servicesForSelectedBiz.filter((s) => {
+      const matchCat = serviceCategoryFilter === 'All' || s.category_name === serviceCategoryFilter;
+      const matchSearch =
+        !serviceSearchTerm.trim() ||
+        s.name.toLowerCase().includes(serviceSearchTerm.toLowerCase()) ||
+        (s.category_name && s.category_name.toLowerCase().includes(serviceSearchTerm.toLowerCase())) ||
+        (s.description && s.description.toLowerCase().includes(serviceSearchTerm.toLowerCase()));
+      const matchStatus =
+        serviceStatusFilter === 'all' || s.status === serviceStatusFilter;
+      return matchCat && matchSearch && matchStatus;
+    });
+
+    if (serviceSortPriceAsc !== null) {
+      list = [...list].sort((a, b) => {
+        const priceA = a.pricing_type === 'time_based' ? (a.hourly_rate || a.base_price) : a.base_price;
+        const priceB = b.pricing_type === 'time_based' ? (b.hourly_rate || b.base_price) : b.base_price;
+        return serviceSortPriceAsc ? priceA - priceB : priceB - priceA;
+      });
+    }
+
+    return list;
+  }, [servicesForSelectedBiz, serviceCategoryFilter, serviceSearchTerm, serviceStatusFilter, serviceSortPriceAsc]);
+
+  // Paginated services for Image 1 Catalog
+  const paginatedServicesForSelectedBiz = useMemo(() => {
+    const startIndex = (serviceCurrentPage - 1) * SERVICE_ITEMS_PER_PAGE;
+    return filteredServicesForSelectedBiz.slice(startIndex, startIndex + SERVICE_ITEMS_PER_PAGE);
+  }, [filteredServicesForSelectedBiz, serviceCurrentPage]);
+
+  const totalServicePages = Math.max(1, Math.ceil(filteredServicesForSelectedBiz.length / SERVICE_ITEMS_PER_PAGE));
+
+  // Preview slot computation for Availability tab live simulator
+  const previewSlots = useMemo(() => {
+    if (!editingScheduleHours.length || !selectedBusiness) return [];
+    const sampleService: BusinessService = servicesForSelectedBiz[0] || {
+      id: 'preview-sample',
+      business_id: selectedBusiness.id,
+      name: 'Sample Appointment',
+      base_price: 50,
+      duration_minutes: 45,
+      pricing_type: 'fixed',
+      requires_approval: false,
+      status: 'active',
+    };
+    const result = calculateMultiServiceAvailability({
+      businessId: selectedBusiness.id,
+      selectedServices: [sampleService],
+      dateStr: simDate,
+      businessHours: editingScheduleHours,
+      existingBookings: bookings.filter((b) => b.business_id === selectedBusiness.id),
+      slotIntervalMinutes: selectedBusiness.slotIntervalMinutes || 30,
+      bufferMinutes: selectedBusiness.bufferMinutes || 0,
+    });
+    return result.slots.filter((s) => s.isAvailable);
+  }, [editingScheduleHours, servicesForSelectedBiz, selectedBusiness, simDate, bookings]);
+
+  const handleDeleteService = (serviceId: string) => {
+    deleteBusinessService(serviceId);
+    showToast('Service removed from catalog.');
+  };
+
+  const bookingsForSelectedBiz = useMemo(() => {
+    const activeBizId = selectedBusiness?.id;
+    if (!activeBizId) return [];
+    return bookings.filter((b) => {
+      // Strictly enforce business isolation: display only bookings for this particular business
+      const matchBiz = b.business_id === activeBizId;
+      const matchStatus = bookingStatusFilter === 'all' || b.status === bookingStatusFilter;
+      const matchSearch =
+        !bookingSearchTerm.trim() ||
+        (b.customer_name && b.customer_name.toLowerCase().includes(bookingSearchTerm.toLowerCase())) ||
+        (b.items && b.items.some((i) => i.service_name && i.service_name.toLowerCase().includes(bookingSearchTerm.toLowerCase()))) ||
+        (b.business_name && b.business_name.toLowerCase().includes(bookingSearchTerm.toLowerCase())) ||
+        (b.id && b.id.toLowerCase().includes(bookingSearchTerm.toLowerCase()));
+      return matchBiz && matchStatus && matchSearch;
+    });
+  }, [bookings, selectedBusiness?.id, bookingStatusFilter, bookingSearchTerm]);
+
+  // Handlers for Reference Images 2 & 3 Full-Page Form
+  const handleOpenCreateServiceView = () => {
+    setEditingService(null);
+    setServiceNameInput('');
+    setServiceCategoryInput('Haircuts & Styling');
+    setServiceBusinessIdInput(selectedBusiness?.id || 'biz-001');
+    setServicePriceInput('65.00');
+    setServiceHourlyRateInput('85.00');
+    setServiceDurationInput('45');
+    setServiceMinBillingDurationInput('30');
+    setServiceRoundingRuleInput('Round up to nearest 15 min');
+    setServicePricingType('fixed');
+    setServiceRequiresApprovalInput(false);
+    setServiceDescriptionInput('');
+    setServiceImageInput('');
+    setServiceAvailabilitySchedule(DEFAULT_SERVICE_SCHEDULE);
+    setServiceViewMode('create');
+  };
+
+  const handleOpenEditServiceView = (svc: BusinessService) => {
+    setEditingService(svc);
+    setServiceNameInput(svc.name);
+    setServiceCategoryInput(svc.category_name || 'Haircuts & Styling');
+    setServiceBusinessIdInput(svc.business_id);
+    setServicePriceInput(svc.base_price.toString());
+    setServiceHourlyRateInput(svc.hourly_rate ? svc.hourly_rate.toString() : svc.base_price.toString());
+    setServiceDurationInput(svc.duration_minutes.toString());
+    setServiceMinBillingDurationInput((svc.min_billing_duration_minutes || 30).toString());
+    setServiceRoundingRuleInput(svc.rounding_rule || 'Round up to nearest 15 min');
+    setServicePricingType(svc.pricing_type === 'time_based' ? 'time_based' : 'fixed');
+    setServiceRequiresApprovalInput(!!svc.requires_approval);
+    setServiceDescriptionInput(svc.description || '');
+    setServiceImageInput(svc.photo_url || '');
+    if (svc.service_hours && svc.service_hours.length > 0) {
+      setServiceAvailabilitySchedule(svc.service_hours);
+    } else {
+      setServiceAvailabilitySchedule(DEFAULT_SERVICE_SCHEDULE);
+    }
+    setServiceViewMode('edit');
+  };
+
+  const handleCancelServiceForm = () => {
+    setServiceViewMode('list');
+  };
+
+  const handleSaveFullServiceForm = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newServiceName.trim()) return;
-    const formattedPrice = newServicePrice.trim()
-      ? newServicePrice.trim().startsWith('$')
-        ? newServicePrice.trim()
-        : `$${newServicePrice.trim()}`
-      : '$25';
+    if (!serviceNameInput.trim()) {
+      showToast('Please enter a service name.');
+      return;
+    }
 
-    const newService = {
-      id: `srv-${Date.now()}`,
-      businessId: selectedServiceBizId,
-      name: newServiceName.trim(),
-      price: formattedPrice,
-      duration: newServiceDuration.trim() || '30',
-    };
-    setBusinessServices((prev) => [newService, ...prev]);
-    setIsAddServiceModalOpen(false);
-    setNewServiceName('');
-    setNewServicePrice('');
-    setNewServiceDuration('30');
-    showToast(`Added "${newService.name}" to service availability.`);
-  };
+    const fixedPrice = parseFloat(servicePriceInput) || 25;
+    const hourlyRate = parseFloat(serviceHourlyRateInput) || 50;
+    const duration = parseInt(serviceDurationInput, 10) || 30;
+    const minBilling = parseInt(serviceMinBillingDurationInput, 10) || 30;
+    const targetBizId = serviceBusinessIdInput || selectedBusiness.id;
 
-  const handleDeleteService = (srvId: string) => {
-    setBusinessServices((prev) => prev.filter((s) => s.id !== srvId));
-    showToast('Service removed.');
-  };
-
-  const selectedServiceBiz =
-    myBusinessesList.find((b) => b.id === selectedServiceBizId) ||
-    myBusinessesList[0] || {
-      id: 'mbiz-1',
-      name: 'Urban Roast Coffee',
+    const payload: Partial<BusinessService> = {
+      name: serviceNameInput.trim(),
+      category_name: serviceCategoryInput,
+      business_id: targetBizId,
+      description: serviceDescriptionInput.trim() || undefined,
+      photo_url: serviceImageInput.trim() || undefined,
+      pricing_type: servicePricingType,
+      base_price: servicePricingType === 'fixed' ? fixedPrice : hourlyRate,
+      hourly_rate: servicePricingType === 'time_based' ? hourlyRate : undefined,
+      duration_minutes: duration,
+      min_billing_duration_minutes: servicePricingType === 'time_based' ? minBilling : undefined,
+      rounding_rule: servicePricingType === 'time_based' ? serviceRoundingRuleInput : undefined,
+      requires_approval: serviceRequiresApprovalInput,
+      status: editingService?.status || 'active',
+      assigned_workers_count: editingService?.assigned_workers_count ?? 4,
+      service_hours: serviceAvailabilitySchedule,
     };
 
-  const servicesForSelectedBiz = businessServices.filter(
-    (s) => s.businessId === selectedServiceBiz.id
-  );
+    if (editingService) {
+      updateBusinessService(editingService.id, payload);
+      showToast(`Updated service "${serviceNameInput}".`);
+    } else {
+      addBusinessService({
+        ...(payload as any),
+        business_id: targetBizId,
+        service_category_id: `scat-${serviceCategoryInput.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
+        category_name: serviceCategoryInput,
+        name: serviceNameInput.trim(),
+        base_price: servicePricingType === 'fixed' ? fixedPrice : hourlyRate,
+        duration_minutes: duration,
+        pricing_type: servicePricingType,
+        requires_approval: serviceRequiresApprovalInput,
+        status: 'active',
+      });
+      showToast(`Created new service "${serviceNameInput}".`);
+    }
+    setServiceViewMode('list');
+  };
+
+  // Helper to toggle weekday availability
+  const handleToggleWeekdayAvailability = (dayOfWeek: number) => {
+    setServiceAvailabilitySchedule((prev) => {
+      const existing = prev.find((h) => h.day_of_week === dayOfWeek);
+      if (existing) {
+        return prev.map((h) =>
+          h.day_of_week === dayOfWeek ? { ...h, is_closed: !h.is_closed } : h
+        );
+      }
+      return [
+        ...prev,
+        { day_of_week: dayOfWeek, open_time: '09:00', close_time: '17:00', is_closed: false },
+      ];
+    });
+  };
+
+  const handleUpdateWeekdayTime = (
+    dayOfWeek: number,
+    field: 'open_time' | 'close_time',
+    val: string
+  ) => {
+    setServiceAvailabilitySchedule((prev) => {
+      const existing = prev.find((h) => h.day_of_week === dayOfWeek);
+      if (existing) {
+        return prev.map((h) =>
+          h.day_of_week === dayOfWeek ? { ...h, [field]: val } : h
+        );
+      }
+      return [
+        ...prev,
+        {
+          day_of_week: dayOfWeek,
+          open_time: field === 'open_time' ? val : '09:00',
+          close_time: field === 'close_time' ? val : '17:00',
+          is_closed: false,
+        },
+      ];
+    });
+  };
+
+  // Legacy modal open helpers redirecting to new full-page form
+  const handleOpenAddServiceModal = () => {
+    handleOpenCreateServiceView();
+  };
+
+  const handleOpenEditServiceModal = (svc: BusinessService) => {
+    handleOpenEditServiceView(svc);
+  };
+
+  const handleSaveServiceSubmit = (e: React.FormEvent) => {
+    handleSaveFullServiceForm(e);
+  };
+
+  const handleSaveHours = () => {
+    updateBusinessHours(selectedServiceBiz.id, editingScheduleHours);
+    setHoursSaveSuccess(true);
+    showToast(`Working hours updated for "${selectedServiceBiz.coreDetails.businessName}".`);
+    setTimeout(() => setHoursSaveSuccess(false), 3000);
+  };
+
+  const handleToggleDayClosed = (dayOfWeek: number) => {
+    setEditingScheduleHours((prev) =>
+      prev.map((h) => (h.day_of_week === dayOfWeek ? { ...h, is_closed: !h.is_closed } : h))
+    );
+  };
+
+  const handleUpdateDayTime = (dayOfWeek: number, field: 'open_time' | 'close_time', val: string) => {
+    setEditingScheduleHours((prev) =>
+      prev.map((h) => (h.day_of_week === dayOfWeek ? { ...h, [field]: val } : h))
+    );
+  };
+
+  const handleCopyDayToAll = (sourceDay: number) => {
+    const src = editingScheduleHours.find((h) => h.day_of_week === sourceDay);
+    if (!src) return;
+    setEditingScheduleHours((prev) =>
+      prev.map((h) => ({
+        ...h,
+        open_time: src.open_time,
+        close_time: src.close_time,
+        is_closed: src.is_closed,
+      }))
+    );
+    showToast(`Copied ${DAY_NAMES[sourceDay]} hours to all days.`);
+  };
 
   // Followed Businesses dataset
   const [followedBusinesses, setFollowedBusinesses] = useState([
@@ -889,11 +1269,6 @@ export const BusinessPortal: React.FC = () => {
       showToast(`${target.isFollowing ? 'Unfollowed' : 'Now following'} ${target.name}`);
     }
   };
-
-  const selectedBusiness =
-    vendorOwnedBusinesses.find((b) => b.id === selectedBusinessId) ||
-    vendorOwnedBusinesses[0] ||
-    state.businesses[0];
 
   const currentBusinessBalance = getBusinessBalance(selectedBusiness?.id || '');
   const isSelectedBizW9Certified = Boolean(
@@ -1232,7 +1607,7 @@ export const BusinessPortal: React.FC = () => {
                     setIsMyServicesMenuOpen(!isMyServicesMenuOpen);
                   }
                   if (activeTab !== 'my-services' && activeTab !== 'service-availability') {
-                    setActiveTab('service-availability');
+                    setActiveTab('my-services');
                   }
                 }}
                 className={`w-full flex items-center ${
@@ -1257,19 +1632,32 @@ export const BusinessPortal: React.FC = () => {
                 )}
               </button>
 
-              {/* Sub-option: "Service Availability" */}
+              {/* Sub-options: "Services Catalog" and "Service Availability" */}
               {isMyServicesMenuOpen && !isSidebarCollapsed && (
                 <div className="pl-9 pr-2 py-1 space-y-1">
                   <button
-                    id="sidebar-subtab-service-availability"
-                    onClick={() => setActiveTab('service-availability')}
+                    id="sidebar-subtab-my-services"
+                    onClick={() => setActiveTab('my-services')}
                     className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition-colors cursor-pointer flex items-center gap-2 ${
-                      activeTab === 'service-availability' || activeTab === 'my-services'
+                      activeTab === 'my-services'
                         ? 'text-white font-bold bg-slate-800'
                         : 'text-slate-400 hover:text-slate-200'
                     }`}
                   >
-                    <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+                    <span className={`w-1.5 h-1.5 rounded-full ${activeTab === 'my-services' ? 'bg-indigo-400' : 'bg-slate-500'}`} />
+                    <span>Services Catalog</span>
+                  </button>
+
+                  <button
+                    id="sidebar-subtab-service-availability"
+                    onClick={() => setActiveTab('service-availability')}
+                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition-colors cursor-pointer flex items-center gap-2 ${
+                      activeTab === 'service-availability'
+                        ? 'text-white font-bold bg-slate-800'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${activeTab === 'service-availability' ? 'bg-indigo-400' : 'bg-slate-500'}`} />
                     <span>Service Availability</span>
                   </button>
                 </div>
@@ -2918,160 +3306,1693 @@ export const BusinessPortal: React.FC = () => {
           )}
 
           {/* =================================================================== */}
-          {/* VIEW 4A: BOOKING MANAGEMENT (Empty tab with no data)                 */}
+          {/* =================================================================== */}
+          {/* VIEW 4A: BOOKING MANAGEMENT                                         */}
           {/* =================================================================== */}
           {(activeTab === 'bookings' || activeTab === 'booking-management') && (
-            <div className="space-y-4 animate-in fade-in duration-150">
-              <div>
-                <h1 className="text-2xl font-black text-slate-900 tracking-tight">Booking Management</h1>
-              </div>
-              <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs p-16 text-center min-h-[300px] flex items-center justify-center">
-                <p className="text-xs text-slate-400 font-medium">No bookings yet.</p>
-              </div>
-            </div>
-          )}
-
-          {/* =================================================================== */}
-          {/* VIEW 4B: ADVANCED BOOKING WORKFLOW (Empty tab with no data)          */}
-          {/* =================================================================== */}
-          {activeTab === 'advanced-booking-workflow' && (
-            <div className="space-y-4 animate-in fade-in duration-150">
-              <div>
-                <h1 className="text-2xl font-black text-slate-900 tracking-tight">Advanced Booking Workflow</h1>
-              </div>
-              <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs p-16 text-center min-h-[300px] flex items-center justify-center">
-                <p className="text-xs text-slate-400 font-medium">No workflows configured.</p>
-              </div>
-            </div>
-          )}
-
-          {/* =================================================================== */}
-          {/* VIEW 5: MY SERVICES / SERVICE AVAILABILITY (matching Image 1)       */}
-          {/* =================================================================== */}
-          {(activeTab === 'my-services' || activeTab === 'service-availability') && (
-            <div className="space-y-4 animate-in fade-in duration-150">
-              {/* Header matching Image 1 */}
+            <div className="space-y-6 animate-in fade-in duration-150 max-w-6xl mx-auto pb-16">
+              {/* Header */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                  <h1 className="text-2xl font-black text-slate-900 tracking-tight">My Services</h1>
+                  <h1 className="text-2xl font-black text-slate-900 tracking-tight">Booking Management</h1>
                   <p className="text-xs text-slate-500 mt-1 font-medium">
-                    Manage services offered by your businesses.
+                    Monitor incoming appointments, multi-service bookings, and manage customer check-ins.
                   </p>
                 </div>
-                <button
-                  id="add-service-header-btn"
-                  onClick={() => {
-                    setNewServiceName('');
-                    setNewServicePrice('');
-                    setNewServiceDuration('30');
-                    setIsAddServiceModalOpen(true);
-                  }}
-                  className="bg-black hover:bg-slate-800 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-colors cursor-pointer shadow-xs flex items-center gap-1.5 self-start sm:self-auto"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Add Service</span>
-                </button>
+                <div className="flex items-center gap-2 self-start sm:self-auto">
+                  <button
+                    onClick={() => {
+                      setBookingStatusFilter('all');
+                      setBookingSearchTerm('');
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-bold transition shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Refresh</span>
+                  </button>
+                </div>
               </div>
 
-              {/* Top Selector Card matching Image 1 */}
-              <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs p-4 sm:p-5">
-                <div className="flex items-center gap-4">
-                  <span className="text-xs sm:text-sm text-slate-500 font-medium">Business</span>
-                  <div className="relative">
-                    <button
-                      id="business-service-dropdown-btn"
-                      onClick={() => setIsServiceBizDropdownOpen(!isServiceBizDropdownOpen)}
-                      className="px-3.5 py-1.5 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-medium text-slate-900 hover:border-slate-300 transition-colors cursor-pointer shadow-2xs flex items-center gap-2.5"
-                    >
-                      <span>{selectedServiceBiz.name}</span>
-                      <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-                    </button>
+              {/* Location Switcher */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center font-bold">
+                    <Building2 className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Viewing Location</span>
+                    <p className="text-xs font-extrabold text-slate-900">
+                      {selectedBusiness?.coreDetails?.businessName || (selectedBusiness as any)?.name || 'Selected Business'}
+                    </p>
+                  </div>
+                </div>
 
-                    {isServiceBizDropdownOpen && (
-                      <div className="absolute left-0 mt-1.5 w-60 bg-white rounded-xl border border-slate-200 shadow-xl py-1 z-30 animate-in fade-in zoom-in-95 text-xs">
-                        {myBusinessesList.map((biz) => (
+                {vendorOwnedBusinesses.length > 1 ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-500 font-medium">Switch Location:</span>
+                    <select
+                      id="select-booking-biz"
+                      value={selectedBusiness.id}
+                      onChange={(e) => setSelectedServiceBizId(e.target.value)}
+                      className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 cursor-pointer"
+                    >
+                      {vendorOwnedBusinesses.map((biz) => {
+                        const count = bookings.filter((b) => b.business_id === biz.id).length;
+                        return (
+                          <option key={biz.id} value={biz.id}>
+                            {biz.coreDetails?.businessName || (biz as any)?.name} ({count} {count === 1 ? 'booking' : 'bookings'})
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                    <span>Single Venue Account</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Metric Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Bookings</span>
+                    <Calendar className="w-4 h-4 text-slate-400" />
+                  </div>
+                  <p className="text-2xl font-black text-slate-900 mt-2">{bookingsForSelectedBiz.length}</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">All scheduled reservations</p>
+                </div>
+
+                <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Confirmed</span>
+                    <CalendarCheck className="w-4 h-4 text-emerald-600" />
+                  </div>
+                  <p className="text-2xl font-black text-emerald-700 mt-2">
+                    {bookingsForSelectedBiz.filter((b) => b.status === 'confirmed').length}
+                  </p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">Upcoming visits</p>
+                </div>
+
+                <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-indigo-600 uppercase tracking-wider">Visited</span>
+                    <CheckCircle2 className="w-4 h-4 text-indigo-600" />
+                  </div>
+                  <p className="text-2xl font-black text-indigo-700 mt-2">
+                    {bookingsForSelectedBiz.filter((b) => b.status === 'visited').length}
+                  </p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">Completed appointments</p>
+                </div>
+
+                <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Gross Value</span>
+                    <DollarSign className="w-4 h-4 text-slate-400" />
+                  </div>
+                  <p className="text-2xl font-black text-slate-900 mt-2">
+                    $
+                    {bookingsForSelectedBiz
+                      .filter((b) => b.status !== 'cancelled')
+                      .reduce((acc, b) => acc + (b.total_amount ?? b.total_price ?? 0), 0)
+                      .toFixed(2)}
+                  </p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">Active booking volume</p>
+                </div>
+              </div>
+
+              {/* Filters & Search Toolbar */}
+              <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-2xs flex flex-col sm:flex-row items-center justify-between gap-3">
+                {/* Search */}
+                <div className="relative w-full sm:w-80">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Search by customer, phone, or booking ID..."
+                    value={bookingSearchTerm}
+                    onChange={(e) => setBookingSearchTerm(e.target.value)}
+                    className="w-full pl-9 pr-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900"
+                  />
+                </div>
+
+                {/* Status Pills */}
+                <div className="flex items-center gap-1.5 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
+                  {(
+                    [
+                      { id: 'all', label: 'All' },
+                      { id: 'confirmed', label: 'Confirmed' },
+                      { id: 'visited', label: 'Visited' },
+                      { id: 'cancelled', label: 'Cancelled' },
+                    ] as const
+                  ).map((st) => (
+                    <button
+                      key={st.id}
+                      onClick={() => setBookingStatusFilter(st.id)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer shrink-0 ${
+                        bookingStatusFilter === st.id
+                          ? 'bg-slate-900 text-white shadow-2xs'
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                      }`}
+                    >
+                      {st.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Bookings List */}
+              {bookingsForSelectedBiz.length === 0 ? (
+                <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs p-16 text-center flex flex-col items-center justify-center">
+                  <div className="w-12 h-12 rounded-2xl bg-slate-50 border border-slate-200 text-slate-400 flex items-center justify-center mb-3">
+                    <Calendar className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-sm font-bold text-slate-800">No appointments found</h3>
+                  <p className="text-xs text-slate-400 mt-1 max-w-sm">
+                    There are no bookings matching your selected filters for this location. New customer reservations will appear here automatically.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {bookingsForSelectedBiz.map((b) => (
+                    <div
+                      key={b.id}
+                      className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs p-5 hover:border-slate-300 transition-all"
+                    >
+                      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                        {/* Left Info */}
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-mono text-xs font-bold text-slate-900 bg-slate-100 px-2.5 py-1 rounded-lg">
+                              #{b.id.toUpperCase().slice(0, 10)}
+                            </span>
+                            <span
+                              className={`px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider ${
+                                b.status === 'confirmed'
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  : b.status === 'visited'
+                                  ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                                  : 'bg-rose-50 text-rose-700 border border-rose-200'
+                              }`}
+                            >
+                              {b.status}
+                            </span>
+                            <span className="text-[11px] text-slate-400 font-medium">
+                              Booked on {new Date(b.created_at).toLocaleDateString()}
+                            </span>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-4 text-xs">
+                            <div className="flex items-center gap-1.5 font-bold text-slate-900">
+                              <User className="w-3.5 h-3.5 text-slate-400" />
+                              <span>{b.customer_name}</span>
+                            </div>
+                            <span className="text-slate-400">•</span>
+                            <span className="text-slate-600">{b.customer_email}</span>
+                            <span className="text-slate-400">•</span>
+                            <span className="text-slate-600 font-mono">{b.customer_phone}</span>
+                          </div>
+
+                          {/* Date & Slot */}
+                          <div className="flex flex-wrap items-center gap-3 pt-1">
+                            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200/80 px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-800">
+                              <Calendar className="w-3.5 h-3.5 text-indigo-600" />
+                              <span>{b.booking_date || b.scheduled_date || 'Upcoming'}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200/80 px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-800">
+                              <Clock className="w-3.5 h-3.5 text-indigo-600" />
+                              <span>
+                                {b.scheduled_time_slot ||
+                                  (b.scheduled_start_time ? `${b.scheduled_start_time} - ${b.scheduled_end_time}` : 'Scheduled Slot')}
+                              </span>
+                            </div>
+                            <span className="text-[11px] font-bold text-slate-500">
+                              ({b.total_duration_minutes} mins total)
+                            </span>
+                          </div>
+
+                          {/* Line items (Booked Services) */}
+                          <div className="pt-2 flex flex-wrap items-center gap-1.5">
+                            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mr-1">
+                              Services:
+                            </span>
+                            {(b.items || []).map((it) => (
+                              <span
+                                key={it.id}
+                                className="px-2.5 py-1 rounded-lg bg-indigo-50/70 border border-indigo-100 text-indigo-900 text-xs font-bold flex items-center gap-1"
+                              >
+                                <Scissors className="w-3 h-3 text-indigo-600" />
+                                <span>{it.service_name}</span>
+                                <span className="text-indigo-400 font-normal">
+                                  ({it.duration_minutes}m • ${(it.price_charged ?? it.price ?? 0).toFixed(2)})
+                                </span>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Right: Payment & Actions */}
+                        <div className="flex flex-col sm:flex-row lg:flex-col sm:items-center lg:items-end justify-between gap-3 border-t lg:border-t-0 pt-3 lg:pt-0 border-slate-100 shrink-0">
+                          <div className="text-left lg:text-right">
+                            <p className="text-lg font-black text-slate-900">
+                              ${(b.total_amount ?? b.total_price ?? 0).toFixed(2)}
+                            </p>
+                            <p className="text-[11px] font-bold text-slate-500 flex items-center lg:justify-end gap-1">
+                              <span>
+                                {b.payment_method === 'credit_card' ? 'Online Card (NMI)' : 'Pay on Arrival (Cash)'}
+                              </span>
+                              <span
+                                className={`px-1.5 py-0.2 rounded text-[10px] uppercase font-extrabold ${
+                                  b.payment_status === 'paid'
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : 'bg-amber-100 text-amber-800'
+                                }`}
+                              >
+                                {b.payment_status}
+                              </span>
+                            </p>
+                          </div>
+
+                          {/* Action Buttons */}
+                          <div className="flex items-center gap-2">
+                            {b.status === 'confirmed' && (
+                              <>
+                                <button
+                                  onClick={() => {
+                                    updateBookingStatus(b.id, 'visited');
+                                    showToast(`Booking #${b.id.toUpperCase().slice(0, 8)} marked as Visited.`);
+                                  }}
+                                  className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition shadow-xs cursor-pointer flex items-center gap-1"
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                  <span>Mark Visited</span>
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    cancelBooking(b.id, 'Cancelled by salon');
+                                    showToast(`Booking #${b.id.toUpperCase().slice(0, 8)} has been cancelled.`);
+                                  }}
+                                  className="px-3 py-1.5 rounded-xl bg-white border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-bold transition cursor-pointer"
+                                >
+                                  <span>Cancel</span>
+                                </button>
+                              </>
+                            )}
+
+                            <button
+                              onClick={() => setSelectedBookingDetails(b)}
+                              className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition cursor-pointer flex items-center gap-1"
+                            >
+                              <Eye className="w-3.5 h-3.5 text-slate-500" />
+                              <span>Details</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* =================================================================== */}
+          {/* VIEW 4B: ADVANCED BOOKING WORKFLOW                                  */}
+          {/* =================================================================== */}
+          {activeTab === 'advanced-booking-workflow' && (
+            <div className="space-y-6 animate-in fade-in duration-150 max-w-5xl mx-auto pb-16">
+              <div>
+                <h1 className="text-2xl font-black text-slate-900 tracking-tight">Advanced Booking Workflow</h1>
+                <p className="text-xs text-slate-500 mt-1 font-medium">
+                  Configure slot generation logic, multi-service buffer rules, and auto-dispatch policies.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-2xs space-y-4">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center font-bold">
+                      <Workflow className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-slate-900 text-sm">Multi-Service Slot Stacking</h3>
+                      <p className="text-xs text-slate-400">Consecutive appointment aggregation</p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    When customers select multiple services (e.g. Haircut + Beard Trim + Hair Wash), duration is combined into a contiguous block. The system ensures the aggregate duration fits within open hours without colliding with other bookings.
+                  </p>
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between text-xs font-bold">
+                    <span className="text-slate-700">Multi-Service Aggregator</span>
+                    <span className="text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                      Active (DBML Standard)
+                    </span>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-2xs space-y-4">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-amber-50 border border-amber-100 text-amber-600 flex items-center justify-center font-bold">
+                      <Clock className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-slate-900 text-sm">Slot Granularity & Buffer</h3>
+                      <p className="text-xs text-slate-400">Turnaround interval between bookings</p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    Available slots are generated on 30-minute intervals. Change buffer time to add sanitation and turnaround minutes between client visits.
+                  </p>
+                  <div className="grid grid-cols-2 gap-2 text-xs font-bold">
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                      <span className="text-slate-400 block text-[10px] uppercase">Slot Interval</span>
+                      <span className="text-slate-900 font-extrabold text-sm">30 Minutes</span>
+                    </div>
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                      <span className="text-slate-400 block text-[10px] uppercase">Turnaround Buffer</span>
+                      <span className="text-slate-900 font-extrabold text-sm">0 Minutes</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-2xs space-y-4">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-600 flex items-center justify-center font-bold">
+                      <CreditCard className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-slate-900 text-sm">Payment Gateways</h3>
+                      <p className="text-xs text-slate-400">NMI Gateway Card Processing & Cash</p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    Online card payments process directly through the platform NMI merchant sub-account ledger. In-person pay-at-salon reservations create pending ledger entries confirmed on visit.
+                  </p>
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between text-xs font-bold">
+                    <span className="text-slate-700">NMI Gateway Integration</span>
+                    <span className="text-indigo-600 font-extrabold">Active</span>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-2xs space-y-4">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-purple-50 border border-purple-100 text-purple-600 flex items-center justify-center font-bold">
+                      <Bell className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-slate-900 text-sm">Notifications & Reminders</h3>
+                      <p className="text-xs text-slate-400">Automated dispatch upon booking</p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    Instant confirmation receipts and SMS/email notifications are generated for every multi-service reservation.
+                  </p>
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between text-xs font-bold">
+                    <span className="text-slate-700">Auto-Confirmation</span>
+                    <span className="text-emerald-600 font-extrabold">Enabled</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* =================================================================== */}
+          {/* VIEW 5A: MY SERVICES (SERVICES CATALOG & DETAILS FORM)              */}
+          {/* =================================================================== */}
+          {activeTab === 'my-services' && (
+            <div className="space-y-6 animate-in fade-in duration-150 max-w-6xl mx-auto pb-16">
+              {serviceViewMode === 'list' ? (
+                /* ============================================================= */
+                /* MODE A: CATALOG VIEW (Matches Reference Image 1)             */
+                /* ============================================================= */
+                <div className="space-y-6">
+                  {/* Top Header */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                      <h1 className="text-2xl font-black text-slate-900 tracking-tight">My Services</h1>
+                      <p className="text-xs text-slate-500 mt-1 font-medium">
+                        Manage your catalog of professional services across all business locations.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2.5 self-start sm:self-auto">
+                      {selectedServiceBiz.id === 'biz-002' ? (
+                        <button
+                          id="load-spa-presets-btn"
+                          onClick={() => {
+                            loadSpaPresets(selectedServiceBiz.id);
+                            showToast(`Loaded spa service presets for "${selectedServiceBiz.coreDetails?.businessName || (selectedServiceBiz as any)?.name}"!`);
+                          }}
+                          className="px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-800 text-xs font-bold transition shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                          <span>Load Spa Presets</span>
+                        </button>
+                      ) : (
+                        <button
+                          id="load-salon-presets-btn"
+                          onClick={() => {
+                            loadSalonPresets(selectedServiceBiz.id);
+                            showToast(`Loaded salon service presets for "${selectedServiceBiz.coreDetails?.businessName || (selectedServiceBiz as any)?.name}"!`);
+                          }}
+                          className="px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-800 text-xs font-bold transition shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                          <span>Load Salon Presets</span>
+                        </button>
+                      )}
+
+                      <button
+                        id="create-service-btn"
+                        onClick={handleOpenCreateServiceView}
+                        className="bg-black hover:bg-slate-800 text-white text-xs font-bold px-4 py-2.5 rounded-full transition-colors cursor-pointer shadow-xs flex items-center gap-1.5"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Create Service</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Business Location Selector Bar */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center font-bold">
+                        <Building2 className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Business Location</span>
+                        <p className="text-xs font-extrabold text-slate-900">
+                          {selectedBusiness?.coreDetails?.businessName || (selectedBusiness as any)?.name}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3">
+                      {vendorOwnedBusinesses.length > 1 && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-slate-500 font-medium">Location:</span>
+                          <select
+                            value={selectedBusiness.id}
+                            onChange={(e) => setSelectedServiceBizId(e.target.value)}
+                            className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 cursor-pointer"
+                          >
+                            {vendorOwnedBusinesses.map((biz) => (
+                              <option key={biz.id} value={biz.id}>
+                                {biz.coreDetails?.businessName || (biz as any)?.name} ({biz.coreDetails?.city || 'CA'})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
+                      <div className="flex items-center bg-slate-100 p-1 rounded-xl">
+                        <button
+                          onClick={() => setServiceViewMode('list')}
+                          className="px-3 py-1 rounded-lg text-xs font-bold bg-white text-slate-900 shadow-2xs cursor-pointer"
+                        >
+                          Services Catalog
+                        </button>
+                        <button
+                          onClick={() => setActiveTab('service-availability')}
+                          className="px-3 py-1 rounded-lg text-xs font-medium text-slate-500 hover:text-slate-800 transition cursor-pointer"
+                        >
+                          Working Hours
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Filter Toolbar (Search, Status Dropdown, Sort by Price, Refresh) */}
+                  <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-2xs flex flex-col md:flex-row items-center justify-between gap-3">
+                    <div className="relative w-full md:w-96">
+                      <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        placeholder="Filter services by name or category..."
+                        value={serviceSearchTerm}
+                        onChange={(e) => {
+                          setServiceSearchTerm(e.target.value);
+                          setServiceCurrentPage(1);
+                        }}
+                        className="w-full pl-9 pr-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900"
+                      />
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto justify-end">
+                      {/* Status Dropdown */}
+                      <div className="relative">
+                        <select
+                          value={serviceStatusFilter}
+                          onChange={(e) => {
+                            setServiceStatusFilter(e.target.value as any);
+                            setServiceCurrentPage(1);
+                          }}
+                          className="appearance-none bg-slate-50 border border-slate-200 rounded-xl pl-3.5 pr-8 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-900 cursor-pointer"
+                        >
+                          <option value="all">All Statuses</option>
+                          <option value="active">Active</option>
+                          <option value="inactive">Inactive</option>
+                        </select>
+                        <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      </div>
+
+                      {/* Sort by Price Button */}
+                      <button
+                        onClick={() => {
+                          setServiceSortPriceAsc((prev) =>
+                            prev === null ? true : prev === true ? false : null
+                          );
+                          setServiceCurrentPage(1);
+                        }}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-bold border transition flex items-center gap-1.5 cursor-pointer ${
+                          serviceSortPriceAsc !== null
+                            ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                            : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 shadow-2xs'
+                        }`}
+                      >
+                        <SlidersHorizontal className="w-3.5 h-3.5" />
+                        <span>
+                          {serviceSortPriceAsc === true
+                            ? 'Price: Low to High'
+                            : serviceSortPriceAsc === false
+                            ? 'Price: High to Low'
+                            : 'Sort by Price'}
+                        </span>
+                      </button>
+
+                      {/* Refresh Button */}
+                      <button
+                        onClick={() => {
+                          setServiceSearchTerm('');
+                          setServiceCategoryFilter('All');
+                          setServiceStatusFilter('all');
+                          setServiceSortPriceAsc(null);
+                          setServiceCurrentPage(1);
+                          showToast('Services view refreshed.');
+                        }}
+                        className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:text-slate-900 hover:bg-slate-50 transition cursor-pointer shadow-2xs"
+                        title="Reset filters & refresh"
+                      >
+                        <RotateCw className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 9-Column Services Table */}
+                  {filteredServicesForSelectedBiz.length === 0 ? (
+                    <div className="bg-white rounded-3xl border border-slate-200/80 shadow-2xs py-16 px-6 text-center flex flex-col items-center justify-center">
+                      <div className="w-12 h-12 rounded-2xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center mb-3">
+                        <Scissors className="w-6 h-6" />
+                      </div>
+                      <h3 className="text-sm font-bold text-slate-800">No services found</h3>
+                      <p className="text-xs text-slate-400 mt-1 max-w-sm mb-4">
+                        No services matched your search and filter criteria. Adjust your filters or click Create Service to add one.
+                      </p>
+                      <button
+                        onClick={handleOpenCreateServiceView}
+                        className="px-4 py-2 rounded-full bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 transition cursor-pointer flex items-center gap-1.5"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Create Service</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="bg-white rounded-3xl border border-slate-200/80 shadow-2xs overflow-hidden">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse">
+                          <thead>
+                            <tr className="border-b border-slate-100 text-[11px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50/70">
+                              <th className="py-3.5 px-5">NAME</th>
+                              <th className="py-3.5 px-5">BUSINESS</th>
+                              <th className="py-3.5 px-5">CATEGORY</th>
+                              <th className="py-3.5 px-5">PRICING TYPE</th>
+                              <th className="py-3.5 px-5">PRICE</th>
+                              <th className="py-3.5 px-5">DURATION</th>
+                              <th className="py-3.5 px-5 text-center"># WORKERS</th>
+                              <th className="py-3.5 px-5">STATUS</th>
+                              <th className="py-3.5 px-5 text-right">ACTIONS</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 text-xs">
+                            {paginatedServicesForSelectedBiz.map((srv) => {
+                              const bizName =
+                                selectedBusiness?.coreDetails?.businessName ||
+                                (selectedBusiness as any)?.name ||
+                                'The Grand Salon & Spa';
+                              const isHourly = srv.pricing_type === 'time_based';
+                              const displayPrice = isHourly
+                                ? `$${(srv.hourly_rate || srv.base_price).toFixed(2)}/hr`
+                                : `$${srv.base_price.toFixed(2)}`;
+                              const pricingLabel = isHourly ? 'Hourly' : 'Fixed Fee';
+
+                              return (
+                                <tr key={srv.id} className="hover:bg-slate-50/60 transition-colors">
+                                  {/* NAME */}
+                                  <td className="py-4 px-5">
+                                    <div>
+                                      <span className="font-extrabold text-slate-900 text-xs sm:text-sm block">
+                                        {srv.name}
+                                      </span>
+                                      {srv.description && (
+                                        <span className="text-[11px] text-slate-400 line-clamp-1 mt-0.5 max-w-xs">
+                                          {srv.description}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+
+                                  {/* BUSINESS */}
+                                  <td className="py-4 px-5">
+                                    <span className="text-slate-600 font-medium text-xs block max-w-xs truncate">
+                                      {bizName}
+                                    </span>
+                                  </td>
+
+                                  {/* CATEGORY */}
+                                  <td className="py-4 px-5">
+                                    <span
+                                      className={`px-2.5 py-1 rounded-full text-[11px] font-bold inline-block whitespace-nowrap ${
+                                        srv.category_name?.includes('Haircut')
+                                          ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                          : srv.category_name?.includes('Color')
+                                          ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                                          : srv.category_name?.includes('Beard') || srv.category_name?.includes('Grooming')
+                                          ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                                          : srv.category_name?.includes('Massage') || srv.category_name?.includes('Spa')
+                                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                          : 'bg-teal-50 text-teal-700 border border-teal-200'
+                                      }`}
+                                    >
+                                      {srv.category_name || 'General'}
+                                    </span>
+                                  </td>
+
+                                  {/* PRICING TYPE */}
+                                  <td className="py-4 px-5 text-slate-600 font-medium">
+                                    {pricingLabel}
+                                  </td>
+
+                                  {/* PRICE */}
+                                  <td className="py-4 px-5 font-mono font-bold text-slate-900 text-xs sm:text-sm">
+                                    {displayPrice}
+                                  </td>
+
+                                  {/* DURATION */}
+                                  <td className="py-4 px-5 text-slate-600 font-medium">
+                                    {srv.duration_minutes} min
+                                  </td>
+
+                                  {/* # WORKERS */}
+                                  <td className="py-4 px-5 text-center font-bold text-slate-800">
+                                    {srv.assigned_workers_count ?? 4}
+                                  </td>
+
+                                  {/* STATUS */}
+                                  <td className="py-4 px-5">
+                                    <button
+                                      onClick={() => toggleBusinessServiceStatus(srv.id)}
+                                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold transition cursor-pointer ${
+                                        srv.status === 'active'
+                                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
+                                          : 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'
+                                      }`}
+                                    >
+                                      <span
+                                        className={`w-1.5 h-1.5 rounded-full ${
+                                          srv.status === 'active' ? 'bg-emerald-500' : 'bg-rose-500'
+                                        }`}
+                                      />
+                                      <span>{srv.status === 'active' ? 'Active' : 'Inactive'}</span>
+                                    </button>
+                                  </td>
+
+                                  {/* ACTIONS (Edit, View, Assign Workers, Delete) */}
+                                  <td className="py-4 px-5 text-right">
+                                    <div className="flex items-center justify-end gap-1">
+                                      <button
+                                        onClick={() => handleOpenEditServiceView(srv)}
+                                        className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                                        title="Edit Service"
+                                      >
+                                        <Pencil className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button
+                                        onClick={() => setPreviewingService(srv)}
+                                        className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
+                                        title="View Service Details"
+                                      >
+                                        <Eye className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button
+                                        onClick={() => setAssigningWorkersService(srv)}
+                                        className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
+                                        title="Assign Workers"
+                                      >
+                                        <UsersRound className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button
+                                        onClick={() => handleDeleteService(srv.id)}
+                                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                                        title="Delete Service"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Pagination Bar */}
+                      <div className="px-6 py-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-500">
+                        <div>
+                          Showing{' '}
+                          <span className="font-bold text-slate-900">
+                            {filteredServicesForSelectedBiz.length === 0
+                              ? 0
+                              : (serviceCurrentPage - 1) * SERVICE_ITEMS_PER_PAGE + 1}
+                          </span>{' '}
+                          to{' '}
+                          <span className="font-bold text-slate-900">
+                            {Math.min(
+                              serviceCurrentPage * SERVICE_ITEMS_PER_PAGE,
+                              filteredServicesForSelectedBiz.length
+                            )}
+                          </span>{' '}
+                          of{' '}
+                          <span className="font-bold text-slate-900">
+                            {filteredServicesForSelectedBiz.length}
+                          </span>{' '}
+                          services
+                        </div>
+
+                        <div className="flex items-center gap-1.5 self-end sm:self-auto">
                           <button
-                            key={biz.id}
-                            onClick={() => {
-                              setSelectedServiceBizId(biz.id);
-                              setIsServiceBizDropdownOpen(false);
-                            }}
-                            className={`w-full text-left px-3.5 py-2.5 text-xs flex items-center justify-between transition-colors cursor-pointer ${
-                              selectedServiceBiz.id === biz.id
-                                ? 'font-bold text-slate-900 bg-slate-50'
-                                : 'text-slate-600 hover:bg-slate-50'
+                            disabled={serviceCurrentPage <= 1}
+                            onClick={() => setServiceCurrentPage((p) => Math.max(1, p - 1))}
+                            className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:pointer-events-none transition cursor-pointer"
+                          >
+                            <ChevronLeft className="w-3.5 h-3.5" />
+                          </button>
+
+                          {Array.from({ length: totalServicePages }, (_, i) => i + 1).map((pageNum) => (
+                            <button
+                              key={pageNum}
+                              onClick={() => setServiceCurrentPage(pageNum)}
+                              className={`w-7 h-7 rounded-lg text-xs font-bold transition cursor-pointer ${
+                                serviceCurrentPage === pageNum
+                                  ? 'bg-black text-white shadow-2xs'
+                                  : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                              }`}
+                            >
+                              {pageNum}
+                            </button>
+                          ))}
+
+                          <button
+                            disabled={serviceCurrentPage >= totalServicePages}
+                            onClick={() => setServiceCurrentPage((p) => Math.min(totalServicePages, p + 1))}
+                            className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:pointer-events-none transition cursor-pointer"
+                          >
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 3 Metric Cards at Bottom (Image 1) */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {/* Card 1: TOTAL REVENUE */}
+                    <div className="bg-white rounded-3xl border border-slate-200/80 p-5 shadow-2xs space-y-2">
+                      <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                        TOTAL REVENUE
+                      </span>
+                      <div className="flex items-center justify-between">
+                        <span className="text-2xl font-black text-slate-900 tracking-tight">$14,280.00</span>
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          <TrendingUp className="w-3 h-3" />
+                          <span>+12.5%</span>
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 font-medium">from last month</p>
+                    </div>
+
+                    {/* Card 2: AVG. DURATION */}
+                    <div className="bg-white rounded-3xl border border-slate-200/80 p-5 shadow-2xs space-y-2">
+                      <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                        AVG. DURATION
+                      </span>
+                      <div className="text-2xl font-black text-slate-900 tracking-tight">
+                        {servicesForSelectedBiz.length
+                          ? Math.round(
+                              servicesForSelectedBiz.reduce((a, b) => a + b.duration_minutes, 0) /
+                                servicesForSelectedBiz.length
+                            )
+                          : 58}{' '}
+                        min
+                      </div>
+                      <p className="text-[11px] text-slate-400 font-medium">
+                        Across {new Set(servicesForSelectedBiz.map((s) => s.category_name || 'General')).size} service categories
+                      </p>
+                    </div>
+
+                    {/* Card 3: POPULARITY INDEX */}
+                    <div className="bg-white rounded-3xl border border-slate-200/80 p-5 shadow-2xs space-y-2">
+                      <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                        POPULARITY INDEX
+                      </span>
+                      <div className="flex items-center justify-between">
+                        <span className="text-2xl font-black text-slate-900 tracking-tight">8.4 / 10</span>
+                      </div>
+                      <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                        <div className="bg-slate-900 h-full rounded-full w-[84%]" />
+                      </div>
+                      <p className="text-[11px] text-slate-400 font-medium">Top 5% of marketplace vendors</p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* ============================================================= */
+                /* MODE B: FULL-PAGE SERVICE FORM (Matches Reference Images 2 & 3) */
+                /* ============================================================= */
+                <div className="space-y-6 animate-in fade-in duration-150">
+                  {/* Breadcrumbs Navigation */}
+                  <div className="flex items-center gap-2 text-xs text-slate-500">
+                    <button
+                      onClick={() => setActiveTab('my-businesses')}
+                      className="hover:text-slate-900 transition font-semibold cursor-pointer"
+                    >
+                      My Businesses
+                    </button>
+                    <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                    <button
+                      onClick={handleCancelServiceForm}
+                      className="hover:text-slate-900 transition font-semibold cursor-pointer"
+                    >
+                      Services
+                    </button>
+                    <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                    <span className="font-bold text-slate-900">
+                      {serviceViewMode === 'create' ? 'New Service' : `Edit: ${serviceNameInput || 'Service'}`}
+                    </span>
+                  </div>
+
+                  {/* Header Title */}
+                  <div>
+                    <h1 className="text-2xl font-black text-slate-900 tracking-tight">Service Details</h1>
+                    <p className="text-xs text-slate-500 mt-1 font-medium">
+                      Define the specifics of your offering to start receiving bookings.
+                    </p>
+                  </div>
+
+                  <form onSubmit={handleSaveFullServiceForm} className="space-y-6">
+                    {/* CARD 1: SERVICE DETAILS (Image 2) */}
+                    <div className="bg-white rounded-3xl border border-slate-200/80 p-6 sm:p-8 shadow-2xs space-y-6">
+                      {/* Row 1: Service Name & Service Category */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                            Service Name <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="e.g., Executive Consultation"
+                            value={serviceNameInput}
+                            onChange={(e) => setServiceNameInput(e.target.value)}
+                            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                            Service Category <span className="text-rose-500">*</span>
+                          </label>
+                          <select
+                            value={serviceCategoryInput}
+                            onChange={(e) => setServiceCategoryInput(e.target.value)}
+                            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 cursor-pointer"
+                          >
+                            <option value="Haircuts & Styling">Haircuts & Styling</option>
+                            <option value="Color & Treatments">Color & Treatments</option>
+                            <option value="Grooming & Beard">Grooming & Beard</option>
+                            <option value="Spa & Wash">Spa & Wash</option>
+                            <option value="Massage Therapy">Massage Therapy</option>
+                            <option value="Skincare & Facial">Skincare & Facial</option>
+                            <option value="Nail Care">Nail Care</option>
+                            <option value="Consulting">Consulting</option>
+                            <option value="Wellness">Wellness</option>
+                            <option value="Other">Other</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Row 2: Business Assignment */}
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                          Business <span className="text-rose-500">*</span>
+                        </label>
+                        <select
+                          value={serviceBusinessIdInput}
+                          onChange={(e) => setServiceBusinessIdInput(e.target.value)}
+                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 cursor-pointer"
+                        >
+                          {vendorOwnedBusinesses.map((b) => (
+                            <option key={b.id} value={b.id}>
+                              {b.coreDetails?.businessName || (b as any)?.name || b.id} ({b.coreDetails?.city || 'CA'})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Row 3: Description */}
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                          Description <span className="text-slate-400 font-normal">(optional)</span>
+                        </label>
+                        <textarea
+                          rows={3}
+                          placeholder="Describe the value of this service, what's included, and any prerequisites..."
+                          value={serviceDescriptionInput}
+                          onChange={(e) => setServiceDescriptionInput(e.target.value)}
+                          className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900 resize-none"
+                        />
+                      </div>
+
+                      {/* Row 4: Service Image Dropzone */}
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1.5">Service Image</label>
+                        <input
+                          type="file"
+                          ref={serviceImageFileInputRef}
+                          accept="image/*"
+                          onChange={handleImageFileChange}
+                          className="hidden"
+                        />
+
+                        {serviceImageInput ? (
+                          <div className="relative rounded-2xl overflow-hidden border border-slate-200 bg-slate-50 p-3 flex items-center gap-4">
+                            <img
+                              src={serviceImageInput}
+                              alt="Service Preview"
+                              className="w-20 h-16 object-cover rounded-xl border border-slate-200"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-bold text-slate-900 truncate">Service Thumbnail Uploaded</p>
+                              <p className="text-[11px] text-slate-400">High-resolution banner attached</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => serviceImageFileInputRef.current?.click()}
+                                className="px-3 py-1.5 text-xs font-bold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-100 transition cursor-pointer"
+                              >
+                                Change
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setServiceImageInput('')}
+                                className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-xl transition cursor-pointer"
+                                title="Remove Image"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div
+                            onClick={() => serviceImageFileInputRef.current?.click()}
+                            className="border-2 border-dashed border-slate-200 hover:border-slate-400 bg-slate-50/50 hover:bg-slate-50 rounded-2xl p-6 text-center transition cursor-pointer flex flex-col items-center justify-center space-y-2"
+                          >
+                            <div className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 text-slate-500 flex items-center justify-center shadow-2xs">
+                              <UploadCloud className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <p className="text-xs font-bold text-slate-800">
+                                Drag and drop or <span className="text-indigo-600 underline">Browse files</span>
+                              </p>
+                              <p className="text-[11px] text-slate-400 mt-0.5">Recommended: 1200 × 800px (Max 5MB)</p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Row 5: Pricing Type Radio Cards */}
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-2">Pricing Type</label>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          {/* Fixed Price Card */}
+                          <div
+                            onClick={() => setServicePricingType('fixed')}
+                            className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-start gap-3 ${
+                              servicePricingType === 'fixed'
+                                ? 'border-slate-900 bg-slate-50/60 ring-1 ring-slate-900 shadow-2xs'
+                                : 'border-slate-200 hover:border-slate-300 bg-white'
                             }`}
                           >
-                            <span>{biz.name}</span>
-                            {selectedServiceBiz.id === biz.id && (
-                              <CheckCircle2 className="w-3.5 h-3.5 text-slate-900" />
-                            )}
-                          </button>
+                            <div className="mt-0.5">
+                              <div
+                                className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                                  servicePricingType === 'fixed'
+                                    ? 'border-slate-900'
+                                    : 'border-slate-300'
+                                }`}
+                              >
+                                {servicePricingType === 'fixed' && (
+                                  <div className="w-2 h-2 rounded-full bg-slate-900" />
+                                )}
+                              </div>
+                            </div>
+                            <div>
+                              <h4 className="text-xs font-bold text-slate-900">Fixed Price</h4>
+                              <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                                Charge a single flat fee for the entire session duration.
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Time-Based Card */}
+                          <div
+                            onClick={() => setServicePricingType('time_based')}
+                            className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-start gap-3 ${
+                              servicePricingType === 'time_based'
+                                ? 'border-slate-900 bg-slate-50/60 ring-1 ring-slate-900 shadow-2xs'
+                                : 'border-slate-200 hover:border-slate-300 bg-white'
+                            }`}
+                          >
+                            <div className="mt-0.5">
+                              <div
+                                className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                                  servicePricingType === 'time_based'
+                                    ? 'border-slate-900'
+                                    : 'border-slate-300'
+                                }`}
+                              >
+                                {servicePricingType === 'time_based' && (
+                                  <div className="w-2 h-2 rounded-full bg-slate-900" />
+                                )}
+                              </div>
+                            </div>
+                            <div>
+                              <h4 className="text-xs font-bold text-slate-900">Time-Based</h4>
+                              <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                                Calculate the price based on an hourly rate multiplier.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Row 6: Conditional Inputs (Fixed vs Time-Based) */}
+                      {servicePricingType === 'fixed' ? (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                              TOTAL SERVICE PRICE <span className="text-rose-500">*</span>
+                            </label>
+                            <div className="relative">
+                              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-bold text-slate-400">$</span>
+                              <input
+                                type="number"
+                                step="0.5"
+                                min="0"
+                                required
+                                value={servicePriceInput}
+                                onChange={(e) => setServicePriceInput(e.target.value)}
+                                className="w-full pl-8 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 font-mono"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                              SERVICE DURATION (MINUTES) <span className="text-rose-500">*</span>
+                            </label>
+                            <select
+                              value={serviceDurationInput}
+                              onChange={(e) => setServiceDurationInput(e.target.value)}
+                              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 cursor-pointer"
+                            >
+                              <option value="15">15 min</option>
+                              <option value="30">30 min</option>
+                              <option value="45">45 min</option>
+                              <option value="60">60 min (1 hr)</option>
+                              <option value="75">75 min (1 hr 15m)</option>
+                              <option value="90">90 min (1.5 hrs)</option>
+                              <option value="120">120 min (2 hrs)</option>
+                            </select>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                          <div>
+                            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                              HOURLY RATE <span className="text-rose-500">*</span>
+                            </label>
+                            <div className="relative">
+                              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-bold text-slate-400">$</span>
+                              <input
+                                type="number"
+                                step="0.5"
+                                min="0"
+                                required
+                                value={serviceHourlyRateInput}
+                                onChange={(e) => setServiceHourlyRateInput(e.target.value)}
+                                className="w-full pl-8 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 font-mono"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                              SERVICE DURATION (MINUTES) <span className="text-rose-500">*</span>
+                            </label>
+                            <select
+                              value={serviceDurationInput}
+                              onChange={(e) => setServiceDurationInput(e.target.value)}
+                              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 cursor-pointer"
+                            >
+                              <option value="30">30 min</option>
+                              <option value="45">45 min</option>
+                              <option value="60">60 min (1 hr)</option>
+                              <option value="75">75 min (1 hr 15m)</option>
+                              <option value="90">90 min (1.5 hrs)</option>
+                              <option value="120">120 min (2 hrs)</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                              MINIMUM BILLING DURATION
+                            </label>
+                            <select
+                              value={serviceMinBillingDurationInput}
+                              onChange={(e) => setServiceMinBillingDurationInput(e.target.value)}
+                              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 cursor-pointer"
+                            >
+                              <option value="15">15 min</option>
+                              <option value="30">30 min</option>
+                              <option value="45">45 min</option>
+                              <option value="60">60 min</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                              ROUNDING RULES
+                            </label>
+                            <select
+                              value={serviceRoundingRuleInput}
+                              onChange={(e) => setServiceRoundingRuleInput(e.target.value)}
+                              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 cursor-pointer"
+                            >
+                              <option value="Round up to nearest 15 min">Round up to nearest 15 min</option>
+                              <option value="Round up to nearest 30 min">Round up to nearest 30 min</option>
+                              <option value="Exact time (no rounding)">Exact time (no rounding)</option>
+                            </select>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Row 7: Info Callout Banner */}
+                      <div className="bg-blue-50/70 border border-blue-100 rounded-2xl p-4 flex items-start gap-3">
+                        <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                        <p className="text-xs text-blue-800 leading-relaxed font-medium">
+                          Changing the price will only affect new bookings. Existing scheduled appointments will maintain their original rates.
+                        </p>
+                      </div>
+
+                      {/* Row 8: Requires Approval Switch */}
+                      <div className="pt-2 flex items-center justify-between border-t border-slate-100">
+                        <div>
+                          <h4 className="text-xs font-extrabold text-slate-900">Requires Approval</h4>
+                          <p className="text-[11px] text-slate-400 mt-0.5">Manual confirmation needed for every booking</p>
+                        </div>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={serviceRequiresApprovalInput}
+                          onClick={() => setServiceRequiresApprovalInput((prev) => !prev)}
+                          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                            serviceRequiresApprovalInput ? 'bg-black' : 'bg-slate-200'
+                          }`}
+                        >
+                          <span
+                            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                              serviceRequiresApprovalInput ? 'translate-x-5' : 'translate-x-0'
+                            }`}
+                          />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* CARD 2: SERVICE AVAILABILITY (Image 3) */}
+                    <div className="bg-white rounded-3xl border border-slate-200/80 p-6 sm:p-8 shadow-2xs space-y-5">
+                      <div>
+                        <h3 className="text-lg font-black text-slate-900 tracking-tight">Service Availability</h3>
+                        <p className="text-xs text-slate-500 mt-0.5 font-medium">
+                          Define the weekly schedule and time slots for: <span className="font-bold text-slate-800">{serviceNameInput || 'New Service'}</span>
+                        </p>
+                      </div>
+
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse">
+                          <thead>
+                            <tr className="border-b border-slate-100 text-[11px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50/70">
+                              <th className="py-3 px-4">WEEKDAY</th>
+                              <th className="py-3 px-4">START TIME</th>
+                              <th className="py-3 px-4">END TIME</th>
+                              <th className="py-3 px-4 text-center">STATUS</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 text-xs">
+                            {WEEKDAYS_CONFIG.map((day) => {
+                              const schedule =
+                                serviceAvailabilitySchedule.find((s) => s.day_of_week === day.day_of_week) || {
+                                  day_of_week: day.day_of_week,
+                                  open_time: '09:00',
+                                  close_time: '17:00',
+                                  is_closed: day.day_of_week === 0,
+                                };
+                              const isClosed = !!schedule.is_closed;
+
+                              return (
+                                <tr key={day.day_of_week} className="hover:bg-slate-50/60 transition-colors">
+                                  {/* WEEKDAY */}
+                                  <td className="py-3.5 px-4 font-bold text-slate-900 w-44">
+                                    {day.name}
+                                  </td>
+
+                                  {/* START TIME */}
+                                  <td className="py-3.5 px-4">
+                                    {isClosed ? (
+                                      <span className="text-slate-400 font-medium text-xs">Closed / Unavailable</span>
+                                    ) : (
+                                      <select
+                                        value={formatTime24To12(schedule.open_time)}
+                                        onChange={(e) =>
+                                          handleUpdateWeekdayTime(
+                                            day.day_of_week,
+                                            'open_time',
+                                            formatTime12To24(e.target.value)
+                                          )
+                                        }
+                                        className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 cursor-pointer"
+                                      >
+                                        {TIME_PICKER_OPTIONS.map((timeStr) => (
+                                          <option key={timeStr} value={timeStr}>
+                                            {timeStr}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    )}
+                                  </td>
+
+                                  {/* END TIME */}
+                                  <td className="py-3.5 px-4">
+                                    {isClosed ? (
+                                      <span className="text-slate-400 font-medium text-xs">—</span>
+                                    ) : (
+                                      <select
+                                        value={formatTime24To12(schedule.close_time)}
+                                        onChange={(e) =>
+                                          handleUpdateWeekdayTime(
+                                            day.day_of_week,
+                                            'close_time',
+                                            formatTime12To24(e.target.value)
+                                          )
+                                        }
+                                        className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 cursor-pointer"
+                                      >
+                                        {TIME_PICKER_OPTIONS.map((timeStr) => (
+                                          <option key={timeStr} value={timeStr}>
+                                            {timeStr}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    )}
+                                  </td>
+
+                                  {/* STATUS TOGGLE */}
+                                  <td className="py-3.5 px-4 text-center">
+                                    <button
+                                      type="button"
+                                      role="switch"
+                                      aria-checked={!isClosed}
+                                      onClick={() => handleToggleWeekdayAvailability(day.day_of_week)}
+                                      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                        !isClosed ? 'bg-black' : 'bg-slate-200'
+                                      }`}
+                                    >
+                                      <span
+                                        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                                          !isClosed ? 'translate-x-4' : 'translate-x-0'
+                                        }`}
+                                      />
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* Footer Actions */}
+                    <div className="flex items-center justify-end gap-3 pt-3">
+                      <button
+                        type="button"
+                        onClick={handleCancelServiceForm}
+                        className="px-6 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-7 py-2.5 rounded-xl bg-black text-white hover:bg-slate-800 text-xs font-bold transition shadow-xs cursor-pointer"
+                      >
+                        Save Service
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* =================================================================== */}
+          {/* VIEW 5B: SERVICE AVAILABILITY (WORKING HOURS)                       */}
+          {/* =================================================================== */}
+          {activeTab === 'service-availability' && (
+            <div className="space-y-6 animate-in fade-in duration-150 max-w-6xl mx-auto pb-16">
+              {/* Header */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h1 className="text-2xl font-black text-slate-900 tracking-tight">Service Availability & Hours</h1>
+                  <p className="text-xs text-slate-500 mt-1 font-medium">
+                    Configure weekly business operating hours. Customer appointment slots are generated strictly within these open hours.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 self-start sm:self-auto">
+                  <button
+                    id="save-working-hours-btn"
+                    onClick={handleSaveHours}
+                    className={`text-xs font-bold px-4 py-2.5 rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer ${
+                      hoursSaveSuccess
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-black hover:bg-slate-800 text-white'
+                    }`}
+                  >
+                    {hoursSaveSuccess ? <Check className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
+                    <span>{hoursSaveSuccess ? 'Saved Hours!' : 'Save Working Hours'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Location Switcher & View Switcher Bar */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center font-bold">
+                    <Building2 className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Business Location</span>
+                    <p className="text-xs font-extrabold text-slate-900">
+                      {selectedBusiness?.coreDetails?.businessName || (selectedBusiness as any)?.name}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3">
+                  {vendorOwnedBusinesses.length > 1 && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-slate-500 font-medium">Switch:</span>
+                      <select
+                        value={selectedBusiness.id}
+                        onChange={(e) => setSelectedServiceBizId(e.target.value)}
+                        className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 cursor-pointer"
+                      >
+                        {vendorOwnedBusinesses.map((biz) => (
+                          <option key={biz.id} value={biz.id}>
+                            {biz.coreDetails?.businessName || (biz as any)?.name} ({biz.coreDetails?.city || 'CA'})
+                          </option>
                         ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <div className="flex items-center bg-slate-100 p-1 rounded-xl">
+                    <button
+                      onClick={() => setActiveTab('my-services')}
+                      className="px-3 py-1 rounded-lg text-xs font-medium text-slate-500 hover:text-slate-800 transition cursor-pointer"
+                    >
+                      Services Catalog
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('service-availability')}
+                      className="px-3 py-1 rounded-lg text-xs font-bold bg-white text-slate-900 shadow-2xs cursor-pointer"
+                    >
+                      Working Hours
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Main Grid: Weekly Schedule + Live Slot Simulator */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* 7-Day Hours Editor */}
+                <div className="lg:col-span-2 space-y-3">
+                  <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs p-5">
+                    <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4">
+                      <div>
+                        <h3 className="font-extrabold text-slate-900 text-sm">Weekly Operating Schedule</h3>
+                        <p className="text-xs text-slate-400 mt-0.5">DBML schema `business_hours` (0 = Sunday to 6 = Saturday)</p>
+                      </div>
+                      <span className="text-[11px] font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full border border-indigo-100">
+                        7 Days Active
+                      </span>
+                    </div>
+
+                    <div className="space-y-2.5">
+                      {[0, 1, 2, 3, 4, 5, 6].map((dayIdx) => {
+                        const daySchedule =
+                          editingScheduleHours.find((h) => h.day_of_week === dayIdx) || {
+                            id: `bh-preview-${dayIdx}`,
+                            business_id: selectedServiceBiz.id,
+                            day_of_week: dayIdx,
+                            open_time: '09:00',
+                            close_time: '19:00',
+                            is_closed: dayIdx === 0,
+                          };
+
+                        const isClosed = Boolean(daySchedule.is_closed);
+
+                        return (
+                          <div
+                            key={dayIdx}
+                            className={`p-3.5 rounded-xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                              isClosed
+                                ? 'bg-slate-50/60 border-slate-200/70 text-slate-400'
+                                : 'bg-white border-slate-200 text-slate-800 shadow-2xs'
+                            }`}
+                          >
+                            {/* Day Title & Toggle */}
+                            <div className="flex items-center gap-3 w-40 shrink-0">
+                              <button
+                                onClick={() => handleToggleDayClosed(dayIdx)}
+                                className={`w-8 h-5 rounded-full transition-colors relative cursor-pointer ${
+                                  !isClosed ? 'bg-emerald-500' : 'bg-slate-300'
+                                }`}
+                                title={!isClosed ? 'Click to mark Closed' : 'Click to mark Open'}
+                              >
+                                <span
+                                  className={`w-3.5 h-3.5 rounded-full bg-white absolute top-0.75 transition-transform ${
+                                    !isClosed ? 'left-4' : 'left-0.75'
+                                  }`}
+                                />
+                              </button>
+                              <div>
+                                <span className={`text-xs font-extrabold ${!isClosed ? 'text-slate-900' : 'text-slate-400'}`}>
+                                  {DAY_NAMES[dayIdx]}
+                                </span>
+                                <span className="block text-[10px] text-slate-400 font-medium">
+                                  {dayIdx === 0 || dayIdx === 6 ? 'Weekend' : 'Weekday'}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Hours Dropdowns or Closed Notice */}
+                            <div className="flex-1 flex items-center gap-2">
+                              {!isClosed ? (
+                                <div className="flex flex-wrap items-center gap-2 text-xs">
+                                  <span className="text-slate-400 font-medium text-[11px]">Open:</span>
+                                  <select
+                                    value={daySchedule.open_time}
+                                    onChange={(e) => handleUpdateDayTime(dayIdx, 'open_time', e.target.value)}
+                                    className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 cursor-pointer"
+                                  >
+                                    {[
+                                      '07:00',
+                                      '07:30',
+                                      '08:00',
+                                      '08:30',
+                                      '09:00',
+                                      '09:30',
+                                      '10:00',
+                                      '10:30',
+                                      '11:00',
+                                    ].map((t) => (
+                                      <option key={t} value={t}>
+                                        {minutesToTimeString(
+                                          parseInt(t.split(':')[0], 10) * 60 + parseInt(t.split(':')[1], 10)
+                                        )}
+                                      </option>
+                                    ))}
+                                  </select>
+
+                                  <span className="text-slate-400 font-medium text-[11px]">to</span>
+
+                                  <select
+                                    value={daySchedule.close_time}
+                                    onChange={(e) => handleUpdateDayTime(dayIdx, 'close_time', e.target.value)}
+                                    className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 cursor-pointer"
+                                  >
+                                    {[
+                                      '16:00',
+                                      '16:30',
+                                      '17:00',
+                                      '17:30',
+                                      '18:00',
+                                      '18:30',
+                                      '19:00',
+                                      '19:30',
+                                      '20:00',
+                                      '20:30',
+                                      '21:00',
+                                      '22:00',
+                                    ].map((t) => (
+                                      <option key={t} value={t}>
+                                        {minutesToTimeString(
+                                          parseInt(t.split(':')[0], 10) * 60 + parseInt(t.split(':')[1], 10)
+                                        )}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              ) : (
+                                <span className="text-xs font-medium text-slate-400 italic">
+                                  Closed all day. No slots will be offered to customers.
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Copy to All Button */}
+                            {!isClosed && (
+                              <button
+                                onClick={() => handleCopyDayToAll(dayIdx)}
+                                className="px-2.5 py-1 text-[11px] font-bold text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer flex items-center gap-1 shrink-0"
+                                title="Copy these hours to all days"
+                              >
+                                <Copy className="w-3 h-3" />
+                                <span>Copy to All</span>
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Bottom action */}
+                    <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between">
+                      <p className="text-[11px] text-slate-400">
+                        Changes will immediately apply to customer availability calculations.
+                      </p>
+                      <button
+                        onClick={handleSaveHours}
+                        className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 transition cursor-pointer"
+                      >
+                        {hoursSaveSuccess ? 'Saved!' : 'Save Hours'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right Companion: Live Slot Simulator Preview */}
+                <div className="space-y-4">
+                  <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs p-5 space-y-4">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center font-bold">
+                        <Sparkles className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h3 className="font-extrabold text-slate-900 text-sm">Live Slot Simulator</h3>
+                        <p className="text-[11px] text-slate-400">Preview what customers see in real-time</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-slate-700">Test Date:</label>
+                      <input
+                        type="date"
+                        value={simDate}
+                        onChange={(e) => setSimDate(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900"
+                      />
+                    </div>
+
+                    <div className="p-3 bg-indigo-50/50 rounded-xl border border-indigo-100/80 text-xs text-indigo-900 space-y-1">
+                      <p className="font-bold flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-indigo-600" />
+                        Dynamic Slot Generation
+                      </p>
+                      <p className="text-[11px] text-indigo-700 leading-relaxed">
+                        Calculated for a 45 min appointment using your configured hours for{' '}
+                        <strong>
+                          {new Date(`${simDate}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long' })}
+                        </strong>
+                        .
+                      </p>
+                    </div>
+
+                    {/* Preview Results */}
+                    {previewSlots.length === 0 ? (
+                      <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-center">
+                        <p className="text-xs font-bold text-amber-800">Closed or No Slots Available</p>
+                        <p className="text-[11px] text-amber-600 mt-0.5">
+                          The business is closed or fully booked on this date.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between text-xs font-bold">
+                          <span className="text-slate-600">Generated Slots</span>
+                          <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 font-mono">
+                            {previewSlots.length} available
+                          </span>
+                        </div>
+
+                        <div className="max-h-64 overflow-y-auto pr-1 space-y-2">
+                          <div className="grid grid-cols-3 gap-1.5">
+                            {previewSlots.map((s) => (
+                              <div
+                                key={s.slotId || s.startTime}
+                                className="px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-center text-xs font-mono font-bold text-slate-800"
+                              >
+                                {s.startTime}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                       </div>
                     )}
                   </div>
                 </div>
               </div>
-
-              {/* Bottom Card matching Image 1 */}
-              {servicesForSelectedBiz.length === 0 ? (
-                <div
-                  onClick={() => {
-                    setNewServiceName('');
-                    setNewServicePrice('');
-                    setNewServiceDuration('30');
-                    setIsAddServiceModalOpen(true);
-                  }}
-                  className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs py-16 px-6 text-center flex items-center justify-center cursor-pointer hover:border-slate-300 transition-colors min-h-[140px]"
-                >
-                  <p className="text-xs sm:text-sm text-slate-400 font-normal">
-                    No services yet. Click Add Service.
-                  </p>
-                </div>
-              ) : (
-                <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr className="border-b border-slate-100 text-[11px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50/50">
-                          <th className="py-3.5 px-6 font-bold">SERVICE NAME</th>
-                          <th className="py-3.5 px-6 font-bold">PRICE</th>
-                          <th className="py-3.5 px-6 font-bold">DURATION</th>
-                          <th className="py-3.5 px-6 font-bold text-right">ACTIONS</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 text-xs">
-                        {servicesForSelectedBiz.map((srv) => (
-                          <tr key={srv.id} className="hover:bg-slate-50/70 transition-colors">
-                            <td className="py-4 px-6 font-bold text-slate-900 text-xs sm:text-sm">
-                              {srv.name}
-                            </td>
-                            <td className="py-4 px-6 text-slate-700 font-semibold font-mono">
-                              {srv.price}
-                            </td>
-                            <td className="py-4 px-6 text-slate-600 font-medium">
-                              {srv.duration} mins
-                            </td>
-                            <td className="py-4 px-6 text-right">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDeleteService(srv.id);
-                                }}
-                                className="text-slate-400 hover:text-red-500 transition-colors cursor-pointer p-1"
-                                title="Delete Service"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
             </div>
           )}
 
@@ -4375,66 +6296,7 @@ export const BusinessPortal: React.FC = () => {
         </div>
       )}
 
-      {/* ADD SERVICE MODAL (matching Image 2) */}
-      {isAddServiceModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-md w-full p-6 sm:p-7 overflow-hidden animate-in zoom-in-95 duration-150">
-            <div className="mb-5">
-              <h3 className="font-bold text-slate-900 text-lg">Add Service</h3>
-            </div>
-            <form onSubmit={handleAddServiceSubmit} className="space-y-4">
-              <div>
-                <input
-                  type="text"
-                  required
-                  placeholder="Service name"
-                  value={newServiceName}
-                  onChange={(e) => setNewServiceName(e.target.value)}
-                  className="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl text-xs sm:text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900"
-                  autoFocus
-                />
-              </div>
 
-              <div>
-                <input
-                  type="text"
-                  required
-                  placeholder="Price"
-                  value={newServicePrice}
-                  onChange={(e) => setNewServicePrice(e.target.value)}
-                  className="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl text-xs sm:text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900"
-                />
-              </div>
-
-              <div>
-                <input
-                  type="text"
-                  placeholder="30"
-                  value={newServiceDuration}
-                  onChange={(e) => setNewServiceDuration(e.target.value)}
-                  className="w-full px-4 py-3 bg-white border border-slate-200 rounded-2xl text-xs sm:text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-3">
-                <button
-                  type="button"
-                  onClick={() => setIsAddServiceModalOpen(false)}
-                  className="px-4 py-2 text-xs sm:text-sm font-semibold text-slate-800 hover:text-black cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-6 py-2.5 bg-black hover:bg-slate-800 text-white text-xs sm:text-sm font-bold rounded-xl sm:rounded-2xl transition-colors cursor-pointer shadow-xs"
-                >
-                  Add
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* ========================================================================= */}
       {/* MODAL: CONFIRM SUBSCRIPTION PLAN & PAYMENT                                */}
@@ -4690,6 +6552,455 @@ export const BusinessPortal: React.FC = () => {
                 setProceedToWithdrawAfterNmi(false);
               }}
             />
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: VIEW SERVICE DETAILS MODAL (Eye Action)                            */}
+      {/* ========================================================================= */}
+      {previewingService && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-lg w-full overflow-hidden animate-in zoom-in-95 duration-150 my-8">
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center shadow-2xs">
+                  <Scissors className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-slate-900 text-base">{previewingService.name}</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {selectedBusiness?.coreDetails?.businessName || (selectedBusiness as any)?.name}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setPreviewingService(null)}
+                className="w-8 h-8 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 text-xs">
+              {/* Photo if present */}
+              {previewingService.photo_url && (
+                <div className="rounded-2xl overflow-hidden border border-slate-200 h-44 w-full">
+                  <img
+                    src={previewingService.photo_url}
+                    alt={previewingService.name}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              )}
+
+              {/* Badges & Metrics Row */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Category</span>
+                  <span className="font-extrabold text-slate-900 text-xs truncate block">
+                    {previewingService.category_name || 'General'}
+                  </span>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Pricing</span>
+                  <span className="font-extrabold text-slate-900 text-xs block">
+                    {previewingService.pricing_type === 'time_based' ? 'Hourly Rate' : 'Fixed Fee'}
+                  </span>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Rate / Price</span>
+                  <span className="font-extrabold text-slate-900 text-xs font-mono block">
+                    ${(previewingService.hourly_rate || previewingService.base_price).toFixed(2)}
+                  </span>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Duration</span>
+                  <span className="font-extrabold text-slate-900 text-xs block">
+                    {previewingService.duration_minutes} mins
+                  </span>
+                </div>
+              </div>
+
+              {/* Description */}
+              {previewingService.description && (
+                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Description</span>
+                  <p className="text-xs text-slate-700 leading-relaxed">{previewingService.description}</p>
+                </div>
+              )}
+
+              {/* Status & Workers */}
+              <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-slate-600">Assigned Staff:</span>
+                  <span className="px-2 py-0.5 rounded-lg bg-indigo-50 text-indigo-700 font-extrabold border border-indigo-200 text-xs">
+                    {previewingService.assigned_workers_count ?? 4} Workers
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-bold text-slate-600">Status:</span>
+                  <span
+                    className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                      previewingService.status === 'active'
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        : 'bg-rose-50 text-rose-700 border border-rose-200'
+                    }`}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        previewingService.status === 'active' ? 'bg-emerald-500' : 'bg-rose-500'
+                      }`}
+                    />
+                    <span>{previewingService.status === 'active' ? 'Active' : 'Inactive'}</span>
+                  </span>
+                </div>
+              </div>
+
+              {/* Weekly Operating Hours Summary */}
+              {previewingService.service_hours && previewingService.service_hours.length > 0 && (
+                <div className="space-y-1.5 pt-2">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                    Weekly Availability Hours
+                  </span>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 text-[11px]">
+                    {previewingService.service_hours.map((h) => {
+                      const dayName =
+                        h.day_of_week === 1
+                          ? 'Mon'
+                          : h.day_of_week === 2
+                          ? 'Tue'
+                          : h.day_of_week === 3
+                          ? 'Wed'
+                          : h.day_of_week === 4
+                          ? 'Thu'
+                          : h.day_of_week === 5
+                          ? 'Fri'
+                          : h.day_of_week === 6
+                          ? 'Sat'
+                          : 'Sun';
+                      return (
+                        <div
+                          key={h.day_of_week}
+                          className="p-2 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-between"
+                        >
+                          <span className="font-bold text-slate-700">{dayName}</span>
+                          <span className="text-slate-500 font-medium text-[10px]">
+                            {h.is_closed ? 'Closed' : `${formatTime24To12(h.open_time)} - ${formatTime24To12(h.close_time)}`}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setPreviewingService(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = previewingService;
+                    setPreviewingService(null);
+                    handleOpenEditServiceView(target);
+                  }}
+                  className="px-5 py-2 rounded-xl bg-black hover:bg-slate-800 text-white text-xs font-bold shadow-xs transition cursor-pointer flex items-center gap-1.5"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                  <span>Edit Service</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: ASSIGN WORKERS MODAL (Users Action)                                */}
+      {/* ========================================================================= */}
+      {assigningWorkersService && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-md w-full overflow-hidden animate-in zoom-in-95 duration-150 my-8">
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center shadow-2xs">
+                  <UsersRound className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-slate-900 text-base">Assign Service Staff</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">{assigningWorkersService.name}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setAssigningWorkersService(null)}
+                className="w-8 h-8 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 text-xs">
+              <p className="text-slate-600 leading-relaxed">
+                Define the count of available professional staff qualified to perform{' '}
+                <span className="font-bold text-slate-900">"{assigningWorkersService.name}"</span>. Customer booking slots adjust capacity according to worker availability.
+              </p>
+
+              {/* Worker Count Adjuster */}
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 flex items-center justify-between">
+                <div>
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                    Qualified Staff Count
+                  </span>
+                  <span className="text-xl font-black text-slate-900">
+                    {assigningWorkersService.assigned_workers_count ?? 4} Specialists
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      const current = assigningWorkersService.assigned_workers_count ?? 4;
+                      const nextVal = Math.max(1, current - 1);
+                      updateBusinessService(assigningWorkersService.id, { assigned_workers_count: nextVal });
+                      setAssigningWorkersService({ ...assigningWorkersService, assigned_workers_count: nextVal });
+                    }}
+                    className="w-8 h-8 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 font-bold text-slate-700 flex items-center justify-center cursor-pointer shadow-2xs"
+                  >
+                    -
+                  </button>
+                  <button
+                    onClick={() => {
+                      const current = assigningWorkersService.assigned_workers_count ?? 4;
+                      const nextVal = current + 1;
+                      updateBusinessService(assigningWorkersService.id, { assigned_workers_count: nextVal });
+                      setAssigningWorkersService({ ...assigningWorkersService, assigned_workers_count: nextVal });
+                    }}
+                    className="w-8 h-8 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 font-bold text-slate-700 flex items-center justify-center cursor-pointer shadow-2xs"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+
+              {/* Sample Staff Roster */}
+              <div className="space-y-2">
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                  Designated Staff Roster
+                </span>
+                <div className="space-y-1.5">
+                  {[
+                    { name: 'Marco Ross', role: 'Master Stylist & Barber', status: 'Available' },
+                    { name: 'Elena Vance', role: 'Color Specialist', status: 'Available' },
+                    { name: 'David Kim', role: 'Grooming & Beard Specialist', status: 'On Shift' },
+                    { name: 'Sofia Mendes', role: 'Licensed Esthetician', status: 'Available' },
+                  ].map((staff, idx) => (
+                    <div
+                      key={idx}
+                      className="p-3 bg-white rounded-xl border border-slate-200 flex items-center justify-between"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-full bg-slate-900 text-white font-bold text-[10px] flex items-center justify-center">
+                          {staff.name.split(' ').map((n) => n[0]).join('')}
+                        </div>
+                        <div>
+                          <p className="font-bold text-slate-900 text-xs">{staff.name}</p>
+                          <p className="text-[10px] text-slate-400">{staff.role}</p>
+                        </div>
+                      </div>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        {staff.status}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    showToast('Staff assignments saved.');
+                    setAssigningWorkersService(null);
+                  }}
+                  className="px-5 py-2 rounded-xl bg-black hover:bg-slate-800 text-white text-xs font-bold shadow-xs transition cursor-pointer"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: BOOKING DETAILS MODAL                                              */}
+      {/* ========================================================================= */}
+      {selectedBookingDetails && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-lg w-full overflow-hidden animate-in zoom-in-95 duration-150 my-8">
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center shadow-2xs">
+                  <Calendar className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-slate-900 text-base">
+                    Booking #{selectedBookingDetails.id.toUpperCase().slice(0, 10)}
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {selectedBookingDetails.business_name}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedBookingDetails(null)}
+                className="w-8 h-8 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 text-xs">
+              {/* Customer Contact */}
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Customer Details</span>
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-900 text-sm">{selectedBookingDetails.customer_name}</span>
+                  <span
+                    className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wider ${
+                      selectedBookingDetails.status === 'confirmed'
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : selectedBookingDetails.status === 'visited'
+                        ? 'bg-indigo-100 text-indigo-800'
+                        : 'bg-rose-100 text-rose-800'
+                    }`}
+                  >
+                    {selectedBookingDetails.status}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-slate-600 pt-1">
+                  <div>
+                    <span className="text-[10px] text-slate-400 block">Email</span>
+                    <span className="font-medium">{selectedBookingDetails.customer_email}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-400 block">Phone</span>
+                    <span className="font-mono font-medium">{selectedBookingDetails.customer_phone}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Schedule Info */}
+              <div className="p-4 bg-indigo-50/50 rounded-2xl border border-indigo-100 space-y-1.5">
+                <span className="text-[11px] font-bold text-indigo-700 uppercase tracking-wider block">Appointment Slot</span>
+                <div className="flex items-center justify-between text-slate-900">
+                  <span className="font-extrabold text-sm">
+                    {selectedBookingDetails.booking_date || selectedBookingDetails.scheduled_date}
+                  </span>
+                  <span className="font-bold text-indigo-700 bg-white px-2.5 py-1 rounded-lg border border-indigo-100 shadow-2xs">
+                    {selectedBookingDetails.scheduled_time_slot ||
+                      (selectedBookingDetails.scheduled_start_time
+                        ? `${selectedBookingDetails.scheduled_start_time} - ${selectedBookingDetails.scheduled_end_time}`
+                        : 'Scheduled')}
+                  </span>
+                </div>
+                <p className="text-[11px] text-indigo-800">
+                  Total duration: <strong>{selectedBookingDetails.total_duration_minutes} minutes</strong>
+                </p>
+              </div>
+
+              {/* Line-item service breakdown */}
+              <div className="space-y-2">
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                  Booked Services ({selectedBookingDetails.items?.length || 0})
+                </span>
+                <div className="divide-y divide-slate-100 border border-slate-200 rounded-2xl overflow-hidden">
+                  {(selectedBookingDetails.items || []).map((it) => (
+                    <div key={it.id} className="p-3 bg-white flex items-center justify-between text-xs">
+                      <div>
+                        <p className="font-bold text-slate-900">{it.service_name}</p>
+                        <p className="text-[11px] text-slate-400">
+                          {it.duration_minutes} mins • Slot: {it.scheduled_start} - {it.scheduled_end}
+                        </p>
+                      </div>
+                      <span className="font-bold font-mono text-slate-900">
+                        ${(it.price_charged ?? it.price ?? 0).toFixed(2)}
+                      </span>
+                    </div>
+                  ))}
+                  <div className="p-3 bg-slate-50 flex items-center justify-between text-xs font-bold">
+                    <span className="text-slate-700">Total Amount</span>
+                    <span className="text-sm font-black font-mono text-slate-900">
+                      ${(selectedBookingDetails.total_amount ?? selectedBookingDetails.total_price ?? 0).toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Payment Summary */}
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between text-xs">
+                <div>
+                  <span className="text-slate-500 font-medium">Payment Method: </span>
+                  <strong className="text-slate-900">
+                    {selectedBookingDetails.payment_method === 'credit_card' ? 'Online Card (NMI)' : 'Pay at Venue'}
+                  </strong>
+                </div>
+                <span
+                  className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold ${
+                    selectedBookingDetails.payment_status === 'paid'
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : 'bg-amber-100 text-amber-800'
+                  }`}
+                >
+                  {selectedBookingDetails.payment_status}
+                </span>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                {selectedBookingDetails.status === 'confirmed' && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        cancelBooking(selectedBookingDetails.id, 'Cancelled by salon');
+                        showToast(`Booking cancelled.`);
+                        setSelectedBookingDetails(null);
+                      }}
+                      className="px-3.5 py-2 rounded-xl text-xs font-bold text-rose-600 hover:bg-rose-50 border border-rose-200 cursor-pointer"
+                    >
+                      Cancel Appointment
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        updateBookingStatus(selectedBookingDetails.id, 'visited');
+                        showToast(`Marked appointment as Visited.`);
+                        setSelectedBookingDetails(null);
+                      }}
+                      className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs cursor-pointer flex items-center gap-1.5"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Mark Visited</span>
+                    </button>
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setSelectedBookingDetails(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

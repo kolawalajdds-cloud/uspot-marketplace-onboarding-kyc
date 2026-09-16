@@ -1,142 +1,197 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import {
   Search,
   MapPin,
   Star,
   ShieldCheck,
   Zap,
-  Headphones,
-  Check,
-  Sparkles,
-  CreditCard,
   Lock,
-  DollarSign,
-  AlertCircle,
-  Clock,
-  ArrowRight,
+  Heart,
+  Calendar,
+  Check,
+  CreditCard,
+  ChevronRight,
+  Scissors,
+  Sparkles,
+  Flower2,
+  Activity,
+  Dumbbell,
+  Palette,
+  Eye,
+  Shirt,
+  Flame,
 } from 'lucide-react';
 import { useDemo } from '../../context/DemoContext';
-import { MarketplaceTransaction } from '../../types';
+import { Business } from '../../types';
+import { ServiceBookingModal } from './ServiceBookingModal';
 
 interface CustomerHomeViewProps {
   onNavigateCategories: () => void;
   onNavigateCities: () => void;
+  onNavigateMyBookings?: () => void;
+  onNavigateSpots?: (category?: string, query?: string, location?: string) => void;
+  onSelectSpotDetail?: (businessId: string) => void;
+  onBookSpot?: (businessId: string, serviceId?: string) => void;
 }
 
 export const CustomerHomeView: React.FC<CustomerHomeViewProps> = ({
   onNavigateCategories,
   onNavigateCities,
+  onNavigateMyBookings,
+  onNavigateSpots,
+  onSelectSpotDetail,
+  onBookSpot,
 }) => {
-  const { state, currentUser, bookServiceWithNmi, platformLedger } = useDemo();
+  const { state, currentUser, bookServiceWithNmi, createBooking } = useDemo();
 
   const [serviceQuery, setServiceQuery] = useState('');
   const [locationQuery, setLocationQuery] = useState('');
-  const [bookingVenue, setBookingVenue] = useState<{ id: string; name: string } | null>(null);
-  const [selectedService, setSelectedService] = useState('Executive Studio & Workspace Booking');
-  const [paymentAmount, setPaymentAmount] = useState<number>(100.0);
-  const [bookingDate, setBookingDate] = useState('2026-09-15');
-  const [bookingTime, setBookingTime] = useState('14:00');
-  const [isProcessingNmi, setIsProcessingNmi] = useState(false);
-  const [confirmedTransaction, setConfirmedTransaction] = useState<MarketplaceTransaction | null>(null);
+  const [favorites, setFavorites] = useState<Record<string, boolean>>({});
   const [quickTestNotice, setQuickTestNotice] = useState<string | null>(null);
+  const [showDevBar, setShowDevBar] = useState(false);
 
-  // Dynamic salon venues directly linked to state.businesses
-  const recommendedSalons = useMemo(() => {
-    const defaultImages: Record<string, string> = {
-      'biz-001': 'https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=600&q=80',
-      'biz-002': 'https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?auto=format&fit=crop&w=600&q=80',
-      'biz-003': 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=600&q=80',
-      'biz-004': 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=600&q=80',
-    };
+  // Dynamic booking modal state fallback
+  const [bookingBusiness, setBookingBusiness] = useState<Business | null>(null);
+  const [isServiceBookingModalOpen, setIsServiceBookingModalOpen] = useState(false);
 
-    return state.businesses.map((b) => {
-      const cover =
-        b.imageGallery?.find((img) => img.isCover)?.url ||
-        defaultImages[b.id] ||
-        defaultImages['biz-001'];
+  const handleOpenBooking = (businessId: string) => {
+    if (onBookSpot) {
+      onBookSpot(businessId);
+    } else {
+      const biz = state.businesses.find((b) => b.id === businessId) || state.businesses[0];
+      setBookingBusiness(biz);
+      setIsServiceBookingModalOpen(true);
+    }
+  };
 
-      return {
-        id: b.id,
-        name: b.coreDetails.businessName,
-        rating: b.id === 'biz-001' ? '5.0' : b.id === 'biz-002' ? '4.9' : b.id === 'biz-003' ? '4.9' : '4.8',
-        location: `${b.coreDetails.city}, ${b.coreDetails.state}`,
-        image: cover,
-      };
-    });
-  }, [state.businesses]);
+  const toggleFavorite = (spotId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setFavorites((prev) => ({ ...prev, [spotId]: !prev[spotId] }));
+  };
+
+  const handleSearchSubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (onNavigateSpots) {
+      onNavigateSpots(undefined, serviceQuery, locationQuery);
+    } else {
+      onNavigateCategories();
+    }
+  };
+
+  const handleCategoryClick = (categoryName: string) => {
+    if (onNavigateSpots) {
+      onNavigateSpots(categoryName);
+    } else {
+      onNavigateCategories();
+    }
+  };
+
+  // 9 category cards matching Screen 1
+  const categoriesList = [
+    { label: 'BARBER', icon: Scissors, query: 'Barber' },
+    { label: 'BEAUTY', icon: Sparkles, query: 'Beauty' },
+    { label: 'SPA', icon: Flower2, query: 'Spa' },
+    { label: 'WELLNESS', icon: Activity, query: 'Wellness' },
+    { label: 'FITNESS', icon: Dumbbell, query: 'Fitness' },
+    { label: 'NAILS', icon: Palette, query: 'Nails' },
+    { label: 'MASSAGE', icon: Flame, query: 'Massage' },
+    { label: 'EYES', icon: Eye, query: 'Eyes' },
+    { label: 'TAILOR', icon: Shirt, query: 'Tailor' },
+  ];
+
+  // 4 recommended spots matching Screen 1
+  const recommendedSpots = [
+    {
+      id: 'rec-1',
+      businessId: 'biz-001',
+      name: 'Glow Salon',
+      categoryBadge: 'HAIR & STYLING',
+      rating: 4.9,
+      reviewCount: 128,
+      address: '124 Grand St, SoHo, NY',
+      image: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=700&q=80',
+    },
+    {
+      id: 'rec-2',
+      businessId: 'biz-002',
+      name: 'Onyx Spa & Wellness',
+      categoryBadge: 'THERMAL & BODY',
+      rating: 4.8,
+      reviewCount: 94,
+      address: '88 Franklin St, Tribeca, NY',
+      image: 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=700&q=80',
+    },
+    {
+      id: 'rec-3',
+      businessId: 'biz-001',
+      name: 'The Groomer',
+      categoryBadge: 'BARBER & SHAVE',
+      rating: 5.0,
+      reviewCount: 210,
+      address: '45 Spring St, SoHo, NY',
+      image: 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=700&q=80',
+    },
+    {
+      id: 'rec-4',
+      businessId: 'biz-002',
+      name: 'Zenith Yoga Studio',
+      categoryBadge: 'MOVEMENT & MIND',
+      rating: 4.7,
+      reviewCount: 76,
+      address: '302 Bowery, East Village, NY',
+      image: 'https://images.unsplash.com/photo-1518611012118-696072aa579a?auto=format&fit=crop&w=700&q=80',
+    },
+  ];
 
   const clientReviews = [
     {
       stars: 5,
       quote:
-        'URSPOT completely changed how I book beauty services. The quality of partners is outstanding and the process is seamless.',
+        'URSPOT completely changed how I book beauty services. The quality of partners is outstanding and the booking confirmation was instant.',
       initial: 'E',
-      name: 'Elena V.',
-      title: 'Fashion Editor',
+      name: 'Elena Rostova',
+      title: 'Fashion Director, NYC',
     },
     {
       stars: 5,
       quote:
-        'As someone with a tight schedule, the quick booking and instant confirmations are a game changer. Highly recommended.',
+        'As someone with a very tight travel schedule, the quick booking, vetted spaces, and seamless checkout give me total peace of mind.',
       initial: 'M',
-      name: 'Marcus L.',
-      title: 'Architect',
+      name: 'Marcus Vance',
+      title: 'Architectural Consultant',
     },
     {
       stars: 5,
       quote:
-        'The premium experience starts from the app itself. Every detail feels considered and the concierge support is exceptional.',
+        'The luxury experience starts from the platform itself. Every single detail feels curated and every spot delivers world-class service.',
       initial: 'S',
-      name: 'Sophie T.',
-      title: 'Creative Director',
+      name: 'Sophie Tanaka',
+      title: 'Creative Producer',
     },
   ];
 
-  const handleBook = (salon: { id: string; name: string } | string) => {
-    if (typeof salon === 'string') {
-      const match = recommendedSalons.find((v) => v.name.toLowerCase().includes(salon.toLowerCase())) || {
-        id: 'biz-001',
-        name: salon,
-      };
-      setBookingVenue({ id: match.id, name: match.name });
-    } else {
-      setBookingVenue({ id: salon.id, name: salon.name });
-    }
-    setSelectedService('Executive Studio & Workspace Booking');
-    setPaymentAmount(100.0);
-    setConfirmedTransaction(null);
-    setIsProcessingNmi(false);
-  };
+  const destinations = [
+    {
+      city: 'New York City',
+      spots: '340+ Verified Spots',
+      image: 'https://images.unsplash.com/photo-1496442226666-8d4d0e62e6e9?auto=format&fit=crop&w=800&q=80',
+    },
+    {
+      city: 'London',
+      spots: '210+ Verified Spots',
+      image: 'https://images.unsplash.com/photo-1513635269975-59663e0ac1ad?auto=format&fit=crop&w=800&q=80',
+    },
+    {
+      city: 'Tokyo',
+      spots: '180+ Verified Spots',
+      image: 'https://images.unsplash.com/photo-1503899036084-c55cdd92da26?auto=format&fit=crop&w=800&q=80',
+    },
+  ];
 
-  const handlePayWithNmi = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!bookingVenue) return;
-
-    setIsProcessingNmi(true);
-
-    try {
-      const res = await bookServiceWithNmi({
-        businessId: bookingVenue.id,
-        serviceName: selectedService,
-        amount: paymentAmount,
-        customerName: currentUser?.fullName || 'Alex Taylor',
-        customerEmail: currentUser?.email || 'alex_shopper@uspot.com',
-      });
-
-      if (res.success && res.transaction) {
-        setConfirmedTransaction(res.transaction);
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsProcessingNmi(false);
-    }
-  };
-
-  // Prototype Quick-Test Helpers
+  // Quick-test helper preserved for platform validation
   const handleRunPrototypeTest = async (businessId: string) => {
     const targetBiz = state.businesses.find((b) => b.id === businessId) || state.businesses[0];
-    setQuickTestNotice(`Processing test payment of $100 via NMI Gateway for "${targetBiz.coreDetails.businessName}"...`);
+    setQuickTestNotice(`Simulating payment for "${targetBiz.coreDetails.businessName}" via NMI Gateway...`);
 
     const res = await bookServiceWithNmi({
       businessId: targetBiz.id,
@@ -146,37 +201,56 @@ export const CustomerHomeView: React.FC<CustomerHomeViewProps> = ({
       customerEmail: currentUser?.email || 'alex_shopper@uspot.com',
     });
 
+    try {
+      const defaultServices = state.businessServices.filter((s) => s.business_id === targetBiz.id);
+      const serviceToBook = defaultServices[0]?.id || 'srv-biz-001-1';
+      await createBooking({
+        businessId: targetBiz.id,
+        selectedServiceIds: [serviceToBook],
+        dateStr: new Date(Date.now() + 86400000).toISOString().split('T')[0],
+        startTime: '14:00',
+        paymentMethod: 'credit_card',
+        customerName: currentUser?.fullName || 'Alex Taylor',
+        customerEmail: currentUser?.email || 'alex_shopper@uspot.com',
+        notes: 'Quick-test booking via Prototype Testing Bar',
+      });
+    } catch (e) {
+      console.warn('Prototype test appointment creation error:', e);
+    }
+
     if (res.success && res.transaction) {
       const t = res.transaction;
       setQuickTestNotice(
         `✓ Simulated $100 payment for "${t.businessName}". Transaction ${t.id} successfully processed via NMI Gateway.`
       );
-      setTimeout(() => setQuickTestNotice(null), 10000);
+      setTimeout(() => setQuickTestNotice(null), 8000);
     }
   };
 
   return (
     <div className="w-full bg-white animate-in fade-in duration-200">
-      {/* Hero Section */}
-      <section className="relative w-full bg-[#050607] py-24 sm:py-32 px-4 sm:px-6 overflow-hidden">
-        {/* Background Architectural Columns / Dark Marble Effect */}
-        <div className="absolute inset-0 pointer-events-none opacity-40">
-          <div className="absolute inset-0 bg-radial from-neutral-800/20 via-[#050607]/80 to-[#050607]" />
-          {/* Subtle column pillars matching screenshot */}
-          <div className="h-full w-full flex justify-around opacity-25">
-            <div className="w-24 h-full bg-gradient-to-r from-transparent via-neutral-600/30 to-transparent" />
-            <div className="w-32 h-full bg-gradient-to-r from-transparent via-neutral-700/20 to-transparent" />
-            <div className="w-24 h-full bg-gradient-to-r from-transparent via-neutral-600/30 to-transparent" />
+      {/* 1. Hero Section matching Screen 1 */}
+      <section className="relative w-full bg-[#08090B] py-24 sm:py-32 px-4 sm:px-6 overflow-hidden">
+        {/* Subtle Architectural Column Lighting in Background */}
+        <div className="absolute inset-0 pointer-events-none opacity-30">
+          <div className="absolute inset-0 bg-radial from-neutral-800/20 via-[#08090B]/80 to-[#08090B]" />
+          <div className="h-full w-full flex justify-around opacity-20">
+            <div className="w-24 h-full bg-gradient-to-r from-transparent via-neutral-600/40 to-transparent" />
+            <div className="w-36 h-full bg-gradient-to-r from-transparent via-neutral-500/30 to-transparent" />
+            <div className="w-24 h-full bg-gradient-to-r from-transparent via-neutral-600/40 to-transparent" />
           </div>
         </div>
 
         <div className="relative max-w-4xl mx-auto text-center z-10">
-          <h1 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold text-white tracking-tight mb-8">
+          <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black text-white tracking-tight mb-8">
             Find Your Next Appointment
           </h1>
 
-          {/* Search Bar Pill */}
-          <div className="bg-white rounded-full p-2 pl-5 sm:pl-6 shadow-2xl flex flex-col sm:flex-row items-center gap-2 sm:gap-4 max-w-2xl mx-auto border border-slate-100">
+          {/* Floating Dual Search Pill */}
+          <form
+            onSubmit={handleSearchSubmit}
+            className="bg-white rounded-full p-2 pl-5 sm:pl-6 shadow-2xl flex flex-col sm:flex-row items-center gap-2 sm:gap-3 max-w-2xl mx-auto border border-slate-100"
+          >
             <div className="flex items-center gap-2.5 flex-1 w-full sm:w-auto py-1 sm:py-0">
               <Search className="w-4 h-4 text-slate-400 shrink-0" />
               <input
@@ -202,245 +276,203 @@ export const CustomerHomeView: React.FC<CustomerHomeViewProps> = ({
             </div>
 
             <button
-              type="button"
-              onClick={onNavigateCategories}
-              className="w-full sm:w-auto bg-black hover:bg-neutral-800 text-white font-semibold text-xs px-7 py-3 rounded-full transition-all cursor-pointer shadow-xs whitespace-nowrap"
+              type="submit"
+              className="w-full sm:w-auto bg-black hover:bg-neutral-800 text-white font-semibold text-xs px-8 py-3 rounded-full transition-all cursor-pointer shadow-xs whitespace-nowrap"
             >
               Search
             </button>
-          </div>
+          </form>
         </div>
       </section>
 
-      {/* Main Page Container */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-12">
-        {/* PROTOTYPE TEST BAR matching exact user requirements */}
-        <section className="bg-slate-900 text-white rounded-3xl p-6 sm:p-7 border border-slate-800 shadow-xl space-y-4">
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-                <span className="text-xs font-bold uppercase tracking-wider text-emerald-400 font-mono">
-                  Marketplace Prototype Testing Bar
-                </span>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700 font-mono">
-                  NMI Payment Gateway Active
-                </span>
-              </div>
-              <h2 className="text-lg font-black text-white mt-1">
-                Simulate Customer Booking ($100 Service)
-              </h2>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Simulate a $100 checkout via the NMI Payment Gateway to test platform settlement and merchant balance allocation.
-              </p>
-            </div>
-
-            <div className="flex flex-col sm:flex-row gap-2.5 shrink-0">
-              <button
-                id="btn-quick-test-biz-001"
-                onClick={() => handleRunPrototypeTest('biz-001')}
-                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition-all cursor-pointer shadow-md flex items-center gap-2 border border-slate-700"
-              >
-                <CreditCard className="w-3.5 h-3.5 text-blue-400" />
-                <span>Simulate $100: The Nexus</span>
-              </button>
-
-              <button
-                id="btn-quick-test-biz-002"
-                onClick={() => handleRunPrototypeTest('biz-002')}
-                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition-all cursor-pointer shadow-md flex items-center gap-2 border border-slate-700"
-              >
-                <CreditCard className="w-3.5 h-3.5 text-amber-400" />
-                <span>Simulate $100: Apex Studios</span>
-              </button>
-            </div>
-          </div>
-
-          {quickTestNotice && (
-            <div className="p-3.5 rounded-2xl bg-emerald-950/80 border border-emerald-500/50 text-emerald-300 text-xs font-mono font-semibold animate-in fade-in flex items-center gap-2.5">
-              <Check className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span>{quickTestNotice}</span>
-            </div>
-          )}
-        </section>
-        {/* Browse by Category */}
+      {/* Main Content Container */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-14 space-y-16">
+        {/* 2. Browse by Category (9 square cards matching Screen 1) */}
         <section>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-base sm:text-lg font-extrabold text-slate-900 tracking-tight">
-              Browse by Category
-            </h2>
-          </div>
+          <h2 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight mb-5">
+            Browse by Category
+          </h2>
 
-          {/* 10 Category Placeholder / Skeleton Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-5 lg:grid-cols-10 gap-3">
-            {[
-              'Hair Salon',
-              'Barbershop',
-              'Spa & Massage',
-              'Nails Care',
-              'Skin Care',
-              'Yoga & Pilates',
-              'Fitness Gym',
-              'Dental Care',
-              'Photography',
-              'Wellness',
-            ].map((catName, idx) => (
-              <button
-                key={idx}
-                type="button"
-                onClick={onNavigateCategories}
-                className="group h-24 rounded-2xl bg-[#F4F5F7] hover:bg-[#EAECEF] border border-slate-200/50 flex flex-col items-center justify-center p-2 transition-all cursor-pointer text-center"
-              >
-                <div className="w-7 h-7 rounded-xl bg-white/80 shadow-2xs group-hover:scale-105 transition-transform flex items-center justify-center mb-1.5 text-slate-700">
-                  <Sparkles className="w-3.5 h-3.5 text-slate-600" />
-                </div>
-                <span className="text-[11px] font-semibold text-slate-600 group-hover:text-slate-900 line-clamp-1">
-                  {catName}
-                </span>
-              </button>
-            ))}
+          <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-3 sm:gap-4">
+            {categoriesList.map((cat, idx) => {
+              const IconComp = cat.icon;
+              return (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => handleCategoryClick(cat.query)}
+                  className="group bg-[#F4F5F7] hover:bg-slate-200/80 rounded-2xl p-4 flex flex-col items-center justify-center gap-2.5 transition-all cursor-pointer border border-transparent hover:border-slate-300"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-white shadow-2xs flex items-center justify-center text-slate-700 group-hover:text-black group-hover:scale-105 transition-all">
+                    <IconComp className="w-4 h-4" />
+                  </div>
+                  <span className="text-[11px] font-bold tracking-wider text-slate-700 uppercase group-hover:text-black">
+                    {cat.label}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </section>
 
-        {/* Limited Offer Banner */}
-        <section className="bg-gradient-to-r from-[#0C0D0E] via-[#15171A] to-[#0C0D0E] rounded-3xl p-8 sm:p-12 text-white relative overflow-hidden border border-neutral-800 flex flex-col md:flex-row items-center justify-between gap-8 shadow-sm">
+        {/* 3. Limited Offer Banner matching Screen 1 */}
+        <section className="bg-[#0B0C0E] rounded-3xl p-8 sm:p-12 text-white relative overflow-hidden border border-neutral-800 shadow-sm flex flex-col md:flex-row items-center justify-between gap-8">
           <div className="relative z-10 max-w-lg">
-            <span className="text-[10px] uppercase font-extrabold tracking-[0.2em] text-slate-400 block mb-2">
+            <span className="text-[10px] uppercase font-bold tracking-[0.2em] text-slate-400 block mb-2">
               LIMITED OFFER
             </span>
             <h3 className="text-2xl sm:text-3xl lg:text-4xl font-black text-white tracking-tight mb-3">
               Elevate Your Self-Care Experience
             </h3>
             <p className="text-xs sm:text-sm text-slate-300 leading-relaxed mb-6 font-normal">
-              Enjoy 20% off your first booking at selected premium partner salons this month.
+              Book any premium service this week and enjoy complimentary treatments at top-tier partner locations.
             </p>
             <button
               type="button"
-              onClick={() => handleBook('Onyx Spa')}
-              className="bg-white hover:bg-slate-100 text-black text-xs font-extrabold px-6 py-2.5 rounded-lg transition-colors cursor-pointer shadow-xs"
+              onClick={() => handleOpenBooking('biz-002')}
+              className="bg-white hover:bg-slate-100 text-black text-xs font-bold px-6 py-2.5 rounded-full transition-colors cursor-pointer shadow-xs"
             >
               Book Now
             </button>
           </div>
 
-          {/* Cosmetic Bottles Artwork / High-end Visual */}
-          <div className="relative shrink-0 flex items-center justify-center md:pr-4">
-            <div className="w-56 sm:w-64 h-48 sm:h-52 relative flex items-end justify-center">
-              {/* Product render container */}
-              <div className="absolute inset-0 bg-radial from-neutral-700/20 to-transparent rounded-full blur-xl" />
+          {/* Luxury Cosmetic Bottles Graphic */}
+          <div className="relative shrink-0 flex items-center justify-center">
+            <div className="w-64 h-48 sm:h-56 relative flex items-center justify-center">
+              <div className="absolute inset-0 bg-radial from-neutral-700/20 to-transparent rounded-full blur-2xl" />
               <img
                 src="https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=600&q=80"
-                alt="Luxury Cosmetics"
+                alt="Luxury Self Care"
                 className="w-full h-full object-contain filter drop-shadow-2xl relative z-10"
               />
             </div>
           </div>
         </section>
 
-        {/* Recommended for You */}
+        {/* 4. Recommended for You (4 Cards matching Screen 1) */}
         <section>
           <div className="flex items-center justify-between mb-6">
-            <div>
-              <h2 className="text-base sm:text-lg font-extrabold text-slate-900 tracking-tight">
-                Recommended for You
-              </h2>
-              <p className="text-xs text-slate-500 mt-0.5">Top rated businesses in your area</p>
-            </div>
+            <h2 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
+              Recommended for You
+            </h2>
             <button
               type="button"
-              onClick={onNavigateCategories}
-              className="text-xs font-semibold text-slate-500 hover:text-slate-900 transition-colors cursor-pointer"
+              onClick={() => onNavigateSpots ? onNavigateSpots() : onNavigateCategories()}
+              className="text-xs font-semibold text-slate-500 hover:text-slate-900 transition-colors cursor-pointer flex items-center gap-1"
             >
-              View All
+              <span>View All</span>
+              <ChevronRight className="w-3.5 h-3.5" />
             </button>
           </div>
 
-          {/* 4 Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {recommendedSalons.map((salon) => (
+            {recommendedSpots.map((spot) => (
               <div
-                key={salon.id}
-                className="bg-white rounded-2xl border border-slate-200/90 overflow-hidden flex flex-col justify-between p-3.5 hover:shadow-md transition-all group"
+                key={spot.id}
+                onClick={() => onSelectSpotDetail ? onSelectSpotDetail(spot.businessId) : handleOpenBooking(spot.businessId)}
+                className="bg-white rounded-2xl border border-slate-200 overflow-hidden flex flex-col justify-between hover:shadow-lg transition-all group cursor-pointer"
               >
-                <div>
-                  {/* Image Container */}
-                  <div className="h-44 w-full rounded-xl bg-slate-100 overflow-hidden relative mb-3">
-                    <img
-                      src={salon.image}
-                      alt={salon.name}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                {/* Photo with category badge & heart icon */}
+                <div className="relative h-48 w-full bg-slate-100 overflow-hidden">
+                  <img
+                    src={spot.image}
+                    alt={spot.name}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                  />
+                  <div className="absolute top-3 left-3 bg-black/75 backdrop-blur-xs text-white text-[9px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider">
+                    {spot.categoryBadge}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => toggleFavorite(spot.id, e)}
+                    className="absolute top-3 right-3 w-7 h-7 rounded-full bg-white/80 hover:bg-white flex items-center justify-center text-slate-700 transition-colors cursor-pointer"
+                  >
+                    <Heart
+                      className={`w-3.5 h-3.5 ${
+                        favorites[spot.id] ? 'fill-rose-500 text-rose-500' : 'text-slate-600'
+                      }`}
                     />
-                  </div>
-
-                  {/* Info */}
-                  <div className="flex items-center justify-between mb-1">
-                    <h4 className="text-sm font-bold text-slate-900">{salon.name}</h4>
-                    <span className="inline-flex items-center gap-1 text-xs font-bold text-slate-900">
-                      <Star className="w-3 h-3 fill-current text-slate-900" />
-                      {salon.rating}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-1 text-xs text-slate-500 mb-4">
-                    <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
-                    <span>{salon.location}</span>
-                  </div>
+                  </button>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => handleBook(salon)}
-                  className="w-full py-2.5 px-3 rounded-xl bg-black hover:bg-slate-800 text-white text-xs font-bold transition-colors cursor-pointer shadow-2xs flex items-center justify-center gap-1.5"
-                >
-                  <CreditCard className="w-3.5 h-3.5" />
-                  <span>Book with NMI ($100)</span>
-                </button>
+                {/* Details */}
+                <div className="p-4 flex-1 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-start justify-between gap-2 mb-1">
+                      <h4 className="text-sm font-bold text-slate-900 leading-snug">
+                        {spot.name}
+                      </h4>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                        <span className="text-xs font-bold text-slate-900">{spot.rating}</span>
+                        <span className="text-[10px] text-slate-400">({spot.reviewCount})</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1 text-[11px] text-slate-500 mb-4">
+                      <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
+                      <span className="truncate">{spot.address}</span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleOpenBooking(spot.businessId);
+                    }}
+                    className="w-full py-2.5 rounded-full bg-black hover:bg-neutral-800 text-white text-xs font-bold transition-colors cursor-pointer shadow-2xs flex items-center justify-center gap-1.5"
+                  >
+                    <Calendar className="w-3.5 h-3.5" />
+                    <span>Book Now</span>
+                  </button>
+                </div>
               </div>
             ))}
           </div>
         </section>
 
-        {/* 3 Trust Value Props */}
-        <section className="py-10 border-t border-b border-slate-100">
+        {/* 5. Three Value Propositions matching Screen 1 */}
+        <section className="py-12 border-t border-b border-slate-100">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 text-center">
-            {/* 1. Best Price Guarantee */}
+            {/* 1. Curated Excellence */}
             <div className="flex flex-col items-center px-4">
               <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mb-3 text-slate-800">
-                <ShieldCheck className="w-5 h-5 text-slate-700" />
+                <ShieldCheck className="w-5 h-5 text-slate-800" />
               </div>
-              <h3 className="text-sm font-bold text-slate-900 mb-1">Best Price Guarantee</h3>
+              <h3 className="text-sm font-bold text-slate-900 mb-1">Curated Excellence</h3>
               <p className="text-xs text-slate-500 leading-relaxed max-w-xs">
-                Found a lower price? We'll match it and give you an extra credit for your next visit.
+                Handpicked professionals and luxury spaces verified for the highest standards of quality.
               </p>
             </div>
 
-            {/* 2. Easy & Quick Booking */}
+            {/* 2. Instant Booking */}
             <div className="flex flex-col items-center px-4">
               <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mb-3 text-slate-800">
-                <Zap className="w-5 h-5 text-slate-700" />
+                <Zap className="w-5 h-5 text-slate-800" />
               </div>
-              <h3 className="text-sm font-bold text-slate-900 mb-1">Easy & Quick Booking</h3>
+              <h3 className="text-sm font-bold text-slate-900 mb-1">Instant Booking</h3>
               <p className="text-xs text-slate-500 leading-relaxed max-w-xs">
-                Book your preferred spot in under 60 seconds with instant confirmation and digital receipts.
+                Real-time availability and immediate confirmation with zero waiting or back-and-forth messaging.
               </p>
             </div>
 
-            {/* 3. Customer Care 24/7 */}
+            {/* 3. Secure Payment */}
             <div className="flex flex-col items-center px-4">
               <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mb-3 text-slate-800">
-                <Headphones className="w-5 h-5 text-slate-700" />
+                <Lock className="w-5 h-5 text-slate-800" />
               </div>
-              <h3 className="text-sm font-bold text-slate-900 mb-1">Customer Care 24/7</h3>
+              <h3 className="text-sm font-bold text-slate-900 mb-1">Secure Payment</h3>
               <p className="text-xs text-slate-500 leading-relaxed max-w-xs">
-                Our dedicated concierge team is always available to assist with your scheduling or questions.
+                Frictionless checkout powered by certified banking gateways with transparent pricing.
               </p>
             </div>
           </div>
         </section>
 
-        {/* What Our Clients Say */}
+        {/* 6. What Our Clients Say (Testimonials) matching Screen 1 */}
         <section>
-          <h2 className="text-base sm:text-xl font-extrabold text-slate-900 tracking-tight text-center mb-8">
+          <h2 className="text-base sm:text-xl font-bold text-slate-900 tracking-tight text-center mb-8">
             What Our Clients Say
           </h2>
 
@@ -448,25 +480,26 @@ export const CustomerHomeView: React.FC<CustomerHomeViewProps> = ({
             {clientReviews.map((rev, i) => (
               <div
                 key={i}
-                className="bg-white rounded-2xl border border-slate-200/90 p-6 flex flex-col justify-between hover:shadow-sm transition-shadow"
+                className="bg-white rounded-2xl border border-slate-200 p-6 flex flex-col justify-between hover:shadow-sm transition-shadow"
               >
                 <div>
-                  {/* 5 Stars */}
-                  <div className="flex items-center gap-1 mb-3 text-slate-950">
+                  <div className="flex items-center gap-1 mb-3">
                     {[...Array(rev.stars)].map((_, s) => (
-                      <Star key={s} className="w-3.5 h-3.5 fill-current text-slate-950" />
+                      <Star key={s} className="w-3.5 h-3.5 fill-black text-black" />
                     ))}
                   </div>
-                  <p className="text-xs text-slate-600 leading-relaxed mb-6">"{rev.quote}"</p>
+                  <p className="text-xs text-slate-600 leading-relaxed mb-6 font-normal">
+                    "{rev.quote}"
+                  </p>
                 </div>
 
-                <div className="flex items-center gap-3 pt-2 border-t border-slate-100">
+                <div className="flex items-center gap-3 pt-3 border-t border-slate-100">
                   <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center font-bold text-xs text-slate-700 shrink-0">
                     {rev.initial}
                   </div>
                   <div>
                     <h4 className="text-xs font-bold text-slate-900 leading-none">{rev.name}</h4>
-                    <span className="text-[11px] text-slate-400">{rev.title}</span>
+                    <span className="text-[10px] text-slate-400 mt-0.5 block">{rev.title}</span>
                   </div>
                 </div>
               </div>
@@ -474,299 +507,128 @@ export const CustomerHomeView: React.FC<CustomerHomeViewProps> = ({
           </div>
         </section>
 
-        {/* Explore Top Destinations */}
+        {/* 7. Explore Top Destinations matching Screen 1 */}
         <section>
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-base sm:text-lg font-extrabold text-slate-900 tracking-tight">
-              Explore Top Destinations
-            </h2>
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between mb-6 gap-2">
+            <div>
+              <h2 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
+                Explore Top Destinations
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Discover vetted spaces in the world's most vibrant cities
+              </p>
+            </div>
             <button
               type="button"
               onClick={onNavigateCities}
-              className="text-xs font-semibold text-slate-500 hover:text-slate-900 transition-colors cursor-pointer"
+              className="text-xs font-semibold text-slate-500 hover:text-slate-900 transition-colors cursor-pointer flex items-center gap-1"
             >
-              View All
+              <span>View All</span>
+              <ChevronRight className="w-3.5 h-3.5" />
             </button>
           </div>
 
-          {/* 3 Dark City Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {[
-              {
-                city: 'New York',
-                locations: '42+ Locations',
-                bg: 'from-[#19222E] to-[#121820]',
-              },
-              {
-                city: 'London',
-                locations: '215+ Locations',
-                bg: 'from-[#18212C] to-[#11161D]',
-              },
-              {
-                city: 'Tokyo',
-                locations: '310+ Locations',
-                bg: 'from-[#1A232F] to-[#10151C]',
-              },
-            ].map((dest, i) => (
+            {destinations.map((dest, i) => (
               <div
                 key={i}
                 onClick={onNavigateCities}
-                className={`bg-gradient-to-b ${dest.bg} text-white rounded-2xl h-56 p-6 flex flex-col justify-end shadow-xs hover:scale-[1.01] transition-transform cursor-pointer border border-slate-800 relative overflow-hidden group`}
+                className="relative rounded-2xl h-60 overflow-hidden shadow-xs hover:scale-[1.01] transition-transform cursor-pointer group"
               >
-                <div className="relative z-10">
-                  <h3 className="text-xl font-black text-white group-hover:translate-x-1 transition-transform">
+                <img
+                  src={dest.image}
+                  alt={dest.city}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent flex flex-col justify-end p-6">
+                  <h3 className="text-lg font-bold text-white group-hover:translate-x-1 transition-transform">
                     {dest.city}
                   </h3>
-                  <span className="text-xs text-slate-400 mt-0.5 block">{dest.locations}</span>
+                  <span className="text-xs text-slate-300 mt-0.5 block">{dest.spots}</span>
                 </div>
               </div>
             ))}
           </div>
         </section>
-      </div>
 
-      {/* NMI Payment Gateway Booking Modal */}
-      {bookingVenue && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl p-6 sm:p-7 max-w-lg w-full shadow-2xl animate-in zoom-in-95 duration-150 my-8">
-            {confirmedTransaction ? (
-              <div className="text-center py-4 space-y-4">
-                <div className="w-14 h-14 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-xs">
-                  <Check className="w-8 h-8" />
-                </div>
+        {/* Prototype Testing Bar Drawer (Collapsible for developer & testing use) */}
+        <div className="pt-6 border-t border-slate-100 text-center">
+          <button
+            type="button"
+            onClick={() => setShowDevBar(!showDevBar)}
+            className="text-[11px] font-semibold text-slate-400 hover:text-slate-700 transition-colors cursor-pointer inline-flex items-center gap-1.5"
+          >
+            <span>{showDevBar ? '▲ Hide Prototype Testing Bar' : '▼ Show Prototype Testing Bar (NMI Payment Test)'}</span>
+          </button>
+
+          {showDevBar && (
+            <div className="mt-4 bg-slate-900 text-white rounded-3xl p-6 border border-slate-800 shadow-xl space-y-4 text-left animate-in fade-in">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 <div>
-                  <h3 className="text-xl font-black text-slate-900">Payment Successful!</h3>
-                  <p className="text-xs text-slate-500 mt-1">
-                    Processed securely via <strong className="text-slate-900 font-bold">NMI Payment Gateway</strong>
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="text-xs font-bold uppercase tracking-wider text-emerald-400 font-mono">
+                      Marketplace Prototype Testing Bar
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700 font-mono">
+                      NMI Payment Gateway Active
+                    </span>
+                  </div>
+                  <h2 className="text-base font-bold text-white mt-1">
+                    Simulate Customer Booking ($100 Service)
+                  </h2>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Simulate a $100 checkout via the NMI Payment Gateway to test platform settlement and merchant balance allocation.
                   </p>
                 </div>
 
-                <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-xs space-y-2 text-left">
-                  <div className="flex items-center justify-between pb-2 border-b border-slate-200 font-mono">
-                    <span className="text-slate-500">Booking Reference:</span>
-                    <strong className="text-slate-900">{confirmedTransaction.bookingId}</strong>
-                  </div>
-                  <div className="flex items-center justify-between font-mono">
-                    <span className="text-slate-500">Service:</span>
-                    <span className="font-semibold text-slate-800">{confirmedTransaction.serviceName}</span>
-                  </div>
-                  <div className="flex items-center justify-between font-mono">
-                    <span className="text-slate-500">Venue Partner:</span>
-                    <span className="font-semibold text-slate-800">{confirmedTransaction.businessName}</span>
-                  </div>
-                  <div className="flex items-center justify-between font-mono">
-                    <span className="text-slate-500">Gross Amount Paid:</span>
-                    <strong className="text-slate-900 text-sm font-black">${confirmedTransaction.grossAmount.toFixed(2)}</strong>
-                  </div>
-
-                  <div className="flex items-center justify-between text-[11px] text-emerald-700 font-medium pt-2 border-t border-slate-200">
-                    <span>Payment Status:</span>
-                    <span className="font-bold">✓ Confirmed & Processed via NMI</span>
-                  </div>
-                </div>
-
-                <p className="text-[11px] text-slate-400 leading-relaxed">
-                  Your reservation is confirmed. A digital confirmation receipt has been sent to your email.
-                </p>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setBookingVenue(null);
-                    setConfirmedTransaction(null);
-                  }}
-                  className="w-full py-3 bg-black hover:bg-slate-800 text-white font-bold text-xs rounded-xl transition-colors cursor-pointer"
-                >
-                  Done
-                </button>
-              </div>
-            ) : (
-              <form onSubmit={handlePayWithNmi} className="space-y-4">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                  <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-lg bg-slate-900 text-white flex items-center justify-center font-black text-xs">
-                      N
-                    </div>
-                    <h3 className="text-base font-black text-slate-900">Book & Pay with NMI</h3>
-                  </div>
+                <div className="flex flex-col sm:flex-row gap-2.5 shrink-0">
                   <button
-                    type="button"
-                    onClick={() => setBookingVenue(null)}
-                    className="text-slate-400 hover:text-slate-600 text-sm font-bold cursor-pointer"
+                    id="btn-quick-test-biz-001"
+                    onClick={() => handleRunPrototypeTest('biz-001')}
+                    className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition-all cursor-pointer shadow-md flex items-center gap-2 border border-slate-700"
                   >
-                    ✕
+                    <CreditCard className="w-3.5 h-3.5 text-blue-400" />
+                    <span>Simulate $100: The Nexus</span>
+                  </button>
+
+                  <button
+                    id="btn-quick-test-biz-002"
+                    onClick={() => handleRunPrototypeTest('biz-002')}
+                    className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition-all cursor-pointer shadow-md flex items-center gap-2 border border-slate-700"
+                  >
+                    <CreditCard className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Simulate $100: Apex Studios</span>
                   </button>
                 </div>
+              </div>
 
-                {/* Selected Venue */}
-                <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">
-                    Selected Venue / Business
-                  </label>
-                  <input
-                    type="text"
-                    disabled
-                    value={bookingVenue.name}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800"
-                  />
+              {quickTestNotice && (
+                <div className="p-3.5 rounded-2xl bg-emerald-950/80 border border-emerald-500/50 text-emerald-300 text-xs font-mono font-semibold animate-in fade-in flex items-center gap-2.5">
+                  <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>{quickTestNotice}</span>
                 </div>
-
-                {/* Service & Price */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-bold text-slate-700 block mb-1">Service</label>
-                    <select
-                      value={selectedService}
-                      onChange={(e) => {
-                        setSelectedService(e.target.value);
-                        if (e.target.value.includes('$100')) setPaymentAmount(100.0);
-                        else if (e.target.value.includes('$50')) setPaymentAmount(50.0);
-                        else if (e.target.value.includes('$250')) setPaymentAmount(250.0);
-                      }}
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium bg-white text-slate-800"
-                    >
-                      <option value="Executive Studio & Workspace Booking">Executive Studio Booking ($100.00)</option>
-                      <option value="Conference Room Half-Day">Conference Room Half-Day ($50.00)</option>
-                      <option value="Full Campus Day Pass">Full Campus Day Pass ($250.00)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-bold text-slate-700 block mb-1">Service Price ($ USD)</label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-2 text-xs font-bold text-slate-400">$</span>
-                      <input
-                        type="number"
-                        step="1"
-                        min="1"
-                        required
-                        value={paymentAmount}
-                        onChange={(e) => setPaymentAmount(Number(e.target.value))}
-                        className="w-full pl-7 pr-3 py-2 border border-slate-200 rounded-xl text-xs font-mono font-black text-slate-900"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Date & Time */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-bold text-slate-700 block mb-1">Date</label>
-                    <input
-                      type="date"
-                      required
-                      value={bookingDate}
-                      onChange={(e) => setBookingDate(e.target.value)}
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-bold text-slate-700 block mb-1">Time</label>
-                    <input
-                      type="time"
-                      required
-                      value={bookingTime}
-                      onChange={(e) => setBookingTime(e.target.value)}
-                      className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs"
-                    />
-                  </div>
-                </div>
-
-                {/* NMI Payment Gateway Card Details */}
-                <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
-                  <div className="flex items-center justify-between text-xs pb-2 border-b border-slate-200/80">
-                    <div className="flex items-center gap-2">
-                      <CreditCard className="w-4 h-4 text-slate-700" />
-                      <span className="font-extrabold text-slate-900">NMI Secure Card Checkout</span>
-                    </div>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 flex items-center gap-1 font-mono">
-                      <Lock className="w-2.5 h-2.5" /> 256-Bit TLS
-                    </span>
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-0.5">
-                      Card Number
-                    </label>
-                    <input
-                      type="text"
-                      disabled
-                      defaultValue="4007 •••• •••• 0021"
-                      className="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs font-mono text-slate-700"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-0.5">
-                        Expires
-                      </label>
-                      <input
-                        type="text"
-                        disabled
-                        defaultValue="08 / 29"
-                        className="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs font-mono text-slate-700"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-0.5">
-                        CVV
-                      </label>
-                      <input
-                        type="text"
-                        disabled
-                        defaultValue="•••"
-                        className="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs font-mono text-slate-700"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Order Summary */}
-                <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-xs space-y-2">
-                  <div className="flex items-center justify-between text-slate-700 font-medium">
-                    <span>Service Reservation:</span>
-                    <span className="font-bold text-slate-900">{bookingVenue.name}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-slate-500 text-[11px]">
-                    <span>Standard Rate:</span>
-                    <span className="font-mono">${paymentAmount.toFixed(2)}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-slate-500 text-[11px]">
-                    <span>Platform Booking & Processing:</span>
-                    <span className="font-mono text-emerald-700 font-semibold">$0.00 (Included)</span>
-                  </div>
-                </div>
-
-                {/* Price Breakdown */}
-                <div className="p-3.5 bg-slate-100/80 rounded-xl text-xs flex items-center justify-between border border-slate-200/60">
-                  <div>
-                    <span className="font-bold text-slate-800 block text-xs">Total Amount Due</span>
-                    <span className="text-[10px] text-slate-400">Processed securely via NMI 256-bit TLS</span>
-                  </div>
-                  <span className="font-mono font-black text-slate-950 text-base">
-                    ${paymentAmount.toFixed(2)} USD
-                  </span>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={isProcessingNmi}
-                  className="w-full bg-black hover:bg-slate-800 text-white font-bold text-xs py-3 rounded-xl transition-all cursor-pointer shadow-md flex items-center justify-center gap-2"
-                >
-                  {isProcessingNmi ? (
-                    <span>Processing NMI Payment...</span>
-                  ) : (
-                    <>
-                      <Lock className="w-3.5 h-3.5" />
-                      <span>Pay ${paymentAmount.toFixed(2)} via NMI Gateway</span>
-                    </>
-                  )}
-                </button>
-              </form>
-            )}
-          </div>
+              )}
+            </div>
+          )}
         </div>
+      </div>
+
+      {/* Dynamic Multi-Service Booking Modal with slot generation and NMI checkout */}
+      {isServiceBookingModalOpen && bookingBusiness && (
+        <ServiceBookingModal
+          business={bookingBusiness}
+          isOpen={isServiceBookingModalOpen}
+          onClose={() => {
+            setIsServiceBookingModalOpen(false);
+            setBookingBusiness(null);
+          }}
+          onSuccess={() => {
+            if (onNavigateMyBookings) {
+              onNavigateMyBookings();
+            }
+          }}
+        />
       )}
     </div>
   );

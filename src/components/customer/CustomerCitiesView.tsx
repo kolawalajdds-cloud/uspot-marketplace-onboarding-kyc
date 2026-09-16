@@ -1,236 +1,280 @@
-import React, { useState } from 'react';
-import { Search, MapPin, Check, Building2 } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Search, Star, MapPin, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useDemo } from '../../context/DemoContext';
 
-export const CustomerCitiesView: React.FC = () => {
+interface CustomerCitiesViewProps {
+  onSelectSpotDetail: (businessId: string) => void;
+  onBookSpot: (businessId: string, serviceId?: string) => void;
+}
+
+interface CitySpotCard {
+  id: string;
+  businessId: string;
+  name: string;
+  categoryBadge: 'BARBER' | 'SPA' | 'BEAUTY' | 'WELLNESS' | 'MASSAGE';
+  rating: number;
+  neighborhood: string;
+  image: string;
+}
+
+export const CustomerCitiesView: React.FC<CustomerCitiesViewProps> = ({
+  onSelectSpotDetail,
+  onBookSpot,
+}) => {
+  const { state } = useDemo();
+
+  const [activeCity, setActiveCity] = useState('New York City');
   const [searchQuery, setSearchQuery] = useState('');
-  const [whitelistEmail, setWhitelistEmail] = useState('');
-  const [whitelistJoined, setWhitelistJoined] = useState(false);
-  const [showLoadingState, setShowLoadingState] = useState(false);
+  const [activeCategoryPill, setActiveCategoryPill] = useState<string>('All');
+  const [currentPage, setCurrentPage] = useState<number>(1);
 
-  const majorCities = [
-    {
-      name: 'New York',
-      country: 'United States',
-      spots: '42+ Locations',
-      image: 'https://images.unsplash.com/photo-1496442226666-8d4d0e62e6e9?auto=format&fit=crop&w=600&q=80',
-    },
-    {
-      name: 'London',
-      country: 'United Kingdom',
-      spots: '215+ Locations',
-      image: 'https://images.unsplash.com/photo-1513635269975-59663e0ac1ad?auto=format&fit=crop&w=600&q=80',
-    },
-    {
-      name: 'Tokyo',
-      country: 'Japan',
-      spots: '310+ Locations',
-      image: 'https://images.unsplash.com/photo-1503899036084-c55cdd92da26?auto=format&fit=crop&w=600&q=80',
-    },
-    {
-      name: 'Paris',
-      country: 'France',
-      spots: '180+ Locations',
-      image: 'https://images.unsplash.com/photo-1502602898657-3e91760cbb34?auto=format&fit=crop&w=600&q=80',
-    },
-    {
-      name: 'Berlin',
-      country: 'Germany',
-      spots: '95+ Locations',
-      image: 'https://images.unsplash.com/photo-1560969184-10fe8719e047?auto=format&fit=crop&w=600&q=80',
-    },
-    {
-      name: 'Dubai',
-      country: 'United Arab Emirates',
-      spots: '140+ Locations',
-      image: 'https://images.unsplash.com/photo-1512453979798-5ea266f8880c?auto=format&fit=crop&w=600&q=80',
-    },
-  ];
+  const categoryPills = ['All', 'Barber', 'Beauty', 'Spa', 'Wellness', 'Massage'];
 
-  const filteredCities = majorCities.filter(
-    (c) =>
-      c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.country.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // 8 Spot cards matching Image 1 using our given data
+  const spots: CitySpotCard[] = useMemo(() => [
+    {
+      id: 'spot-1',
+      businessId: 'biz-001', // Glow Salon / The Groomer
+      name: 'Empire Grooming',
+      categoryBadge: 'BARBER',
+      rating: 4.9,
+      neighborhood: 'Manhattan, NY',
+      image: 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=700&q=80',
+    },
+    {
+      id: 'spot-2',
+      businessId: 'biz-002', // Onyx Spa & Wellness
+      name: 'Zenith Sanctuary',
+      categoryBadge: 'SPA',
+      rating: 4.8,
+      neighborhood: 'Brooklyn, NY',
+      image: 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=700&q=80',
+    },
+    {
+      id: 'spot-3',
+      businessId: 'biz-001',
+      name: 'Noir Beauty Bar',
+      categoryBadge: 'BEAUTY',
+      rating: 5.0,
+      neighborhood: 'SoHo, NY',
+      image: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=700&q=80',
+    },
+    {
+      id: 'spot-4',
+      businessId: 'biz-002',
+      name: 'Urban Reset',
+      categoryBadge: 'WELLNESS',
+      rating: 4.7,
+      neighborhood: 'Chelsea, NY',
+      image: 'https://images.unsplash.com/photo-1518611012118-696072aa579a?auto=format&fit=crop&w=700&q=80',
+    },
+    {
+      id: 'spot-5',
+      businessId: 'biz-001',
+      name: 'The Glam Lab',
+      categoryBadge: 'BEAUTY',
+      rating: 4.9,
+      neighborhood: 'Queens, NY',
+      image: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=700&q=80',
+    },
+    {
+      id: 'spot-6',
+      businessId: 'biz-001',
+      name: 'Prestige Cuts',
+      categoryBadge: 'BARBER',
+      rating: 4.6,
+      neighborhood: 'Upper East Side, NY',
+      image: 'https://images.unsplash.com/photo-1621605815971-fbc98d665033?auto=format&fit=crop&w=700&q=80',
+    },
+    {
+      id: 'spot-7',
+      businessId: 'biz-002',
+      name: 'The Kinetic Studio',
+      categoryBadge: 'MASSAGE',
+      rating: 4.9,
+      neighborhood: 'Tribeca, NY',
+      image: 'https://images.unsplash.com/photo-1600334129128-685c5582fd35?auto=format&fit=crop&w=700&q=80',
+    },
+    {
+      id: 'spot-8',
+      businessId: 'biz-001',
+      name: 'Glow Clinic',
+      categoryBadge: 'BEAUTY',
+      rating: 4.5,
+      neighborhood: 'Williamsburg, NY',
+      image: 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?auto=format&fit=crop&w=700&q=80',
+    },
+  ], []);
 
-  const handleWhitelistSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!whitelistEmail) return;
-    setWhitelistJoined(true);
-    setTimeout(() => {
-      setWhitelistJoined(false);
-      setWhitelistEmail('');
-    }, 2500);
-  };
+  const filteredSpots = useMemo(() => {
+    return spots.filter((spot) => {
+      // Category filter
+      if (activeCategoryPill !== 'All') {
+        if (spot.categoryBadge.toLowerCase() !== activeCategoryPill.toLowerCase()) {
+          return false;
+        }
+      }
+      // Query filter
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchName = spot.name.toLowerCase().includes(q);
+        const matchCat = spot.categoryBadge.toLowerCase().includes(q);
+        const matchLoc = spot.neighborhood.toLowerCase().includes(q);
+        if (!matchName && !matchCat && !matchLoc) return false;
+      }
+      return true;
+    });
+  }, [spots, activeCategoryPill, searchQuery]);
 
   return (
-    <div className="w-full bg-white animate-in fade-in duration-200">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-12 pb-16">
-        {/* Header with Search and Geometric Building Skyline */}
-        <section className="flex flex-col lg:flex-row items-center justify-between gap-12 pb-14 border-b border-slate-100">
-          {/* Left: Headline & Search */}
-          <div className="max-w-xl">
-            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-slate-900 tracking-tight mb-3">
-              Explore our Locations
-            </h1>
-            <p className="text-xs sm:text-sm text-slate-500 leading-relaxed mb-6 font-normal">
-              Discover the premier urban spots and professional services across the world's most
-              vibrant metropolises. Managed excellence, delivered locally.
-            </p>
+    <div className="w-full bg-white py-10 animate-in fade-in duration-200">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
+        {/* City Title matching Image 1 */}
+        <div>
+          <h1 className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight">
+            {activeCity}
+          </h1>
+        </div>
 
-            {/* Search bar with Find button */}
-            <div className="flex items-center gap-2 max-w-md">
-              <div className="relative flex-1 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 flex items-center gap-2.5 shadow-2xs">
-                <Search className="w-4 h-4 text-slate-400 shrink-0" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search for a city (e.g. New York, London...)"
-                  className="w-full bg-transparent text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:outline-hidden font-medium"
-                />
-              </div>
+        {/* Search Bar matching Image 1 */}
+        <div className="w-full max-w-2xl">
+          <div className="relative rounded-xl border border-slate-200 bg-white px-4 py-3 flex items-center gap-3 shadow-2xs focus-within:border-slate-400 transition-colors">
+            <Search className="w-4 h-4 text-slate-400 shrink-0" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search for grooming, beauty, or spa..."
+              className="w-full bg-transparent text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:outline-hidden font-medium"
+            />
+          </div>
+        </div>
+
+        {/* Filter Pills matching Image 1 */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-1 no-scrollbar">
+          {categoryPills.map((pill) => {
+            const isActive = activeCategoryPill === pill;
+            return (
               <button
+                key={pill}
                 type="button"
-                className="bg-black hover:bg-neutral-800 text-white text-xs font-bold px-6 py-3 rounded-xl transition-colors cursor-pointer shadow-xs whitespace-nowrap"
+                onClick={() => setActiveCategoryPill(pill)}
+                className={`px-5 py-2 rounded-full text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                  isActive
+                    ? 'bg-black text-white shadow-2xs'
+                    : 'bg-[#F2F4F7] text-slate-700 hover:bg-slate-200'
+                }`}
               >
-                Find
+                {pill}
               </button>
-            </div>
-          </div>
+            );
+          })}
+        </div>
 
-          {/* Right: Light gray geometric illustration of city buildings (matching screenshot) */}
-          <div className="relative w-72 h-56 flex items-center justify-center opacity-80 select-none">
-            <svg
-              className="w-full h-full text-slate-200 fill-current"
-              viewBox="0 0 280 220"
-              xmlns="http://www.w3.org/2000/svg"
+        {/* 4-Column Grid of 8 Spot Cards matching Image 1 */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 pt-4">
+          {filteredSpots.map((spot) => (
+            <div
+              key={spot.id}
+              onClick={() => onSelectSpotDetail(spot.businessId)}
+              className="bg-white rounded-2xl border border-slate-200/90 overflow-hidden shadow-2xs hover:shadow-lg transition-all group flex flex-col justify-between cursor-pointer"
             >
-              {/* Background high-rise */}
-              <polygon points="170,30 210,30 210,210 170,210" fill="#F1F3F5" />
-              {/* Center building with peaked roof like screenshot */}
-              <polygon points="140,50 170,20 200,50 200,210 140,210" fill="#E8EBED" />
-              {/* Windows grid on building */}
-              <rect x="150" y="70" width="16" height="16" rx="2" fill="#FFFFFF" />
-              <rect x="174" y="70" width="16" height="16" rx="2" fill="#FFFFFF" />
-              <rect x="150" y="98" width="16" height="16" rx="2" fill="#FFFFFF" />
-              <rect x="174" y="98" width="16" height="16" rx="2" fill="#FFFFFF" />
-              <rect x="150" y="126" width="16" height="16" rx="2" fill="#FFFFFF" />
-              <rect x="174" y="126" width="16" height="16" rx="2" fill="#FFFFFF" />
-              <rect x="150" y="154" width="16" height="16" rx="2" fill="#FFFFFF" />
-              <rect x="174" y="154" width="16" height="16" rx="2" fill="#FFFFFF" />
-
-              {/* Foreground building right */}
-              <polygon points="200,85 240,85 240,210 200,210" fill="#F1F3F5" />
-              <rect x="210" y="105" width="18" height="18" rx="2" fill="#FFFFFF" />
-              <rect x="210" y="135" width="18" height="18" rx="2" fill="#FFFFFF" />
-              <rect x="210" y="165" width="18" height="18" rx="2" fill="#FFFFFF" />
-
-              {/* Foreground building left */}
-              <polygon points="90,110 140,110 140,210 90,210" fill="#EEF0F2" />
-              <rect x="102" y="125" width="14" height="14" rx="2" fill="#FFFFFF" />
-              <rect x="120" y="125" width="14" height="14" rx="2" fill="#FFFFFF" />
-              <rect x="102" y="150" width="14" height="14" rx="2" fill="#FFFFFF" />
-              <rect x="120" y="150" width="14" height="14" rx="2" fill="#FFFFFF" />
-            </svg>
-          </div>
-        </section>
-
-        {/* Content Section matching screenshot */}
-        <section className="py-16">
-          {showLoadingState ? (
-            <div className="py-20 text-center">
-              <span className="text-xs text-slate-400 font-medium tracking-wide">
-                Loading cities...
-              </span>
-            </div>
-          ) : (
-            <div className="space-y-6">
-              {/* Optional switch to preview "Loading cities..." exactly as captured in screenshot */}
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-900">
-                  Featured Metropolises ({filteredCities.length})
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setShowLoadingState(true)}
-                  className="text-[11px] text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
-                >
-                  Show loading state
-                </button>
+              {/* Image Container with Badge */}
+              <div className="relative h-48 w-full bg-slate-900 overflow-hidden">
+                <img
+                  src={spot.image}
+                  alt={spot.name}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                />
+                <div className="absolute inset-0 bg-black/10 pointer-events-none" />
+                {/* Category Badge matching Image 1 */}
+                <div className="absolute top-3 left-3 bg-white/95 text-black text-[9px] font-black px-2.5 py-1 rounded-md uppercase tracking-wider shadow-2xs">
+                  {spot.categoryBadge}
+                </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredCities.map((city, idx) => (
-                  <div
-                    key={idx}
-                    className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-2xs hover:shadow-md transition-all group cursor-pointer"
-                  >
-                    <div className="h-44 w-full relative overflow-hidden bg-slate-100">
-                      <img
-                        src={city.image}
-                        alt={city.name}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
-                      <div className="absolute bottom-3 left-4 text-white">
-                        <h3 className="text-lg font-bold leading-tight">{city.name}</h3>
-                        <span className="text-xs text-slate-200">{city.country}</span>
-                      </div>
-                    </div>
-                    <div className="p-4 flex items-center justify-between text-xs bg-white">
-                      <span className="font-semibold text-slate-600 flex items-center gap-1.5">
-                        <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                        {city.spots}
-                      </span>
-                      <span className="text-xs font-bold text-slate-900 group-hover:translate-x-0.5 transition-transform">
-                        Explore →
-                      </span>
+              {/* Card Body */}
+              <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="text-sm font-black text-slate-900 truncate">
+                      {spot.name}
+                    </h3>
+                    <div className="flex items-center gap-1 shrink-0 text-xs font-bold text-slate-900">
+                      <Star className="w-3.5 h-3.5 fill-black text-black" />
+                      <span>{spot.rating.toFixed(1)}</span>
                     </div>
                   </div>
-                ))}
+
+                  <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                    <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
+                    <span className="truncate">{spot.neighborhood}</span>
+                  </div>
+                </div>
+
+                {/* Book Now Button matching Image 1 */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onBookSpot(spot.businessId);
+                  }}
+                  className="w-full py-2.5 rounded-xl bg-black hover:bg-neutral-800 text-white text-xs font-bold transition-all cursor-pointer shadow-2xs"
+                >
+                  Book Now
+                </button>
               </div>
             </div>
-          )}
-        </section>
+          ))}
+        </div>
 
-        {/* Stay updated on new cities Banner (Black rounded block matching screenshot) */}
-        <section className="bg-black text-white rounded-3xl p-8 sm:p-12 border border-neutral-800 shadow-sm flex flex-col md:flex-row items-center justify-between gap-8 my-6">
-          <div className="max-w-md">
-            <h3 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight mb-2">
-              Stay updated on new cities
-            </h3>
-            <p className="text-xs sm:text-sm text-slate-400 leading-relaxed font-normal">
-              We are expanding rapidly. Join our whitelist to be the first to know when URSPOT arrives
-              in your metropolis.
-            </p>
+        {/* Pagination Controls matching Image 1 */}
+        <div className="pt-10 pb-4 flex items-center justify-between text-xs text-slate-500">
+          <button
+            type="button"
+            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+            disabled={currentPage === 1}
+            className="inline-flex items-center gap-1 text-slate-400 hover:text-black disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer font-medium"
+          >
+            <ChevronLeft className="w-4 h-4" />
+            <span>Previous</span>
+          </button>
+
+          <div className="flex items-center gap-1.5 font-bold">
+            {[1, 2, 3].map((page) => (
+              <button
+                key={page}
+                type="button"
+                onClick={() => setCurrentPage(page)}
+                className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
+                  currentPage === page ? 'bg-black text-white' : 'text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                {page}
+              </button>
+            ))}
+            <span className="px-1 text-slate-400">...</span>
+            <button
+              type="button"
+              onClick={() => setCurrentPage(12)}
+              className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
+                currentPage === 12 ? 'bg-black text-white' : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              12
+            </button>
           </div>
 
-          <form onSubmit={handleWhitelistSubmit} className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
-            {whitelistJoined ? (
-              <div className="flex items-center gap-2 text-xs font-bold text-emerald-400 bg-neutral-900 px-5 py-3 rounded-lg border border-emerald-500/30">
-                <Check className="w-4 h-4" />
-                <span>Added to city whitelist!</span>
-              </div>
-            ) : (
-              <>
-                <input
-                  type="email"
-                  required
-                  value={whitelistEmail}
-                  onChange={(e) => setWhitelistEmail(e.target.value)}
-                  placeholder="Enter your email"
-                  className="w-full sm:w-72 bg-[#121315] border border-neutral-800 text-white text-xs px-4 py-3 rounded-lg placeholder-neutral-500 focus:outline-hidden focus:border-neutral-600 font-medium"
-                />
-                <button
-                  type="submit"
-                  className="w-full sm:w-auto bg-white hover:bg-neutral-200 text-black text-xs font-bold px-6 py-3 rounded-lg transition-colors cursor-pointer whitespace-nowrap shadow-xs"
-                >
-                  Join Whitelist
-                </button>
-              </>
-            )}
-          </form>
-        </section>
+          <button
+            type="button"
+            onClick={() => setCurrentPage((p) => Math.min(12, p + 1))}
+            disabled={currentPage === 12}
+            className="inline-flex items-center gap-1 text-slate-600 hover:text-black disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer font-medium"
+          >
+            <span>Next</span>
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
       </div>
     </div>
   );

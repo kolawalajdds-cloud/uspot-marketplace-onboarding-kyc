@@ -426,7 +426,11 @@ export const LoginView: React.FC<LoginViewProps> = ({ isModal = false, onClose }
                       )}
 
                       <p className={`text-[11px] leading-relaxed line-clamp-2 ${isSelected ? 'text-slate-300' : 'text-slate-500'}`}>
-                        {meta.desc}
+                        {user.id === 'user-business'
+                          ? 'Salon Owner: Manage hair styling, haircut services, beard grooming, and appointments.'
+                          : user.id === 'user-business-2'
+                          ? 'Spa Owner: Manage mineral thermal baths, massage therapy, body treatments, and appointments.'
+                          : meta.desc}
                       </p>
                     </div>
 
