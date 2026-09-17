@@ -520,9 +520,9 @@ export interface BusinessService {
   service_category_id: string;
   category_name: string;
   name: string;
-  description?: string;
-  photo_url?: string;
-  pricing_type: 'fixed' | 'time_based';
+  photo_url?: string; // Primary thumbnail / display image
+  thumbnail_url?: string; // Explicit thumbnail image (1 image allowed)
+  gallery_photos?: string[]; // Showcase gallery images (up to 10 images)
   base_price: number;
   hourly_rate?: number;
   min_billing_duration_minutes?: number;
@@ -541,12 +541,14 @@ export interface BookingItem {
   booking_id: string;
   business_service_id: string;
   service_name: string;
+  description?: string;
   worker_id?: string;
   worker_name?: string;
   scheduled_start: string; // e.g. "2026-09-17T10:00:00"
   scheduled_end: string;   // e.g. "2026-09-17T10:45:00"
   price_charged: number;
   price?: number;
+  quantity?: number;
   duration_minutes: number;
 }
 
@@ -554,21 +556,42 @@ export type BookingStatus = 'pending' | 'confirmed' | 'visited' | 'cancelled' | 
 export type BookingPaymentStatus = 'unpaid' | 'paid' | 'refunded' | 'failed';
 export type BookingPaymentMethod = 'credit_card' | 'cash';
 
+export interface ServiceReviewItem {
+  booking_id: string;
+  service_id: string;
+  service_name: string;
+  rating: number;
+  review_text: string;
+  media?: string[];
+  submitted: boolean;
+  submitted_at?: string;
+}
+
 export interface Booking {
   id: string;
+  reference_number?: string;
   customer_id: string;
   customer_name: string;
   customer_email: string;
   customer_phone?: string;
   business_id: string;
   business_name: string;
+  business_logo?: string;
+  business_category?: string;
   total_amount: number;
   total_price?: number;
   discount_amount: number;
   net_amount: number;
+  tax_amount?: number;
+  service_fee?: number;
   status: BookingStatus;
   payment_status: BookingPaymentStatus;
   payment_method: BookingPaymentMethod;
+  payment_method_display?: string;
+  refund_status?: 'initiated' | 'processing' | 'refunded';
+  refund_estimated_date?: string;
+  refund_id?: string;
+  special_instructions?: string;
   booking_date: string; // YYYY-MM-DD
   scheduled_date?: string;
   scheduled_start_time: string; // e.g. "10:00 AM"
@@ -576,9 +599,34 @@ export interface Booking {
   scheduled_time_slot?: string;
   total_duration_minutes: number;
   items: BookingItem[];
+  reviews?: Record<string, ServiceReviewItem>;
   notes?: string;
   created_at: string;
   updated_at?: string;
+}
+
+export interface BusinessReview {
+  id: string;
+  business_id: string;
+  business_name: string;
+  booking_id?: string;
+  service_id?: string;
+  service_name?: string;
+  customer_id?: string;
+  customer_name: string;
+  customer_avatar?: string;
+  rating: number;
+  review_text: string;
+  media?: string[];
+  created_at: string;
+  time_ago?: string;
+  response?: {
+    text: string;
+    responded_at: string;
+    responded_time_ago?: string;
+    author_name?: string;
+  };
+  response_deadline?: string;
 }
 
 

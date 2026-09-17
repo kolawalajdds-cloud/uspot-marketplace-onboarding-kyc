@@ -29,11 +29,13 @@ import {
   BookingStatus,
   BookingPaymentStatus,
   BookingPaymentMethod,
+  BusinessReview,
 } from '../types';
 import {
   getSeedBusinesses,
   getSeedBusinessServices,
   getSeedBookings,
+  getSeedBusinessReviews,
   getSalonPresetServices,
   getSpaPresetServices,
   getSeedServiceCategories,
@@ -85,6 +87,7 @@ interface StoredState {
   // Unified Relational Schema State
   businessServices: BusinessService[];
   bookings: Booking[];
+  businessReviews: BusinessReview[];
 }
 
 interface DemoContextType {
@@ -213,6 +216,19 @@ interface DemoContextType {
   }) => Promise<{ success: boolean; booking: Booking; message: string }>;
   updateBookingStatus: (bookingId: string, status: BookingStatus) => void;
   cancelBooking: (bookingId: string) => void;
+  submitBookingReview: (
+    bookingId: string,
+    serviceId: string,
+    reviewData: {
+      service_name: string;
+      rating: number;
+      review_text: string;
+      media?: string[];
+    }
+  ) => void;
+  rescheduleBooking: (bookingId: string, newDate: string, newStartTime: string) => void;
+  businessReviews: BusinessReview[];
+  addVendorReviewReply: (reviewId: string, replyText: string) => void;
 }
 
 const DemoContext = createContext<DemoContextType | undefined>(undefined);
@@ -337,6 +353,9 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
             bookings: Array.isArray(parsed.bookings) && parsed.bookings.length > 0
               ? parsed.bookings
               : getSeedBookings(),
+            businessReviews: Array.isArray(parsed.businessReviews) && parsed.businessReviews.length > 0
+              ? parsed.businessReviews
+              : getSeedBusinessReviews(),
           };
         }
       }
@@ -364,6 +383,7 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
       },
       businessServices: getSeedBusinessServices(),
       bookings: getSeedBookings(),
+      businessReviews: getSeedBusinessReviews(),
     };
   });
 
@@ -2595,9 +2615,116 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setState((prev) => ({
       ...prev,
       bookings: prev.bookings.map((b) =>
-        b.id === bookingId ? { ...b, status: 'cancelled' as const } : b
+        b.id === bookingId
+          ? {
+              ...b,
+              status: 'cancelled' as const,
+              payment_status: 'refunded' as const,
+              refund_status: 'refunded' as const,
+              refund_id: b.refund_id || `RF-${Date.now().toString().slice(-7)}-NMI`,
+              refund_estimated_date: 'Instant / 1-2 business days',
+            }
+          : b
       ),
     }));
+  };
+
+  const submitBookingReview = (
+    bookingId: string,
+    serviceId: string,
+    reviewData: {
+      service_name: string;
+      rating: number;
+      review_text: string;
+      media?: string[];
+    }
+  ) => {
+    setState((prev) => {
+      const targetBooking = prev.bookings.find((b) => b.id === bookingId);
+      const updatedBookings = prev.bookings.map((b) => {
+        if (b.id !== bookingId) return b;
+        const existingReviews = b.reviews || {};
+        return {
+          ...b,
+          reviews: {
+            ...existingReviews,
+            [serviceId]: {
+              booking_id: bookingId,
+              service_id: serviceId,
+              service_name: reviewData.service_name,
+              rating: reviewData.rating,
+              review_text: reviewData.review_text,
+              media: reviewData.media || [],
+              submitted: true,
+              submitted_at: new Date().toISOString(),
+            },
+          },
+        };
+      });
+
+      // Also create a business review item visible in the business reviews management section
+      const newBusinessRev: BusinessReview = {
+        id: `rev-${Date.now()}`,
+        business_id: targetBooking?.business_id || 'biz-001',
+        business_name: targetBooking?.business_name || 'Luxe Hotel & Lounge',
+        booking_id: bookingId,
+        service_id: serviceId,
+        service_name: reviewData.service_name,
+        customer_id: targetBooking?.customer_id || 'user-customer',
+        customer_name: targetBooking?.customer_name || 'Alex Taylor',
+        customer_avatar:
+          'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80',
+        rating: reviewData.rating,
+        review_text: reviewData.review_text,
+        media: reviewData.media || [],
+        created_at: new Date().toISOString(),
+        time_ago: 'Just now',
+        response_deadline: 'Response needed within 24 hours to maintain "Fast Responder" badge.',
+      };
+
+      return {
+        ...prev,
+        bookings: updatedBookings,
+        businessReviews: [newBusinessRev, ...(prev.businessReviews || [])],
+      };
+    });
+  };
+
+  const addVendorReviewReply = (reviewId: string, replyText: string) => {
+    setState((prev) => ({
+      ...prev,
+      businessReviews: (prev.businessReviews || []).map((r) =>
+        r.id === reviewId
+          ? {
+              ...r,
+              response: {
+                text: replyText,
+                responded_at: new Date().toISOString(),
+                responded_time_ago: 'Just now',
+                author_name: 'Alex Rivera (Management)',
+              },
+              response_deadline: undefined,
+            }
+          : r
+      ),
+    }));
+  };
+
+  const rescheduleBooking = (bookingId: string, newDate: string, newStartTime: string) => {
+    setState((prev) => {
+      const updatedBookings = prev.bookings.map((b) => {
+        if (b.id !== bookingId) return b;
+        return {
+          ...b,
+          scheduled_date: newDate,
+          booking_date: newDate,
+          scheduled_start_time: newStartTime,
+          scheduled_time_slot: `${newStartTime} (Rescheduled)`,
+          status: 'confirmed' as BookingStatus,
+        };
+      });
+      return { ...prev, bookings: updatedBookings };
+    });
   };
 
   return (
@@ -2686,6 +2813,10 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
         createBooking,
         updateBookingStatus,
         cancelBooking,
+        submitBookingReview,
+        rescheduleBooking,
+        businessReviews: state.businessReviews || [],
+        addVendorReviewReply,
       }}
     >
       {children}

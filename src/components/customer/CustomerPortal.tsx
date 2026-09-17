@@ -8,6 +8,8 @@ import { CustomerCitiesView } from './CustomerCitiesView';
 import { CustomerSpotDetailView } from './CustomerSpotDetailView';
 import { CustomerBookingFlowView } from './CustomerBookingFlowView';
 import { CustomerMyBookingsView } from './CustomerMyBookingsView';
+import { CustomerBookingDetailView } from './CustomerBookingDetailView';
+import { CustomerReviewServiceView } from './CustomerReviewServiceView';
 
 export const CustomerPortal: React.FC = () => {
   const [activePage, setActivePage] = useState<CustomerNavPage>('home');
@@ -18,6 +20,9 @@ export const CustomerPortal: React.FC = () => {
   // Selected business and service for spot-detail and booking flow
   const [selectedBusinessId, setSelectedBusinessId] = useState<string>('biz-001');
   const [selectedServiceId, setSelectedServiceId] = useState<string | undefined>(undefined);
+
+  // Selected booking for booking-detail and review-service views
+  const [selectedBookingId, setSelectedBookingId] = useState<string>('BK-USR-992834');
 
   const handleNavigateSpots = (category?: string, query?: string, location?: string) => {
     setSpotsCategory(category);
@@ -35,6 +40,16 @@ export const CustomerPortal: React.FC = () => {
     setSelectedBusinessId(businessId);
     setSelectedServiceId(serviceId);
     setActivePage('booking');
+  };
+
+  const handleViewBookingDetail = (bookingId: string) => {
+    setSelectedBookingId(bookingId);
+    setActivePage('booking-detail');
+  };
+
+  const handleReviewBookingService = (bookingId: string) => {
+    setSelectedBookingId(bookingId);
+    setActivePage('review-service');
   };
 
   return (
@@ -89,7 +104,24 @@ export const CustomerPortal: React.FC = () => {
           />
         )}
         {activePage === 'my-bookings' && (
-          <CustomerMyBookingsView onBookNewService={() => setActivePage('cities')} />
+          <CustomerMyBookingsView
+            onBookNewService={() => setActivePage('cities')}
+            onViewBookingDetail={handleViewBookingDetail}
+            onReviewBookingService={handleReviewBookingService}
+          />
+        )}
+        {activePage === 'booking-detail' && (
+          <CustomerBookingDetailView
+            bookingId={selectedBookingId}
+            onBack={() => setActivePage('my-bookings')}
+            onReviewService={handleReviewBookingService}
+          />
+        )}
+        {activePage === 'review-service' && (
+          <CustomerReviewServiceView
+            bookingId={selectedBookingId}
+            onBack={() => setActivePage('my-bookings')}
+          />
         )}
       </main>
 

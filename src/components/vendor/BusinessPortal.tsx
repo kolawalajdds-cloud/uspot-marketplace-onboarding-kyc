@@ -85,6 +85,7 @@ import { BusinessFormData, MultiStepTab } from './multistep/types';
 import { W9TaxCertification } from './W9TaxCertification';
 import { BusinessDetailsView } from './BusinessDetailsView';
 import { NmiPaymentAccountSetup } from './NmiPaymentAccountSetup';
+import { BusinessReviewsManagementView } from './BusinessReviewsManagementView';
 import { NmiPaymentAccountData } from '../../types';
 import {
   normalizeTransactionType,
@@ -817,6 +818,7 @@ export const BusinessPortal: React.FC = () => {
   const [serviceSortPriceAsc, setServiceSortPriceAsc] = useState<boolean | null>(null);
   const [serviceCurrentPage, setServiceCurrentPage] = useState<number>(1);
   const [previewingService, setPreviewingService] = useState<BusinessService | null>(null);
+  const [previewImageIndex, setPreviewImageIndex] = useState<number>(0);
   const [assigningWorkersService, setAssigningWorkersService] = useState<BusinessService | null>(null);
   const SERVICE_ITEMS_PER_PAGE = 5;
 
@@ -835,7 +837,9 @@ export const BusinessPortal: React.FC = () => {
   const [serviceRequiresApprovalInput, setServiceRequiresApprovalInput] = useState(false);
   const [serviceDescriptionInput, setServiceDescriptionInput] = useState('');
   const [serviceImageInput, setServiceImageInput] = useState('');
+  const [serviceGalleryImagesInput, setServiceGalleryImagesInput] = useState<string[]>([]);
   const [serviceAvailabilitySchedule, setServiceAvailabilitySchedule] = useState<BusinessHours[]>([]);
+  const serviceGalleryFileInputRef = useRef<HTMLInputElement>(null);
 
   const [serviceCategoryFilter, setServiceCategoryFilter] = useState('All');
   const [serviceSearchTerm, setServiceSearchTerm] = useState('');
@@ -915,18 +919,70 @@ export const BusinessPortal: React.FC = () => {
     const file = e.target.files?.[0];
     if (file) {
       if (file.size > 5 * 1024 * 1024) {
-        showToast('Image file size must be less than 5MB.');
+        showToast('Thumbnail file size must be less than 5MB.');
         return;
       }
       const reader = new FileReader();
       reader.onload = () => {
         if (typeof reader.result === 'string') {
           setServiceImageInput(reader.result);
-          showToast('Service image attached!');
+          showToast('Service thumbnail attached!');
         }
       };
       reader.readAsDataURL(file);
     }
+  };
+
+  const handleGalleryFilesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+
+    const availableSlots = 10 - serviceGalleryImagesInput.length;
+    if (availableSlots <= 0) {
+      showToast('Maximum 10 gallery photos reached. Remove an existing photo to upload new ones.');
+      return;
+    }
+
+    const filesToProcess = files.slice(0, availableSlots);
+    if (files.length > availableSlots) {
+      showToast(`Only ${availableSlots} more photo${availableSlots === 1 ? '' : 's'} can be added (limit is 10).`);
+    }
+
+    let loadedCount = 0;
+    const newPhotos: string[] = [];
+
+    filesToProcess.forEach((file) => {
+      if (file.size > 5 * 1024 * 1024) {
+        showToast(`Skipped "${file.name}" (exceeds 5MB limit).`);
+        loadedCount++;
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          newPhotos.push(reader.result);
+        }
+        loadedCount++;
+        if (loadedCount === filesToProcess.length && newPhotos.length > 0) {
+          setServiceGalleryImagesInput((prev) => {
+            const merged = [...prev, ...newPhotos].slice(0, 10);
+            return merged;
+          });
+          showToast(`Added ${newPhotos.length} gallery photo${newPhotos.length > 1 ? 's' : ''}!`);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+
+    if (e.target) {
+      e.target.value = '';
+    }
+  };
+
+  const handleRemoveGalleryImage = (index: number) => {
+    setServiceGalleryImagesInput((prev) => prev.filter((_, i) => i !== index));
+    showToast('Gallery photo removed.');
   };
 
   // Sync editingScheduleHours whenever selected business changes
@@ -1040,6 +1096,7 @@ export const BusinessPortal: React.FC = () => {
     setServiceRequiresApprovalInput(false);
     setServiceDescriptionInput('');
     setServiceImageInput('');
+    setServiceGalleryImagesInput([]);
     setServiceAvailabilitySchedule(DEFAULT_SERVICE_SCHEDULE);
     setServiceViewMode('create');
   };
@@ -1057,7 +1114,8 @@ export const BusinessPortal: React.FC = () => {
     setServicePricingType(svc.pricing_type === 'time_based' ? 'time_based' : 'fixed');
     setServiceRequiresApprovalInput(!!svc.requires_approval);
     setServiceDescriptionInput(svc.description || '');
-    setServiceImageInput(svc.photo_url || '');
+    setServiceImageInput(svc.photo_url || svc.thumbnail_url || '');
+    setServiceGalleryImagesInput(svc.gallery_photos || []);
     if (svc.service_hours && svc.service_hours.length > 0) {
       setServiceAvailabilitySchedule(svc.service_hours);
     } else {
@@ -1089,6 +1147,8 @@ export const BusinessPortal: React.FC = () => {
       business_id: targetBizId,
       description: serviceDescriptionInput.trim() || undefined,
       photo_url: serviceImageInput.trim() || undefined,
+      thumbnail_url: serviceImageInput.trim() || undefined,
+      gallery_photos: serviceGalleryImagesInput,
       pricing_type: servicePricingType,
       base_price: servicePricingType === 'fixed' ? fixedPrice : hourlyRate,
       hourly_rate: servicePricingType === 'time_based' ? hourlyRate : undefined,
@@ -4283,62 +4343,209 @@ export const BusinessPortal: React.FC = () => {
                         />
                       </div>
 
-                      {/* Row 4: Service Image Dropzone */}
-                      <div>
-                        <label className="block text-xs font-bold text-slate-700 mb-1.5">Service Image</label>
-                        <input
-                          type="file"
-                          ref={serviceImageFileInputRef}
-                          accept="image/*"
-                          onChange={handleImageFileChange}
-                          className="hidden"
-                        />
+                      {/* Row 4: 2-Part Service Media Upload (Thumbnail + Max 10 Gallery Photos) */}
+                      <div className="space-y-4 pt-1 pb-1 border-y border-slate-200/80">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                              <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                              Service Media & Visuals
+                            </h4>
+                            <p className="text-[11px] text-slate-500 mt-0.5">
+                              Configure 1 primary thumbnail for service catalogs, plus up to 10 showcase photos for the customer service details gallery.
+                            </p>
+                          </div>
+                          <span className="hidden sm:inline-block px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                            2-Part Media Deployment
+                          </span>
+                        </div>
 
-                        {serviceImageInput ? (
-                          <div className="relative rounded-2xl overflow-hidden border border-slate-200 bg-slate-50 p-3 flex items-center gap-4">
-                            <img
-                              src={serviceImageInput}
-                              alt="Service Preview"
-                              className="w-20 h-16 object-cover rounded-xl border border-slate-200"
-                            />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs font-bold text-slate-900 truncate">Service Thumbnail Uploaded</p>
-                              <p className="text-[11px] text-slate-400">High-resolution banner attached</p>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={() => serviceImageFileInputRef.current?.click()}
-                                className="px-3 py-1.5 text-xs font-bold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-100 transition cursor-pointer"
-                              >
-                                Change
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setServiceImageInput('')}
-                                className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-xl transition cursor-pointer"
-                                title="Remove Image"
-                              >
-                                <X className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div
-                            onClick={() => serviceImageFileInputRef.current?.click()}
-                            className="border-2 border-dashed border-slate-200 hover:border-slate-400 bg-slate-50/50 hover:bg-slate-50 rounded-2xl p-6 text-center transition cursor-pointer flex flex-col items-center justify-center space-y-2"
-                          >
-                            <div className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 text-slate-500 flex items-center justify-center shadow-2xs">
-                              <UploadCloud className="w-5 h-5" />
-                            </div>
+                        {/* PART 1: Service Thumbnail (Strictly 1 image) */}
+                        <div className="p-4 rounded-2xl bg-slate-50/70 border border-slate-200 space-y-3">
+                          <div className="flex items-center justify-between">
                             <div>
-                              <p className="text-xs font-bold text-slate-800">
-                                Drag and drop or <span className="text-indigo-600 underline">Browse files</span>
+                              <div className="flex items-center gap-2">
+                                <label className="text-xs font-bold text-slate-900">
+                                  Part 1: Service Thumbnail
+                                </label>
+                                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                  Strictly 1 Image
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-slate-500 mt-0.5">
+                                Primary cover image displayed on service cards and catalog listings.
                               </p>
-                              <p className="text-[11px] text-slate-400 mt-0.5">Recommended: 1200 × 800px (Max 5MB)</p>
                             </div>
+                            {serviceImageInput && (
+                              <span className="text-[11px] font-bold text-emerald-600 flex items-center gap-1">
+                                <CheckCircle2 className="w-3.5 h-3.5" /> 1/1 Attached
+                              </span>
+                            )}
                           </div>
-                        )}
+
+                          <input
+                            type="file"
+                            ref={serviceImageFileInputRef}
+                            accept="image/*"
+                            multiple={false}
+                            onChange={handleImageFileChange}
+                            className="hidden"
+                          />
+
+                          {serviceImageInput ? (
+                            <div className="relative rounded-2xl overflow-hidden border border-slate-200 bg-white p-3 flex items-center gap-4 shadow-2xs">
+                              <img
+                                src={serviceImageInput}
+                                alt="Service Thumbnail"
+                                className="w-20 h-16 object-cover rounded-xl border border-slate-200"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-bold text-slate-900 truncate">Service Thumbnail Uploaded</p>
+                                <p className="text-[11px] text-slate-400">Primary single image for marketplace catalog</p>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => serviceImageFileInputRef.current?.click()}
+                                  className="px-3 py-1.5 text-xs font-bold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-100 transition cursor-pointer"
+                                >
+                                  Change
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setServiceImageInput('')}
+                                  className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-xl transition cursor-pointer"
+                                  title="Remove Thumbnail"
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div
+                              onClick={() => serviceImageFileInputRef.current?.click()}
+                              className="border-2 border-dashed border-slate-200 hover:border-slate-400 bg-white hover:bg-slate-50 rounded-2xl p-6 text-center transition cursor-pointer flex flex-col items-center justify-center space-y-2"
+                            >
+                              <div className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 text-slate-500 flex items-center justify-center shadow-2xs">
+                                <UploadCloud className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <p className="text-xs font-bold text-slate-800">
+                                  Drag and drop or <span className="text-indigo-600 underline">Browse files</span>
+                                </p>
+                                <p className="text-[11px] text-slate-400 mt-0.5">Recommended: 1200 × 800px (Max 5MB • 1 file)</p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* PART 2: Service Gallery (Max 10 images) */}
+                        <div className="p-4 rounded-2xl bg-slate-50/70 border border-slate-200 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <label className="text-xs font-bold text-slate-900">
+                                  Part 2: Service Gallery & Details Photos
+                                </label>
+                                <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${
+                                  serviceGalleryImagesInput.length >= 10
+                                    ? 'bg-amber-50 text-amber-800 border-amber-300'
+                                    : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                }`}>
+                                  {serviceGalleryImagesInput.length} / 10 Photos Uploaded
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-slate-500 mt-0.5">
+                                Showcase photos displayed in the interactive customer service details modal (Maximum 10 files).
+                              </p>
+                            </div>
+
+                            {serviceGalleryImagesInput.length > 0 && serviceGalleryImagesInput.length < 10 && (
+                              <button
+                                type="button"
+                                onClick={() => serviceGalleryFileInputRef.current?.click()}
+                                className="px-3 py-1.5 text-xs font-bold text-indigo-600 bg-white border border-indigo-200 hover:bg-indigo-50 rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                                <span>Add Photos</span>
+                              </button>
+                            )}
+                          </div>
+
+                          <input
+                            type="file"
+                            ref={serviceGalleryFileInputRef}
+                            accept="image/*"
+                            multiple
+                            onChange={handleGalleryFilesChange}
+                            className="hidden"
+                          />
+
+                          {/* Gallery Photos Grid or Empty Dropzone */}
+                          {serviceGalleryImagesInput.length > 0 ? (
+                            <div className="space-y-3">
+                              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-3">
+                                {serviceGalleryImagesInput.map((imgUrl, idx) => (
+                                  <div
+                                    key={idx}
+                                    className="group relative aspect-4/3 rounded-xl overflow-hidden border border-slate-200 bg-white shadow-2xs"
+                                  >
+                                    <img
+                                      src={imgUrl}
+                                      alt={`Gallery photo ${idx + 1}`}
+                                      className="w-full h-full object-cover transition duration-200 group-hover:scale-105"
+                                    />
+                                    <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded bg-black/70 backdrop-blur-xs text-white text-[9px] font-bold">
+                                      #{idx + 1}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveGalleryImage(idx)}
+                                      className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-rose-600 text-white flex items-center justify-center opacity-90 hover:opacity-100 hover:scale-110 transition shadow-sm cursor-pointer"
+                                      title="Remove this photo"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                ))}
+
+                                {serviceGalleryImagesInput.length < 10 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => serviceGalleryFileInputRef.current?.click()}
+                                    className="aspect-4/3 rounded-xl border-2 border-dashed border-slate-300 hover:border-indigo-400 bg-white hover:bg-indigo-50/40 text-slate-500 hover:text-indigo-600 flex flex-col items-center justify-center transition cursor-pointer gap-1 p-2 shadow-2xs"
+                                  >
+                                    <Plus className="w-5 h-5 text-slate-400 group-hover:text-indigo-600" />
+                                    <span className="text-[11px] font-bold">Add Photo</span>
+                                    <span className="text-[9px] text-slate-400">({10 - serviceGalleryImagesInput.length} remaining)</span>
+                                  </button>
+                                )}
+                              </div>
+
+                              {serviceGalleryImagesInput.length >= 10 && (
+                                <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 px-3 py-2 rounded-xl font-medium flex items-center gap-1.5">
+                                  <AlertCircle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+                                  Maximum 10 gallery photos reached. Remove an existing photo to upload new ones.
+                                </p>
+                              )}
+                            </div>
+                          ) : (
+                            <div
+                              onClick={() => serviceGalleryFileInputRef.current?.click()}
+                              className="border-2 border-dashed border-slate-200 hover:border-slate-400 bg-white hover:bg-slate-50 rounded-2xl p-6 text-center transition cursor-pointer flex flex-col items-center justify-center space-y-2"
+                            >
+                              <div className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 text-slate-500 flex items-center justify-center shadow-2xs">
+                                <UploadCloud className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <p className="text-xs font-bold text-slate-800">
+                                  Drag and drop or <span className="text-indigo-600 underline">Browse gallery photos</span>
+                                </p>
+                                <p className="text-[11px] text-slate-400 mt-0.5">Upload up to 10 photos • Multiple selection enabled (Max 5MB each)</p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </div>
 
                       {/* Row 5: Pricing Type Radio Cards */}
@@ -5408,6 +5615,15 @@ export const BusinessPortal: React.FC = () => {
                   })()}
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* =================================================================== */}
+          {/* VIEW: REVIEWS MANAGEMENT (Matching User Reference Image)            */}
+          {/* =================================================================== */}
+          {activeTab === 'reviews' && (
+            <div className="animate-in fade-in duration-150 pb-16">
+              <BusinessReviewsManagementView businessId={selectedBusinessId} />
             </div>
           )}
 
@@ -6583,16 +6799,65 @@ export const BusinessPortal: React.FC = () => {
             </div>
 
             <div className="p-6 space-y-4 text-xs">
-              {/* Photo if present */}
-              {previewingService.photo_url && (
-                <div className="rounded-2xl overflow-hidden border border-slate-200 h-44 w-full">
-                  <img
-                    src={previewingService.photo_url}
-                    alt={previewingService.name}
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-              )}
+              {/* Media Section: Thumbnail + Showcase Gallery */}
+              {(() => {
+                const mediaImages = [
+                  ...(previewingService.photo_url || previewingService.thumbnail_url
+                    ? [previewingService.photo_url || previewingService.thumbnail_url!]
+                    : []),
+                  ...(previewingService.gallery_photos || []),
+                ].filter(Boolean);
+
+                if (mediaImages.length === 0) return null;
+
+                const activeMediaUrl = mediaImages[previewImageIndex] || mediaImages[0];
+                const isThumbnail = previewImageIndex === 0 && (previewingService.photo_url || previewingService.thumbnail_url);
+
+                return (
+                  <div className="space-y-2">
+                    <div className="relative rounded-2xl overflow-hidden border border-slate-200 h-48 w-full bg-slate-900 shadow-2xs">
+                      <img
+                        src={activeMediaUrl}
+                        alt={previewingService.name}
+                        className="w-full h-full object-cover"
+                      />
+                      <div className="absolute bottom-2.5 right-2.5 px-2.5 py-1 rounded-lg bg-black/75 backdrop-blur-xs text-white text-[10px] font-bold flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
+                        <span>
+                          {isThumbnail ? 'Service Thumbnail' : `Gallery Photo #${previewImageIndex}`}
+                        </span>
+                        <span className="text-slate-400">({previewImageIndex + 1}/{mediaImages.length})</span>
+                      </div>
+                    </div>
+
+                    {/* Interactive Thumbnail Strip for Gallery */}
+                    {mediaImages.length > 1 && (
+                      <div className="flex items-center gap-2 overflow-x-auto py-1">
+                        {mediaImages.map((url, idx) => {
+                          const isSelected = previewImageIndex === idx;
+                          return (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => setPreviewImageIndex(idx)}
+                              className={`relative w-14 h-11 rounded-xl overflow-hidden shrink-0 border-2 transition-all cursor-pointer ${
+                                isSelected
+                                  ? 'border-indigo-600 ring-2 ring-indigo-200 scale-105 shadow-xs'
+                                  : 'border-slate-200 opacity-70 hover:opacity-100 hover:border-slate-400'
+                              }`}
+                            >
+                              <img src={url} alt="" className="w-full h-full object-cover" />
+                              <span className="absolute bottom-0.5 right-0.5 text-[8px] font-black px-1 rounded bg-black/70 text-white">
+                                {idx === 0 ? 'T' : `#${idx}`}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Badges & Metrics Row */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
