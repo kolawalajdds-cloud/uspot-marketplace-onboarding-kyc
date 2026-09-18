@@ -629,4 +629,23 @@ export interface BusinessReview {
   response_deadline?: string;
 }
 
+export interface CustomerSavedCard {
+  id: string;
+  customer_id: string;
+  cardholder_name: string;
+  brand: 'mastercard' | 'visa' | 'amex' | 'discover';
+  last4: string;
+  exp_month: string;
+  exp_year: string;
+  is_default: boolean;
+  billing_address?: {
+    street: string;
+    city: string;
+    state: string;
+    zip: string;
+    country: string;
+  };
+  created_at: string;
+}
+
 

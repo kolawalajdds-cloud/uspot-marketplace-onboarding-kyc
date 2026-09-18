@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Check,
   Calendar as CalendarIcon,
@@ -14,6 +14,7 @@ import {
   Info,
   Lock,
   MapPin,
+  Plus,
 } from 'lucide-react';
 import { useDemo } from '../../context/DemoContext';
 import { Business, BusinessService, Booking } from '../../types';
@@ -24,6 +25,7 @@ interface CustomerBookingFlowViewProps {
   onBack: () => void;
   onNavigateHome: () => void;
   onNavigateMyBookings: () => void;
+  onNavigateSettings?: () => void;
 }
 
 export const CustomerBookingFlowView: React.FC<CustomerBookingFlowViewProps> = ({
@@ -32,8 +34,16 @@ export const CustomerBookingFlowView: React.FC<CustomerBookingFlowViewProps> = (
   onBack,
   onNavigateHome,
   onNavigateMyBookings,
+  onNavigateSettings,
 }) => {
-  const { state, currentUser, createBooking, bookServiceWithNmi } = useDemo();
+  const {
+    state,
+    currentUser,
+    createBooking,
+    bookServiceWithNmi,
+    customerSavedCards = [],
+    addCustomerSavedCard,
+  } = useDemo();
 
   const business: Business = useMemo(() => {
     return state.businesses.find((b) => b.id === businessId) || state.businesses[0];
@@ -87,12 +97,39 @@ export const CustomerBookingFlowView: React.FC<CustomerBookingFlowViewProps> = (
   const [promoMessage, setPromoMessage] = useState<string | null>(null);
   const [step2ValidationMessage, setStep2ValidationMessage] = useState<string | null>(null);
 
-  // Payment Details (matching Image 4)
+  // Saved Cards from Settings support
+  const defaultSavedCard = useMemo(() => {
+    return customerSavedCards.find((c) => c.is_default) || customerSavedCards[0];
+  }, [customerSavedCards]);
+
+  const [selectedCardId, setSelectedCardId] = useState<string>(() => {
+    return defaultSavedCard ? defaultSavedCard.id : 'new';
+  });
+
+  useEffect(() => {
+    if (selectedCardId !== 'new') {
+      const exists = customerSavedCards.some((c) => c.id === selectedCardId);
+      if (!exists) {
+        setSelectedCardId(defaultSavedCard ? defaultSavedCard.id : 'new');
+      }
+    } else if (customerSavedCards.length > 0 && !selectedCardId) {
+      setSelectedCardId(defaultSavedCard.id);
+    }
+  }, [customerSavedCards, defaultSavedCard]);
+
+  const activeSavedCard = useMemo(() => {
+    if (selectedCardId === 'new') return null;
+    return customerSavedCards.find((c) => c.id === selectedCardId) || null;
+  }, [customerSavedCards, selectedCardId]);
+
+  // Payment Details (New card inputs or custom card)
   const [cardholderName, setCardholderName] = useState('Johnathan Doe');
-  const [cardNumber, setCardNumber] = useState('4242 •••• •••• 4242');
-  const [cardExpiry, setCardExpiry] = useState('12 / 28');
+  const [cardNumber, setCardNumber] = useState('');
+  const [cardExpiry, setCardExpiry] = useState('');
   const [cardCvv, setCardCvv] = useState('•••');
+  const [saveCardToSettings, setSaveCardToSettings] = useState(true);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [confirmedPaymentDisplay, setConfirmedPaymentDisplay] = useState('Mastercard •••• 4242');
 
   // Confirmed booking state (matching Image 5)
   const [confirmedBooking, setConfirmedBooking] = useState<Booking | null>(null);
@@ -213,6 +250,51 @@ export const CustomerBookingFlowView: React.FC<CustomerBookingFlowViewProps> = (
   const handleConfirmAndPay = async () => {
     setIsProcessingPayment(true);
     try {
+      let paymentDisplay = 'Mastercard •••• 4242';
+
+      if (selectedCardId !== 'new' && activeSavedCard) {
+        const brandUpper =
+          activeSavedCard.brand.charAt(0).toUpperCase() + activeSavedCard.brand.slice(1);
+        paymentDisplay = `${brandUpper} •••• ${activeSavedCard.last4}`;
+      } else {
+        // New card
+        const cleanNumber = cardNumber.replace(/\D/g, '');
+        const last4 = cleanNumber.slice(-4) || '4242';
+        let detectedBrand: 'visa' | 'mastercard' | 'amex' | 'discover' = 'mastercard';
+        if (cleanNumber.startsWith('4')) {
+          detectedBrand = 'visa';
+        } else if (cleanNumber.startsWith('3')) {
+          detectedBrand = 'amex';
+        } else if (cleanNumber.startsWith('6')) {
+          detectedBrand = 'discover';
+        }
+        const brandUpper =
+          detectedBrand.charAt(0).toUpperCase() + detectedBrand.slice(1);
+        paymentDisplay = `${brandUpper} •••• ${last4}`;
+
+        if (saveCardToSettings) {
+          const cleanExpiry = cardExpiry.trim();
+          let expMonth = '12';
+          let expYear = '28';
+          if (cleanExpiry.includes('/')) {
+            const parts = cleanExpiry.split('/').map((p) => p.trim());
+            if (parts[0]) expMonth = parts[0].padStart(2, '0');
+            if (parts[1]) expYear = parts[1].slice(-2);
+          }
+          addCustomerSavedCard({
+            customer_id: currentUser?.id || 'user-customer',
+            cardholder_name: cardholderName.trim() || customerName,
+            brand: detectedBrand,
+            last4,
+            exp_month: expMonth,
+            exp_year: expYear,
+            is_default: customerSavedCards.length === 0,
+          });
+        }
+      }
+
+      setConfirmedPaymentDisplay(paymentDisplay);
+
       // 1. Process NMI credit card transaction
       await bookServiceWithNmi({
         businessId: business.id,
@@ -229,6 +311,7 @@ export const CustomerBookingFlowView: React.FC<CustomerBookingFlowViewProps> = (
         dateStr: selectedDateYMD,
         startTime: selectedTimeSlot,
         paymentMethod: 'credit_card',
+        paymentMethodDisplay: paymentDisplay,
         customerName,
         customerEmail,
         customerPhone,
@@ -855,80 +938,279 @@ export const CustomerBookingFlowView: React.FC<CustomerBookingFlowViewProps> = (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
             {/* Left Column (8 cols): Payment Form + Special Requests */}
             <div className="lg:col-span-8 space-y-6">
-              {/* Payment Method Card matching Image 4 */}
+              {/* Payment Method Card with Saved Cards from Settings */}
               <div className="bg-white rounded-3xl border border-slate-200/90 p-6 sm:p-8 space-y-6 shadow-xs">
-                <div>
-                  <h2 className="text-xl font-black text-slate-900 tracking-tight">Payment Method</h2>
-                  <p className="text-xs text-slate-500 mt-1">
-                    Secure encryption powered by NMI. Your payment data is never stored on our servers.
-                  </p>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-5">
+                  <div>
+                    <h2 className="text-xl font-black text-slate-900 tracking-tight">Payment Method</h2>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Choose any card saved in your Settings or pay with a new card.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200/70 px-2.5 py-1 rounded-full flex items-center gap-1 font-mono">
+                      <Lock className="w-3 h-3 text-emerald-600" /> NMI 256-Bit TLS
+                    </span>
+                    {onNavigateSettings && (
+                      <button
+                        type="button"
+                        onClick={onNavigateSettings}
+                        className="text-[11px] font-bold text-slate-600 hover:text-black hover:underline cursor-pointer"
+                      >
+                        Manage in Settings →
+                      </button>
+                    )}
+                  </div>
                 </div>
 
-                <div className="space-y-4">
-                  {/* Cardholder Name */}
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
-                      CARDHOLDER NAME
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={cardholderName}
-                      onChange={(e) => setCardholderName(e.target.value)}
-                      className="w-full rounded-xl border border-slate-200 px-4 py-3 text-xs text-slate-900 focus:outline-hidden focus:border-black font-medium"
-                      placeholder="Johnathan Doe"
-                    />
-                  </div>
-
-                  {/* Credit Card Number */}
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
-                      CREDIT CARD NUMBER
-                    </label>
-                    <div className="relative rounded-xl border border-slate-200 px-4 py-3 flex items-center gap-3 focus-within:border-black">
-                      <CreditCard className="w-4 h-4 text-slate-400 shrink-0" />
-                      <input
-                        type="text"
-                        required
-                        value={cardNumber}
-                        onChange={(e) => setCardNumber(e.target.value)}
-                        className="w-full bg-transparent text-xs text-slate-900 focus:outline-hidden font-mono"
-                        placeholder="•••• •••• •••• ••••"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Expiry & CVV */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
-                        EXPIRY DATE
+                {/* SAVED PAYMENT CARDS FROM SETTINGS */}
+                {customerSavedCards && customerSavedCards.length > 0 && (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                        Saved Cards in Settings ({customerSavedCards.length})
                       </label>
-                      <input
-                        type="text"
-                        required
-                        value={cardExpiry}
-                        onChange={(e) => setCardExpiry(e.target.value)}
-                        className="w-full rounded-xl border border-slate-200 px-4 py-3 text-xs text-slate-900 focus:outline-hidden focus:border-black font-medium"
-                        placeholder="MM / YY"
-                      />
+                      <span className="text-[10px] text-slate-400 font-medium">
+                        Instant 1-Click Selection
+                      </span>
                     </div>
 
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
-                        CVV
-                      </label>
-                      <input
-                        type="password"
-                        required
-                        maxLength={4}
-                        value={cardCvv}
-                        onChange={(e) => setCardCvv(e.target.value)}
-                        className="w-full rounded-xl border border-slate-200 px-4 py-3 text-xs text-slate-900 focus:outline-hidden focus:border-black font-medium"
-                        placeholder="•••"
-                      />
+                    <div className="space-y-3">
+                      {customerSavedCards.map((card) => {
+                        const isSelected = selectedCardId === card.id;
+                        const isMastercard = card.brand === 'mastercard';
+                        const isVisa = card.brand === 'visa';
+                        const isAmex = card.brand === 'amex';
+
+                        return (
+                          <div
+                            key={card.id}
+                            onClick={() => setSelectedCardId(card.id)}
+                            className={`p-4 rounded-2xl border transition-all cursor-pointer relative overflow-hidden ${
+                              isSelected
+                                ? 'border-slate-900 bg-slate-950 text-white shadow-lg ring-2 ring-slate-900/10'
+                                : 'border-slate-200 bg-white hover:border-slate-300 text-slate-900 hover:bg-slate-50/70'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="flex items-center gap-3.5 min-w-0">
+                                {/* Radio Indicator */}
+                                <div
+                                  className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 transition-colors ${
+                                    isSelected
+                                      ? 'border-white bg-white text-black'
+                                      : 'border-slate-300 bg-white'
+                                  }`}
+                                >
+                                  {isSelected && <div className="w-2.5 h-2.5 rounded-full bg-black" />}
+                                </div>
+
+                                {/* Brand Visual Icon / Badge */}
+                                <div
+                                  className={`px-2.5 py-1 rounded-lg text-[11px] font-black uppercase tracking-wider shrink-0 ${
+                                    isMastercard
+                                      ? isSelected
+                                        ? 'bg-red-500/20 text-red-300 border border-red-500/30'
+                                        : 'bg-red-50 text-red-700 border border-red-200'
+                                      : isVisa
+                                      ? isSelected
+                                        ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                                        : 'bg-blue-50 text-blue-700 border border-blue-200'
+                                      : isAmex
+                                      ? isSelected
+                                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                        : 'bg-amber-50 text-amber-700 border border-amber-200'
+                                      : isSelected
+                                      ? 'bg-white/10 text-white border border-white/20'
+                                      : 'bg-slate-100 text-slate-800 border border-slate-200'
+                                  }`}
+                                >
+                                  {card.brand}
+                                </div>
+
+                                {/* Masked Card Number & Info */}
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-mono font-bold text-sm tracking-wider">
+                                      •••• •••• •••• {card.last4}
+                                    </span>
+                                    {card.is_default && (
+                                      <span
+                                        className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                                          isSelected
+                                            ? 'bg-emerald-400/20 text-emerald-300 border border-emerald-400/30'
+                                            : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                        }`}
+                                      >
+                                        DEFAULT
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div
+                                    className={`text-[11px] mt-0.5 truncate flex items-center gap-2 ${
+                                      isSelected ? 'text-slate-300' : 'text-slate-500'
+                                    }`}
+                                  >
+                                    <span className="truncate">{card.cardholder_name}</span>
+                                    <span>•</span>
+                                    <span className="font-mono">Exp {card.exp_month}/{card.exp_year}</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Right Badge */}
+                              <div className="hidden sm:flex items-center gap-1.5 shrink-0">
+                                <span
+                                  className={`text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 ${
+                                    isSelected ? 'text-emerald-400' : 'text-slate-400'
+                                  }`}
+                                >
+                                  <ShieldCheck className="w-3.5 h-3.5" /> Tokenized
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Verification CVV when selected */}
+                            {isSelected && (
+                              <div className="mt-3.5 pt-3.5 border-t border-white/10 flex flex-wrap items-center justify-between text-xs gap-3">
+                                <span className="flex items-center gap-1.5 text-[11px] text-slate-300">
+                                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                  Ready for checkout with NMI Vault Token
+                                </span>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">
+                                    Security CVV:
+                                  </span>
+                                  <input
+                                    type="password"
+                                    maxLength={4}
+                                    value={cardCvv}
+                                    onChange={(e) => setCardCvv(e.target.value)}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="w-14 px-2 py-1 bg-white/10 border border-white/20 rounded-md text-xs font-mono text-white text-center focus:outline-hidden focus:border-white"
+                                    placeholder="•••"
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
+                )}
+
+                {/* OPTION: USE A NEW CARD */}
+                <div className="space-y-3 pt-2">
+                  <div
+                    onClick={() => setSelectedCardId('new')}
+                    className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
+                      selectedCardId === 'new'
+                        ? 'border-black bg-slate-50 text-slate-900 shadow-2xs'
+                        : 'border-slate-200 bg-white hover:border-slate-300 text-slate-700 hover:bg-slate-50/50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 transition-colors ${
+                          selectedCardId === 'new'
+                            ? 'border-black bg-black text-white'
+                            : 'border-slate-300 bg-white'
+                        }`}
+                      >
+                        {selectedCardId === 'new' && <div className="w-2.5 h-2.5 rounded-full bg-white" />}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <CreditCard className="w-4 h-4 text-slate-500" />
+                        <span className="text-xs font-bold text-slate-900">
+                          {customerSavedCards.length > 0 ? '+ Use a different or new payment card' : 'Enter payment card details'}
+                        </span>
+                      </div>
+                    </div>
+                    <span className="text-[11px] text-slate-400 font-medium hidden sm:inline">
+                      Debit or Credit Card
+                    </span>
+                  </div>
+
+                  {/* New Card Fields */}
+                  {(selectedCardId === 'new' || customerSavedCards.length === 0) && (
+                    <div className="p-5 sm:p-6 bg-slate-50/80 border border-slate-200 rounded-2xl space-y-4 animate-in fade-in duration-150">
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+                          CARDHOLDER NAME
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={cardholderName}
+                          onChange={(e) => setCardholderName(e.target.value)}
+                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-900 focus:outline-hidden focus:border-black font-medium"
+                          placeholder="Johnathan Doe"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+                          CREDIT CARD NUMBER
+                        </label>
+                        <div className="relative rounded-xl border border-slate-200 bg-white px-4 py-3 flex items-center gap-3 focus-within:border-black">
+                          <CreditCard className="w-4 h-4 text-slate-400 shrink-0" />
+                          <input
+                            type="text"
+                            required
+                            value={cardNumber}
+                            onChange={(e) => setCardNumber(e.target.value)}
+                            className="w-full bg-transparent text-xs text-slate-900 focus:outline-hidden font-mono"
+                            placeholder="•••• •••• •••• ••••"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+                            EXPIRY DATE
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={cardExpiry}
+                            onChange={(e) => setCardExpiry(e.target.value)}
+                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-900 focus:outline-hidden focus:border-black font-medium"
+                            placeholder="MM / YY"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+                            CVV
+                          </label>
+                          <input
+                            type="password"
+                            required
+                            maxLength={4}
+                            value={cardCvv}
+                            onChange={(e) => setCardCvv(e.target.value)}
+                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-900 focus:outline-hidden focus:border-black font-medium"
+                            placeholder="•••"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Save to Settings Checkbox */}
+                      <label className="flex items-center gap-2.5 pt-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={saveCardToSettings}
+                          onChange={(e) => setSaveCardToSettings(e.target.checked)}
+                          className="rounded border-slate-300 text-black focus:ring-black h-4 w-4"
+                        />
+                        <span className="text-xs font-semibold text-slate-700">
+                          Save this card to Settings for faster 1-click checkout in the future
+                        </span>
+                      </label>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -963,9 +1245,21 @@ export const CustomerBookingFlowView: React.FC<CustomerBookingFlowViewProps> = (
                   type="button"
                   disabled={isProcessingPayment}
                   onClick={handleConfirmAndPay}
-                  className="px-8 py-3.5 rounded-full bg-black hover:bg-neutral-800 disabled:opacity-50 text-white text-xs font-bold transition-all cursor-pointer shadow-xs"
+                  className="px-8 py-3.5 rounded-full bg-black hover:bg-neutral-800 disabled:opacity-50 text-white text-xs font-bold transition-all cursor-pointer shadow-xs inline-flex items-center gap-2"
                 >
-                  {isProcessingPayment ? 'Processing with NMI...' : 'Confirm & Pay'}
+                  {isProcessingPayment ? (
+                    'Processing with NMI...'
+                  ) : (
+                    <>
+                      <span>
+                        Confirm & Pay ${totalAmount.toFixed(2)} with{' '}
+                        {selectedCardId !== 'new' && activeSavedCard
+                          ? `${activeSavedCard.brand.toUpperCase()} •••• ${activeSavedCard.last4}`
+                          : 'Card'}
+                      </span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
                 </button>
               </div>
             </div>
@@ -1072,7 +1366,11 @@ export const CustomerBookingFlowView: React.FC<CustomerBookingFlowViewProps> = (
                     <span className="text-slate-500">Payment</span>
                     <span className="font-semibold text-slate-900 flex items-center gap-1.5">
                       <CreditCard className="w-3.5 h-3.5 text-slate-400" />
-                      <span>VISA **** 4242</span>
+                      <span>
+                        {confirmedBooking?.payment_method_display ||
+                          confirmedPaymentDisplay ||
+                          'Mastercard •••• 4242'}
+                      </span>
                     </span>
                   </div>
 

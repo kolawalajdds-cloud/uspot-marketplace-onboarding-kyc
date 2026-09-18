@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useDemo } from '../../context/DemoContext';
-import { User, LogOut, Shield, Building2, Users, Check } from 'lucide-react';
+import { User, LogOut, Shield, Building2, Users, Check, Settings as SettingsIcon } from 'lucide-react';
 
 export type CustomerNavPage =
   | 'home'
@@ -11,7 +11,8 @@ export type CustomerNavPage =
   | 'booking'
   | 'my-bookings'
   | 'booking-detail'
-  | 'review-service';
+  | 'review-service'
+  | 'settings';
 
 interface CustomerNavbarProps {
   activePage: CustomerNavPage;
@@ -47,11 +48,15 @@ export const CustomerNavbar: React.FC<CustomerNavbarProps> = ({ activePage, setA
     };
   }, [isProfileOpen]);
 
-  const navItems: Array<{ id: 'home' | 'categories' | 'cities' | 'my-bookings'; label: string }> = [
+  const navItems: Array<{
+    id: 'home' | 'categories' | 'cities' | 'my-bookings' | 'settings';
+    label: string;
+  }> = [
     { id: 'home', label: 'Home' },
     { id: 'categories', label: 'Categories' },
     { id: 'cities', label: 'Cities' },
     { id: 'my-bookings', label: 'My Bookings' },
+    { id: 'settings', label: 'Settings' },
   ];
 
   return (
@@ -144,6 +149,22 @@ export const CustomerNavbar: React.FC<CustomerNavbarProps> = ({ activePage, setA
                       <span className="text-[11px] text-slate-400 font-mono block mt-0.5">
                         {currentUser?.email || 'customer@uspot.com'}
                       </span>
+                    </div>
+
+                    {/* Customer Settings Link */}
+                    <div className="mb-2">
+                      <button
+                        onClick={() => {
+                          setActivePage('settings');
+                          setIsProfileOpen(false);
+                        }}
+                        className="w-full text-left px-2.5 py-2 rounded-xl text-xs font-bold text-slate-800 hover:bg-slate-100 flex items-center justify-between cursor-pointer transition-colors bg-slate-50 border border-slate-200/60"
+                      >
+                        <span className="flex items-center gap-2">
+                          <SettingsIcon className="w-3.5 h-3.5 text-slate-600" />
+                          Saved Cards & Settings
+                        </span>
+                      </button>
                     </div>
 
                     {/* Role Switcher */}

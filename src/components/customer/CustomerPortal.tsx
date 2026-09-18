@@ -10,6 +10,7 @@ import { CustomerBookingFlowView } from './CustomerBookingFlowView';
 import { CustomerMyBookingsView } from './CustomerMyBookingsView';
 import { CustomerBookingDetailView } from './CustomerBookingDetailView';
 import { CustomerReviewServiceView } from './CustomerReviewServiceView';
+import { CustomerSettingsView } from './CustomerSettingsView';
 
 export const CustomerPortal: React.FC = () => {
   const [activePage, setActivePage] = useState<CustomerNavPage>('home');
@@ -101,6 +102,7 @@ export const CustomerPortal: React.FC = () => {
             onBack={() => setActivePage('spot-detail')}
             onNavigateHome={() => setActivePage('home')}
             onNavigateMyBookings={() => setActivePage('my-bookings')}
+            onNavigateSettings={() => setActivePage('settings')}
           />
         )}
         {activePage === 'my-bookings' && (
@@ -121,6 +123,12 @@ export const CustomerPortal: React.FC = () => {
           <CustomerReviewServiceView
             bookingId={selectedBookingId}
             onBack={() => setActivePage('my-bookings')}
+          />
+        )}
+        {activePage === 'settings' && (
+          <CustomerSettingsView
+            onNavigateHome={() => setActivePage('home')}
+            onNavigateBookings={() => setActivePage('my-bookings')}
           />
         )}
       </main>

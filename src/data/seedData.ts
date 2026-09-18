@@ -7,6 +7,7 @@ import {
   BusinessService,
   Booking,
   BusinessReview,
+  CustomerSavedCard,
 } from '../types';
 import { getDefaultBusinessHours } from '../utils/serviceBookingUtils';
 
@@ -1144,6 +1145,51 @@ export function getSeedBusinessReviews(): BusinessReview[] {
       created_at: new Date(Date.now() - 3 * 3600 * 1000).toISOString(),
       time_ago: '3 hours ago',
       response_deadline: 'Response needed by 5:30 PM today to maintain "Fast Responder" badge.',
+    },
+  ];
+}
+
+// ----------------------------------------------------------------------------
+// SEED CUSTOMER SAVED CARDS (MILESTONE - CUSTOMER SETTINGS & PAYMENT METHODS)
+// ----------------------------------------------------------------------------
+
+export function getSeedCustomerSavedCards(): CustomerSavedCard[] {
+  return [
+    {
+      id: 'card-001',
+      customer_id: 'user-customer',
+      cardholder_name: 'Alex Taylor',
+      brand: 'mastercard',
+      last4: '4242',
+      exp_month: '12',
+      exp_year: '28',
+      is_default: true,
+      billing_address: {
+        street: '142 Franklin Street, Apt 4B',
+        city: 'New York',
+        state: 'NY',
+        zip: '10013',
+        country: 'United States',
+      },
+      created_at: '2023-10-15T10:00:00Z',
+    },
+    {
+      id: 'card-002',
+      customer_id: 'user-customer',
+      cardholder_name: 'Alex Taylor',
+      brand: 'visa',
+      last4: '8812',
+      exp_month: '09',
+      exp_year: '27',
+      is_default: false,
+      billing_address: {
+        street: '142 Franklin Street, Apt 4B',
+        city: 'New York',
+        state: 'NY',
+        zip: '10013',
+        country: 'United States',
+      },
+      created_at: '2023-11-01T14:30:00Z',
     },
   ];
 }

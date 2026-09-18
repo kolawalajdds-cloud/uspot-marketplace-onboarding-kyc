@@ -30,12 +30,14 @@ import {
   BookingPaymentStatus,
   BookingPaymentMethod,
   BusinessReview,
+  CustomerSavedCard,
 } from '../types';
 import {
   getSeedBusinesses,
   getSeedBusinessServices,
   getSeedBookings,
   getSeedBusinessReviews,
+  getSeedCustomerSavedCards,
   getSalonPresetServices,
   getSpaPresetServices,
   getSeedServiceCategories,
@@ -88,6 +90,7 @@ interface StoredState {
   businessServices: BusinessService[];
   bookings: Booking[];
   businessReviews: BusinessReview[];
+  customerSavedCards: CustomerSavedCard[];
 }
 
 interface DemoContextType {
@@ -212,6 +215,7 @@ interface DemoContextType {
     dateStr: string;
     startTime: string;
     paymentMethod: BookingPaymentMethod;
+    paymentMethodDisplay?: string;
     notes?: string;
   }) => Promise<{ success: boolean; booking: Booking; message: string }>;
   updateBookingStatus: (bookingId: string, status: BookingStatus) => void;
@@ -229,6 +233,11 @@ interface DemoContextType {
   rescheduleBooking: (bookingId: string, newDate: string, newStartTime: string) => void;
   businessReviews: BusinessReview[];
   addVendorReviewReply: (reviewId: string, replyText: string) => void;
+  // Customer Saved Cards & Settings
+  customerSavedCards: CustomerSavedCard[];
+  addCustomerSavedCard: (card: Omit<CustomerSavedCard, 'id' | 'created_at'>) => void;
+  removeCustomerSavedCard: (cardId: string) => void;
+  setDefaultCustomerSavedCard: (cardId: string) => void;
 }
 
 const DemoContext = createContext<DemoContextType | undefined>(undefined);
@@ -356,6 +365,9 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
             businessReviews: Array.isArray(parsed.businessReviews) && parsed.businessReviews.length > 0
               ? parsed.businessReviews
               : getSeedBusinessReviews(),
+            customerSavedCards: Array.isArray(parsed.customerSavedCards) && parsed.customerSavedCards.length > 0
+              ? parsed.customerSavedCards
+              : getSeedCustomerSavedCards(),
           };
         }
       }
@@ -384,6 +396,7 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
       businessServices: getSeedBusinessServices(),
       bookings: getSeedBookings(),
       businessReviews: getSeedBusinessReviews(),
+      customerSavedCards: getSeedCustomerSavedCards(),
     };
   });
 
@@ -2479,6 +2492,7 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
     dateStr: string;
     startTime: string;
     paymentMethod: BookingPaymentMethod;
+    paymentMethodDisplay?: string;
     notes?: string;
   }): Promise<{ success: boolean; booking: Booking; message: string }> => {
     const {
@@ -2491,6 +2505,7 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
       dateStr,
       startTime,
       paymentMethod,
+      paymentMethodDisplay,
       notes,
     } = params;
 
@@ -2553,6 +2568,7 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
       status: 'confirmed',
       payment_status: isPaidOnline ? 'paid' : 'unpaid',
       payment_method: paymentMethod,
+      payment_method_display: paymentMethodDisplay || (isPaidOnline ? 'Mastercard •••• 4242' : 'Cash on Arrival'),
       booking_date: dateStr,
       scheduled_date: dateStr,
       scheduled_start_time: startTime,
@@ -2710,6 +2726,47 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }));
   };
 
+  const addCustomerSavedCard = (cardData: Omit<CustomerSavedCard, 'id' | 'created_at'>) => {
+    setState((prev) => {
+      const newCard: CustomerSavedCard = {
+        ...cardData,
+        id: `card-${Date.now()}`,
+        created_at: new Date().toISOString(),
+      };
+      let updatedCards = [...(prev.customerSavedCards || [])];
+      if (newCard.is_default) {
+        updatedCards = updatedCards.map((c) => ({ ...c, is_default: false }));
+      }
+      return {
+        ...prev,
+        customerSavedCards: [newCard, ...updatedCards],
+      };
+    });
+  };
+
+  const removeCustomerSavedCard = (cardId: string) => {
+    setState((prev) => {
+      const remaining = (prev.customerSavedCards || []).filter((c) => c.id !== cardId);
+      if (remaining.length > 0 && !remaining.some((c) => c.is_default)) {
+        remaining[0] = { ...remaining[0], is_default: true };
+      }
+      return {
+        ...prev,
+        customerSavedCards: remaining,
+      };
+    });
+  };
+
+  const setDefaultCustomerSavedCard = (cardId: string) => {
+    setState((prev) => ({
+      ...prev,
+      customerSavedCards: (prev.customerSavedCards || []).map((c) => ({
+        ...c,
+        is_default: c.id === cardId,
+      })),
+    }));
+  };
+
   const rescheduleBooking = (bookingId: string, newDate: string, newStartTime: string) => {
     setState((prev) => {
       const updatedBookings = prev.bookings.map((b) => {
@@ -2817,6 +2874,10 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
         rescheduleBooking,
         businessReviews: state.businessReviews || [],
         addVendorReviewReply,
+        customerSavedCards: state.customerSavedCards || [],
+        addCustomerSavedCard,
+        removeCustomerSavedCard,
+        setDefaultCustomerSavedCard,
       }}
     >
       {children}
