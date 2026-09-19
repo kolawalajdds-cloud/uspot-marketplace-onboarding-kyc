@@ -11,6 +11,7 @@ import {
   Check,
   Building2,
   ArrowDownToLine,
+  Landmark,
   X,
   XCircle,
   Clock,
@@ -69,7 +70,12 @@ export const AdminPaymentTab: React.FC<AdminPaymentTabProps> = ({ onSaveSuccess 
   const handleApprove = (w: WithdrawalRequest) => {
     const res = approveWithdrawal(w.id, currentUser?.fullName || 'Super Admin');
     if (res.success) {
-      showSuccessBanner(`✓ Approved withdrawal of $${w.amount.toFixed(2)} for ${w.businessName}. Payment routed to ${w.maskedBankAccount}.`);
+      const net = w.netPayoutAmount !== undefined ? w.netPayoutAmount : (w.amount - (w.commissionAmount || 0) - (w.w9WithholdingAmount || 0));
+      const tax = w.w9WithholdingAmount || 0;
+      const comm = w.commissionAmount !== undefined ? w.commissionAmount : (w.amount * ((w.commissionRate || commissionRate)/100));
+      showSuccessBanner(
+        `✓ Approved & Disbursed $${net.toFixed(2)} to ${w.bankName || 'bank'} (${w.maskedBankAccount}) for ${w.businessName}! (Gross: $${w.amount.toFixed(2)}, Commission: -$${comm.toFixed(2)}${tax > 0 ? `, 24% IRS Tax Withheld: -$${tax.toFixed(2)} [W-9 Missing]` : ', 0% Tax Withheld [W-9 Certified]'}).`
+      );
     } else {
       setErrorMessage(res.error || 'Failed to approve withdrawal.');
     }
@@ -324,55 +330,86 @@ export const AdminPaymentTab: React.FC<AdminPaymentTabProps> = ({ onSaveSuccess 
             <table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="border-b border-slate-100 text-[11px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50/50">
-                  <th className="py-3.5 px-5">ID</th>
-                  <th className="py-3.5 px-5">Business Name</th>
-                  <th className="py-3.5 px-5">Withdrawal Amount</th>
-                  <th className="py-3.5 px-5">Registered Bank Account</th>
-                  <th className="py-3.5 px-5">Request Date</th>
-                  <th className="py-3.5 px-5">Status</th>
-                  <th className="py-3.5 px-5 text-right">Actions</th>
+                  <th className="py-3.5 px-4">ID</th>
+                  <th className="py-3.5 px-4">Business & Bank Destination</th>
+                  <th className="py-3.5 px-4">Form W-9 Status</th>
+                  <th className="py-3.5 px-4">Gross Requested</th>
+                  <th className="py-3.5 px-4">Commission</th>
+                  <th className="py-3.5 px-4">Tax Withheld (24%)</th>
+                  <th className="py-3.5 px-4">Net Transfer</th>
+                  <th className="py-3.5 px-4">Request Date</th>
+                  <th className="py-3.5 px-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {pendingWithdrawals.map((w) => (
-                  <tr key={w.id} className="hover:bg-slate-50/70 transition-colors">
-                    <td className="py-3.5 px-5 font-mono font-bold text-slate-900">{w.id}</td>
-                    <td className="py-3.5 px-5">
-                      <div className="font-extrabold text-slate-900">{w.businessName}</div>
-                      <div className="text-[11px] text-slate-400 font-mono">{w.bankAccountHolder}</div>
-                    </td>
-                    <td className="py-3.5 px-5 font-mono font-black text-emerald-600 text-sm">
-                      ${w.amount.toFixed(2)}
-                    </td>
-                    <td className="py-3.5 px-5 font-mono text-slate-700">
-                      <span className="font-bold">{w.maskedBankAccount}</span>
-                      <span className="block text-[10px] text-slate-400">Verified Destination</span>
-                    </td>
-                    <td className="py-3.5 px-5 text-slate-600">
-                      {new Date(w.requestDate).toLocaleDateString()} at{' '}
-                      {new Date(w.requestDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </td>
-                    <td className="py-3.5 px-5">
-                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
-                        {w.status}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-5 text-right space-x-2">
-                      <button
-                        onClick={() => handleApprove(w)}
-                        className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition-colors cursor-pointer shadow-2xs"
-                      >
-                        Approve
-                      </button>
-                      <button
-                        onClick={() => handleOpenRejectModal(w)}
-                        className="px-3.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs transition-colors cursor-pointer"
-                      >
-                        Reject
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {pendingWithdrawals.map((w) => {
+                  const wComm = w.commissionAmount !== undefined ? w.commissionAmount : (w.amount * ((w.commissionRate || commissionRate) / 100));
+                  const isW9Done = w.w9Status === 'verified' || (w.w9WithholdingRate !== undefined && w.w9WithholdingRate === 0);
+                  const wTax = w.w9WithholdingAmount !== undefined ? w.w9WithholdingAmount : (isW9Done ? 0 : Number((w.amount * 0.24).toFixed(2)));
+                  const wNet = w.netPayoutAmount !== undefined ? w.netPayoutAmount : (w.amount - wComm - wTax);
+
+                  return (
+                    <tr key={w.id} className="hover:bg-slate-50/70 transition-colors">
+                      <td className="py-3.5 px-4 font-mono font-bold text-slate-900">{w.id}</td>
+                      <td className="py-3.5 px-4">
+                        <div className="font-extrabold text-slate-900">{w.businessName}</div>
+                        <div className="text-[11px] text-slate-600 font-mono flex items-center gap-1 mt-0.5">
+                          <Landmark className="w-3 h-3 text-slate-400" />
+                          <span>{w.bankName || 'Bank'} ({w.maskedBankAccount})</span>
+                        </div>
+                        {w.bankAccountHolder && (
+                          <div className="text-[10px] text-slate-400">{w.bankAccountHolder}</div>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4">
+                        {isW9Done ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                            <span>Certified (0% Tax)</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                            <AlertCircle className="w-3 h-3 text-amber-600" />
+                            <span>Missing W-9 (24% Tax)</span>
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4 font-mono font-black text-slate-900">
+                        ${w.amount.toFixed(2)}
+                      </td>
+                      <td className="py-3.5 px-4 font-mono text-violet-700 font-bold">
+                        -${wComm.toFixed(2)} ({w.commissionRate || commissionRate}%)
+                      </td>
+                      <td className="py-3.5 px-4 font-mono">
+                        {wTax > 0 ? (
+                          <span className="text-rose-600 font-bold">-${wTax.toFixed(2)} (24%)</span>
+                        ) : (
+                          <span className="text-slate-400 font-medium">$0.00 (0%)</span>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4 font-mono font-black text-emerald-600 text-sm">
+                        ${wNet.toFixed(2)}
+                      </td>
+                      <td className="py-3.5 px-4 text-slate-500 text-[11px]">
+                        {new Date(w.requestDate).toLocaleDateString()}
+                      </td>
+                      <td className="py-3.5 px-4 text-right space-x-2">
+                        <button
+                          onClick={() => handleApprove(w)}
+                          className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition-colors cursor-pointer shadow-2xs whitespace-nowrap"
+                        >
+                          Approve & Transfer
+                        </button>
+                        <button
+                          onClick={() => handleOpenRejectModal(w)}
+                          className="px-3.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs transition-colors cursor-pointer whitespace-nowrap"
+                        >
+                          Reject
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -405,52 +442,75 @@ export const AdminPaymentTab: React.FC<AdminPaymentTabProps> = ({ onSaveSuccess 
             <table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="border-b border-slate-100 text-[11px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50/50">
-                  <th className="py-3.5 px-5">ID</th>
-                  <th className="py-3.5 px-5">Recipient / Account</th>
-                  <th className="py-3.5 px-5">Type</th>
-                  <th className="py-3.5 px-5">Amount</th>
-                  <th className="py-3.5 px-5">Bank Account</th>
-                  <th className="py-3.5 px-5">Status</th>
-                  <th className="py-3.5 px-5">Processed Date & Admin Notes</th>
+                  <th className="py-3.5 px-4">ID</th>
+                  <th className="py-3.5 px-4">Recipient / Business</th>
+                  <th className="py-3.5 px-4">Gross Amount</th>
+                  <th className="py-3.5 px-4">Commission</th>
+                  <th className="py-3.5 px-4">Tax Withheld</th>
+                  <th className="py-3.5 px-4">Net Transferred</th>
+                  <th className="py-3.5 px-4">Destination Bank</th>
+                  <th className="py-3.5 px-4">Status</th>
+                  <th className="py-3.5 px-4">Processed Date & Admin Notes</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {pastWithdrawals.map((w) => (
-                  <tr key={w.id} className="hover:bg-slate-50/70 transition-colors">
-                    <td className="py-3.5 px-5 font-mono font-bold text-slate-900">{w.id}</td>
-                    <td className="py-3.5 px-5 font-medium text-slate-800">{w.businessName}</td>
-                    <td className="py-3.5 px-5">
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-100 text-slate-600 uppercase">
-                        {w.type === 'super_admin' ? 'Super Admin' : 'Business'}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-5 font-mono font-black text-slate-900">${w.amount.toFixed(2)}</td>
-                    <td className="py-3.5 px-5 font-mono text-slate-600">{w.maskedBankAccount}</td>
-                    <td className="py-3.5 px-5">
-                      <span
-                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
-                          w.status === 'Completed'
-                            ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
-                            : 'bg-rose-100 text-rose-800 border-rose-200'
-                        }`}
-                      >
-                        {w.status}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-5 text-slate-500 text-[11px]">
-                      {w.status === 'Rejected' ? (
-                        <span className="text-rose-700">
-                          Declined: {w.rejectionReason || 'Restored to business available balance'}
+                {pastWithdrawals.map((w) => {
+                  const wComm = w.commissionAmount !== undefined ? w.commissionAmount : (w.amount * ((w.commissionRate || commissionRate) / 100));
+                  const wTax = w.w9WithholdingAmount || 0;
+                  const wNet = w.netPayoutAmount !== undefined ? w.netPayoutAmount : (w.amount - wComm - wTax);
+
+                  return (
+                    <tr key={w.id} className="hover:bg-slate-50/70 transition-colors">
+                      <td className="py-3.5 px-4 font-mono font-bold text-slate-900">{w.id}</td>
+                      <td className="py-3.5 px-4 font-medium text-slate-800">
+                        <div>{w.businessName}</div>
+                        <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 uppercase">
+                          {w.type === 'super_admin' ? 'Super Admin Commission' : 'Vendor Payout'}
                         </span>
-                      ) : (
-                        <span>
-                          Approved by {w.processedBy || 'Super Admin'} on{' '}
-                          {w.processedDate ? new Date(w.processedDate).toLocaleDateString() : '—'}
+                      </td>
+                      <td className="py-3.5 px-4 font-mono font-black text-slate-900">${w.amount.toFixed(2)}</td>
+                      <td className="py-3.5 px-4 font-mono text-violet-700 font-bold">
+                        {wComm > 0 ? `-$${wComm.toFixed(2)}` : '$0.00'}
+                      </td>
+                      <td className="py-3.5 px-4 font-mono">
+                        {wTax > 0 ? (
+                          <span className="text-rose-600 font-bold">-$${wTax.toFixed(2)} (24%)</span>
+                        ) : (
+                          <span className="text-slate-400">$0.00 (0%)</span>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4 font-mono font-black text-emerald-600 text-sm">
+                        ${wNet.toFixed(2)}
+                      </td>
+                      <td className="py-3.5 px-4 font-mono text-slate-600 text-[11px]">
+                        {w.bankName ? `${w.bankName} (${w.maskedBankAccount})` : w.maskedBankAccount}
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <span
+                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                            w.status === 'Completed'
+                              ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                              : 'bg-rose-100 text-rose-800 border-rose-200'
+                          }`}
+                        >
+                          {w.status}
                         </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="py-3.5 px-4 text-slate-500 text-[11px]">
+                        {w.status === 'Rejected' ? (
+                          <span className="text-rose-700 font-medium">
+                            Declined: {w.rejectionReason || 'Restored to business available balance'}
+                          </span>
+                        ) : (
+                          <span>
+                            Approved by {w.processedBy || 'Super Admin'} on{' '}
+                            {w.processedDate ? new Date(w.processedDate).toLocaleDateString() : '—'}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

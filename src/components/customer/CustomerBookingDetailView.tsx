@@ -74,9 +74,9 @@ export const CustomerBookingDetailView: React.FC<CustomerBookingDetailViewProps>
     (acc, item) => acc + (item.price_charged || item.price || 0) * (item.quantity || 1),
     0
   );
-  const taxAmount = booking.tax_amount ?? +(subtotal * 0.08).toFixed(2);
-  const serviceFee = booking.service_fee ?? 5.0;
-  const grandTotal = booking.net_amount || +(subtotal + taxAmount + serviceFee).toFixed(2);
+  const taxAmount = booking.tax_amount ?? 0.0;
+  const serviceFee = booking.service_fee ?? 0.0;
+  const grandTotal = booking.net_amount || subtotal;
 
   const handleConfirmReschedule = () => {
     if (!newDate) return;

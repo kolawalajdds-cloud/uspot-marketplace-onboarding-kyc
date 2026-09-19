@@ -75,17 +75,145 @@ export type SuperAdminNavTab =
   | 'settings';
 
 export const SuperAdminDashboard: React.FC = () => {
-  const { state, currentUser, users, loginAsUser, logout } = useDemo();
+  const { state, currentUser, users, loginAsUser, logout, platformLedger, bookings } = useDemo();
 
-  // Navigation State - default to 'config-reference' to immediately display new Configuration feature
-  const [activeNav, setActiveNav] = useState<SuperAdminNavTab>('config-reference');
+  // Navigation State with localStorage Persistence
+  const [activeNav, setActiveNav] = useState<SuperAdminNavTab>(() => {
+    try {
+      const saved = localStorage.getItem('uspot_admin_active_nav') as SuperAdminNavTab;
+      const validTabs: (SuperAdminNavTab | string)[] = [
+        'dashboard',
+        'users-customers', 'users-partners', 'users-staff',
+        'assets-onboarding', 'assets-organizations', 'assets-industries', 'assets-categories', 'assets-services', 'assets-cat-requests', 'assets-category-requests',
+        'management', 'management-all', 'management-kyc', 'management-approved', 'management-non-subscription',
+        'plans', 'bookings', 'payment', 'support', 'subscription', 'content',
+        'config-reference', 'config-icons', 'config-geography', 'config-general', 'config-commission', 'settings'
+      ];
+      if (saved && validTabs.includes(saved)) {
+        return ((saved as string) === 'assets-category-requests' ? 'assets-cat-requests' : saved) as SuperAdminNavTab;
+      }
+    } catch (e) {}
+    return 'dashboard';
+  });
 
-  // Collapsible Accordion Sections
-  const [isUsersOpen, setIsUsersOpen] = useState(false);
-  const [isAssetsOpen, setIsAssetsOpen] = useState(false);
-  const [isManagementOpen, setIsManagementOpen] = useState(false);
-  const [isConfigOpen, setIsConfigOpen] = useState(true);
+  // Collapsible Accordion Sections - initialized based on activeNav
+  const [isUsersOpen, setIsUsersOpen] = useState(() => activeNav.startsWith('users-'));
+  const [isAssetsOpen, setIsAssetsOpen] = useState(() => activeNav.startsWith('assets-'));
+  const [isManagementOpen, setIsManagementOpen] = useState(() => activeNav.startsWith('management'));
+  const [isConfigOpen, setIsConfigOpen] = useState(() => activeNav.startsWith('config-'));
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+  // Sync activeNav to localStorage and auto-expand parent accordion
+  useEffect(() => {
+    try {
+      localStorage.setItem('uspot_admin_active_nav', activeNav);
+    } catch (e) {}
+    if (activeNav.startsWith('users-')) setIsUsersOpen(true);
+    if (activeNav.startsWith('assets-')) setIsAssetsOpen(true);
+    if (activeNav.startsWith('management')) setIsManagementOpen(true);
+    if (activeNav.startsWith('config-')) setIsConfigOpen(true);
+  }, [activeNav]);
+
+  // Pending action counts for notification badges & dots
+  const pendingPayoutsCount = (platformLedger?.withdrawals || []).filter((w) => w.status === 'Pending').length;
+  const pendingKycCount = (state.businesses || []).filter((b) => {
+    const isApproved =
+      b.status === 'KYC Approved' ||
+      b.status === 'Live' ||
+      (b as any).status === 'Active' ||
+      b.subTab === 'approved' ||
+      b.verification?.status === 'Approved';
+    const isRejected = b.status === 'KYC Rejected' || b.verification?.status === 'Rejected';
+    if (isApproved || isRejected) return false;
+    return (
+      b.status === 'Submitted' ||
+      b.status === 'Under Review' ||
+      b.status === 'Pending KYC Review' ||
+      b.verification?.overallStatus === 'pending' ||
+      b.verification?.overallStatus === 'in_review' ||
+      (Boolean(b.verification?.kycSubmitted) && b.verification?.status !== 'Approved')
+    );
+  }).length;
+  const pendingBookingsCount = (bookings || []).filter((b) => b.status === 'pending').length;
+
+  // Track acknowledged / opened counts so notification disappears once the user opens the page
+  const [seenPayoutsCount, setSeenPayoutsCount] = useState<number>(() => {
+    try {
+      const val = localStorage.getItem('uspot_admin_seen_payouts_count');
+      return val ? parseInt(val, 10) : 0;
+    } catch (e) {
+      return 0;
+    }
+  });
+
+  const [seenKycCount, setSeenKycCount] = useState<number>(() => {
+    try {
+      const val = localStorage.getItem('uspot_admin_seen_kyc_count');
+      return val ? parseInt(val, 10) : 0;
+    } catch (e) {
+      return 0;
+    }
+  });
+
+  const [seenBookingsCount, setSeenBookingsCount] = useState<number>(() => {
+    try {
+      const val = localStorage.getItem('uspot_admin_seen_bookings_count');
+      return val ? parseInt(val, 10) : 0;
+    } catch (e) {
+      return 0;
+    }
+  });
+
+  // When user opens Payments, clear notification
+  useEffect(() => {
+    if (activeNav === 'payment') {
+      setSeenPayoutsCount(pendingPayoutsCount);
+      try {
+        localStorage.setItem('uspot_admin_seen_payouts_count', String(pendingPayoutsCount));
+      } catch (e) {}
+    } else if (pendingPayoutsCount === 0 && seenPayoutsCount > 0) {
+      setSeenPayoutsCount(0);
+      try {
+        localStorage.setItem('uspot_admin_seen_payouts_count', '0');
+      } catch (e) {}
+    }
+  }, [activeNav, pendingPayoutsCount, seenPayoutsCount]);
+
+  // When user opens Business Management or KYC Requests, clear notification
+  useEffect(() => {
+    if (activeNav === 'management-kyc' || activeNav === 'management-all' || activeNav === 'management') {
+      setSeenKycCount(pendingKycCount);
+      try {
+        localStorage.setItem('uspot_admin_seen_kyc_count', String(pendingKycCount));
+      } catch (e) {}
+    } else if (pendingKycCount === 0 && seenKycCount > 0) {
+      setSeenKycCount(0);
+      try {
+        localStorage.setItem('uspot_admin_seen_kyc_count', '0');
+      } catch (e) {}
+    }
+  }, [activeNav, pendingKycCount, seenKycCount]);
+
+  // When user opens Bookings, clear notification
+  useEffect(() => {
+    if (activeNav === 'bookings') {
+      setSeenBookingsCount(pendingBookingsCount);
+      try {
+        localStorage.setItem('uspot_admin_seen_bookings_count', String(pendingBookingsCount));
+      } catch (e) {}
+    } else if (pendingBookingsCount === 0 && seenBookingsCount > 0) {
+      setSeenBookingsCount(0);
+      try {
+        localStorage.setItem('uspot_admin_seen_bookings_count', '0');
+      } catch (e) {}
+    }
+  }, [activeNav, pendingBookingsCount, seenBookingsCount]);
+
+  // Unread counts: automatically 0 if user has opened / is on the page
+  const unreadPayoutsCount = activeNav === 'payment' ? 0 : Math.max(0, pendingPayoutsCount - seenPayoutsCount);
+  const isViewingKyc = activeNav === 'management-kyc' || activeNav === 'management-all' || activeNav === 'management';
+  const unreadKycCount = isViewingKyc ? 0 : Math.max(0, pendingKycCount - seenKycCount);
+  const unreadBookingsCount = activeNav === 'bookings' ? 0 : Math.max(0, pendingBookingsCount - seenBookingsCount);
 
   // Topbar and Modal States
   const [searchQuery, setSearchQuery] = useState('');
@@ -133,21 +261,21 @@ export const SuperAdminDashboard: React.FC = () => {
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  // Mock Notifications for Super Admin
+  // System Notifications for Super Admin
   const [notifications, setNotifications] = useState([
     {
       id: 'notif-1',
       title: 'New KYC Submission',
       desc: 'Urban Roast Hospitality submitted documentation for review.',
       time: '12m ago',
-      unread: true,
+      unread: false,
     },
     {
       id: 'notif-2',
       title: 'Category Request Approved',
       desc: 'Wellness Spa category request published to live catalog.',
       time: '1h ago',
-      unread: true,
+      unread: false,
     },
     {
       id: 'notif-3',
@@ -540,18 +668,35 @@ export const SuperAdminDashboard: React.FC = () => {
                     ? 'bg-[#131d2e] text-white shadow-xs'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800/40 rounded-xl font-semibold'
                 }`}
-                title={isSidebarCollapsed ? 'Business Management' : undefined}
+                title={isSidebarCollapsed ? (unreadKycCount > 0 ? `Business Management (${unreadKycCount} KYC Pending)` : 'Business Management') : undefined}
               >
                 <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
-                  <CheckCircle2 className={`w-4 h-4 shrink-0 ${isManagementOpen ? 'text-white' : 'text-slate-400'}`} />
+                  <div className="relative flex items-center justify-center">
+                    <CheckCircle2 className={`w-4 h-4 shrink-0 ${isManagementOpen ? 'text-white' : 'text-slate-400'}`} />
+                    {isSidebarCollapsed && unreadKycCount > 0 && (
+                      <span className="absolute -top-1.5 -right-2 flex h-3.5 w-3.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-amber-500 text-[8px] font-black text-slate-950 items-center justify-center">
+                          {unreadKycCount > 9 ? '9+' : unreadKycCount}
+                        </span>
+                      </span>
+                    )}
+                  </div>
                   {!isSidebarCollapsed && <span>Business Management</span>}
                 </div>
                 {!isSidebarCollapsed && (
-                  isManagementOpen ? (
-                    <ChevronUp className="w-3.5 h-3.5 text-slate-300 shrink-0" />
-                  ) : (
-                    <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                  )
+                  <div className="flex items-center gap-1.5">
+                    {unreadKycCount > 0 && (
+                      <span className="px-1.5 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-500 text-slate-950 shadow-2xs">
+                        {unreadKycCount}
+                      </span>
+                    )}
+                    {isManagementOpen ? (
+                      <ChevronUp className="w-3.5 h-3.5 text-slate-300 shrink-0" />
+                    ) : (
+                      <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    )}
+                  </div>
                 )}
               </button>
 
@@ -580,18 +725,29 @@ export const SuperAdminDashboard: React.FC = () => {
                   <button
                     id="sidebar-subtab-kyc-requests"
                     onClick={() => setActiveNav('management-kyc')}
-                    className={`w-full text-left px-3 py-2 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-2.5 ${
+                    className={`w-full text-left px-3 py-2 rounded-xl text-xs transition-all cursor-pointer flex items-center justify-between ${
                       activeNav === 'management-kyc'
                         ? 'bg-white text-slate-900 font-bold shadow-xs'
                         : 'text-slate-400 hover:text-white hover:bg-slate-800/40 font-medium'
                     }`}
                   >
-                    <span
-                      className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                        activeNav === 'management-kyc' ? 'bg-blue-600' : 'bg-slate-500'
-                      }`}
-                    />
-                    <span>KYC Requests</span>
+                    <div className="flex items-center gap-2.5">
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                          activeNav === 'management-kyc' ? 'bg-blue-600' : 'bg-slate-500'
+                        }`}
+                      />
+                      <span>KYC Requests</span>
+                    </div>
+                    {unreadKycCount > 0 && (
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                        activeNav === 'management-kyc'
+                          ? 'bg-amber-100 text-amber-900'
+                          : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                      }`}>
+                        {unreadKycCount} Pending
+                      </span>
+                    )}
                   </button>
 
                   <button
@@ -653,16 +809,35 @@ export const SuperAdminDashboard: React.FC = () => {
               id="sidebar-admin-bookings"
               onClick={() => setActiveNav('bookings')}
               className={`w-full flex items-center ${
-                isSidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'
+                isSidebarCollapsed ? 'justify-center px-0' : 'justify-between px-3'
               } py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                 activeNav === 'bookings'
                   ? 'bg-white text-slate-900 font-bold shadow-xs'
                   : 'text-slate-400 hover:text-white hover:bg-slate-800/40 border border-transparent'
               }`}
-              title={isSidebarCollapsed ? 'Bookings' : undefined}
+              title={isSidebarCollapsed ? (unreadBookingsCount > 0 ? `Bookings (${unreadBookingsCount} Pending)` : 'Bookings') : undefined}
             >
-              <Calendar className={`w-4 h-4 shrink-0 ${activeNav === 'bookings' ? 'text-slate-900' : 'text-slate-400'}`} />
-              {!isSidebarCollapsed && <span>Bookings</span>}
+              <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
+                <div className="relative flex items-center justify-center">
+                  <Calendar className={`w-4 h-4 shrink-0 ${activeNav === 'bookings' ? 'text-slate-900' : 'text-slate-400'}`} />
+                  {isSidebarCollapsed && unreadBookingsCount > 0 && (
+                    <span className="absolute -top-1.5 -right-2 flex h-3.5 w-3.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-blue-600 text-[8px] font-black text-white items-center justify-center">
+                        {unreadBookingsCount > 9 ? '9+' : unreadBookingsCount}
+                      </span>
+                    </span>
+                  )}
+                </div>
+                {!isSidebarCollapsed && <span>Bookings</span>}
+              </div>
+              {!isSidebarCollapsed && unreadBookingsCount > 0 && (
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                  activeNav === 'bookings' ? 'bg-blue-100 text-blue-900' : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                }`}>
+                  {unreadBookingsCount}
+                </span>
+              )}
             </button>
 
             {/* 7. Payments */}
@@ -670,16 +845,34 @@ export const SuperAdminDashboard: React.FC = () => {
               id="sidebar-admin-payment"
               onClick={() => setActiveNav('payment')}
               className={`w-full flex items-center ${
-                isSidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'
+                isSidebarCollapsed ? 'justify-center px-0' : 'justify-between px-3'
               } py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                 activeNav === 'payment'
                   ? 'bg-white text-slate-900 font-bold shadow-xs'
                   : 'text-slate-400 hover:text-white hover:bg-slate-800/40 border border-transparent'
               }`}
-              title={isSidebarCollapsed ? 'Payments' : undefined}
+              title={isSidebarCollapsed ? (unreadPayoutsCount > 0 ? `Payments (${unreadPayoutsCount} Pending Payouts)` : 'Payments') : undefined}
             >
-              <CreditCard className={`w-4 h-4 shrink-0 ${activeNav === 'payment' ? 'text-slate-900' : 'text-slate-400'}`} />
-              {!isSidebarCollapsed && <span>Payments</span>}
+              <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
+                <div className="relative flex items-center justify-center">
+                  <CreditCard className={`w-4 h-4 shrink-0 ${activeNav === 'payment' ? 'text-slate-900' : 'text-slate-400'}`} />
+                  {isSidebarCollapsed && unreadPayoutsCount > 0 && (
+                    <span className="absolute -top-1.5 -right-2 flex h-3.5 w-3.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-amber-500 text-[8px] font-black text-slate-950 items-center justify-center">
+                        {unreadPayoutsCount > 9 ? '9+' : unreadPayoutsCount}
+                      </span>
+                    </span>
+                  )}
+                </div>
+                {!isSidebarCollapsed && <span>Payments</span>}
+              </div>
+              {!isSidebarCollapsed && unreadPayoutsCount > 0 && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500 text-slate-950 shadow-sm animate-pulse">
+                  <span className="w-1.5 h-1.5 rounded-full bg-slate-950 animate-ping" />
+                  {unreadPayoutsCount} Pending
+                </span>
+              )}
             </button>
 
             {/* 8. Support */}
@@ -1008,8 +1201,9 @@ export const SuperAdminDashboard: React.FC = () => {
                       {notifications.map((n) => (
                         <div
                           key={n.id}
-                          className={`p-2.5 rounded-xl border text-xs transition-colors ${
-                            n.unread ? 'bg-blue-50/40 border-blue-100' : 'bg-slate-50/60 border-slate-100'
+                          onClick={() => setNotifications((prev) => prev.map((item) => item.id === n.id ? { ...item, unread: false } : item))}
+                          className={`p-2.5 rounded-xl border text-xs transition-colors cursor-pointer ${
+                            n.unread ? 'bg-blue-50/40 border-blue-100 hover:bg-blue-50/70' : 'bg-slate-50/60 border-slate-100 hover:bg-slate-100/60'
                           }`}
                         >
                           <div className="flex items-center justify-between">
@@ -1123,15 +1317,29 @@ export const SuperAdminDashboard: React.FC = () => {
         <main className="p-6 max-w-7xl w-full mx-auto space-y-6">
           {/* Action callout banner if any business is pending review/unapproved and activeNav is not management */}
           {!activeNav.startsWith('management') && (() => {
-            const pendingBizs = state.businesses.filter(
-              (b) => b.status === 'Pending KYC Review' || b.verification?.kycSubmitted
+            const isBizApproved = (b: any) =>
+              b.status === 'KYC Approved' ||
+              b.status === 'Live' ||
+              (b as any).status === 'Active' ||
+              b.subTab === 'approved' ||
+              b.verification?.status === 'Approved';
+
+            const isBizRejected = (b: any) =>
+              b.status === 'KYC Rejected' ||
+              b.verification?.status === 'Rejected';
+
+            const pendingBizs = (state.businesses || []).filter(
+              (b) =>
+                !isBizApproved(b) &&
+                !isBizRejected(b) &&
+                (b.status === 'Pending KYC Review' ||
+                  b.status === 'Submitted' ||
+                  b.status === 'Under Review' ||
+                  (Boolean(b.verification?.kycSubmitted) && b.verification?.status !== 'Approved'))
             );
-            const unapprovedBizs = state.businesses.filter(
-              (b) => b.status !== 'KYC Approved' && b.status !== 'Live'
-            );
-            const targetBizs = pendingBizs.length > 0 ? pendingBizs : unapprovedBizs;
-            if (targetBizs.length === 0) return null;
-            const firstName = targetBizs[0].coreDetails?.businessName || 'New Business';
+
+            if (pendingBizs.length === 0) return null;
+            const firstName = pendingBizs[0].coreDetails?.businessName || (pendingBizs[0] as any).name || 'New Business';
             return (
               <div className="p-4 rounded-2xl bg-amber-50/90 border border-amber-200/90 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in">
                 <div className="flex items-center gap-3">
@@ -1142,17 +1350,17 @@ export const SuperAdminDashboard: React.FC = () => {
                     <h4 className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
                       <span>KYC Verification Queue</span>
                       <span className="px-2 py-0.2 bg-amber-200/80 text-amber-900 rounded-md font-mono text-[10px]">
-                        {targetBizs.length} waiting
+                        {pendingBizs.length} waiting
                       </span>
                     </h4>
                     <p className="text-[11px] text-amber-800 font-normal mt-0.5">
                       Business awaiting review: <span className="font-bold underline">"{firstName}"</span>
-                      {targetBizs.length > 1 ? ` and ${targetBizs.length - 1} more` : ''}.
+                      {pendingBizs.length > 1 ? ` and ${pendingBizs.length - 1} more` : ''}.
                     </p>
                   </div>
                 </div>
                 <button
-                  onClick={() => setActiveNav('management-all')}
+                  onClick={() => setActiveNav('management-kyc')}
                   className="px-4 py-2 rounded-xl bg-slate-950 hover:bg-slate-800 text-white text-xs font-bold transition-colors cursor-pointer shadow-xs whitespace-nowrap self-start sm:self-auto flex items-center gap-1.5"
                 >
                   <span>Review & Approve Now</span>

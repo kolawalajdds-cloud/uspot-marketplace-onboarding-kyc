@@ -40,11 +40,20 @@ import {
   getSeedCustomerSavedCards,
   getSalonPresetServices,
   getSpaPresetServices,
+  getPresetServicesForBusiness,
   getSeedServiceCategories,
 } from '../data/seedData';
 import { getSeedUsers } from '../data/seedUsers';
 import { calculateLedgerBalances, normalizeTransactionType } from '../utils/ledgerAccounting';
 import { timeToMinutes, minutesToTimeString } from '../utils/serviceBookingUtils';
+import {
+  businessService,
+  bookingService,
+  cardService,
+  reviewService,
+  complianceService,
+  userService,
+} from '../services/api/marketplaceApi';
 
 const LOCAL_STORAGE_KEY = 'uspot_marketplace_demo_v8';
 const PAYMENT_RATE_STORAGE_KEY = 'urspot_superadmin_payment_rate';
@@ -102,11 +111,23 @@ interface DemoContextType {
   unreadNotificationCount: number;
   allNotifications: NotificationItem[];
   // User & Auth
-  loginAsUser: (identifier: string) => void;
+  loginAsUser: (identifier: string, password?: string) => Promise<{ success: boolean; user?: UserProfile; business?: any; error?: string }>;
   logout: () => void;
   setAuthModalOpen: (open: boolean) => void;
   updateUserProfile: (updates: Partial<UserProfile>) => void;
   createUser: (newUser: UserProfile) => void;
+  registerUser: (payload: {
+    accountType: 'personal' | 'business';
+    email: string;
+    password?: string;
+    firstName: string;
+    lastName: string;
+    phone?: string;
+    jobTitle?: string;
+    nickname?: string;
+    username?: string;
+    marketingOptIn?: boolean;
+  }) => Promise<{ user: UserProfile; business?: any }>;
   updateUserById: (userId: string, updates: Partial<UserProfile>) => void;
   deleteUserById: (userId: string) => void;
   toggleUserStatus: (userId: string) => void;
@@ -155,6 +176,7 @@ interface DemoContextType {
   // Lifecycle & Admin
   adminApproveBusiness: (id: string) => void;
   adminRejectBusiness: (id: string, reason: string) => void;
+  adminToggleBusinessStatus: (id: string, active?: boolean) => void;
   publishAndGoLive: (id: string) => void;
   deleteBusinessById: (id: string) => void;
   saveVendorBusiness: (formData: any) => Business;
@@ -178,6 +200,16 @@ interface DemoContextType {
     businessId: string,
     amount?: number
   ) => { success: boolean; error?: string; withdrawal?: WithdrawalRequest };
+  linkVendorBankAccount: (
+    businessId: string,
+    bankData: {
+      bankName: string;
+      accountHolderName: string;
+      routingNumber: string;
+      accountNumber: string;
+      accountType?: 'checking' | 'savings';
+    }
+  ) => { success: boolean; error?: string };
   approveWithdrawal: (
     withdrawalId: string,
     adminUserId?: string
@@ -217,6 +249,9 @@ interface DemoContextType {
     paymentMethod: BookingPaymentMethod;
     paymentMethodDisplay?: string;
     notes?: string;
+    totalAmount?: number;
+    taxAmount?: number;
+    referenceNumber?: string;
   }) => Promise<{ success: boolean; booking: Booking; message: string }>;
   updateBookingStatus: (bookingId: string, status: BookingStatus) => void;
   cancelBooking: (bookingId: string) => void;
@@ -272,46 +307,63 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (stored) {
         const parsed = JSON.parse(stored);
         if (parsed && Array.isArray(parsed.businesses) && parsed.businesses.length > 0) {
-          // Exactly the canonical 5 users: 2 business, 1 customer, 1 staff, 1 super admin
-          const loadedUsers = seedUsers.map((s) => {
-            const match = (parsed.users || []).find((u: UserProfile) => u.id === s.id);
-            if (match) {
-              return {
-                ...s,
-                status: match.status || s.status,
-              };
-            }
-            return s;
-          });
+          // Load all stored users (preserving custom/registered users as well as seeds)
+          const customUsers: UserProfile[] = (parsed.users || []).filter(
+            (u: UserProfile) => !seedUsers.some((s) => s.id === u.id)
+          );
+          const loadedUsers: UserProfile[] = [
+            ...seedUsers.map((s) => {
+              const match = (parsed.users || []).find((u: UserProfile) => u.id === s.id);
+              if (match) {
+                return {
+                  ...s,
+                  status: match.status || s.status,
+                };
+              }
+              return s;
+            }),
+            ...customUsers,
+          ];
 
-          let loadedCurrent: UserProfile | null =
-            parsed.hasExplicitLogin && parsed.currentUser
-              ? seedUsers.find((s) => s.id === parsed.currentUser.id) || null
-              : null;
+          let loadedCurrent: UserProfile | null = null;
+          if (parsed.hasExplicitLogin && parsed.currentUser) {
+            loadedCurrent =
+              loadedUsers.find(
+                (u) =>
+                  u.id === parsed.currentUser.id ||
+                  (u.email && parsed.currentUser.email && u.email.toLowerCase() === parsed.currentUser.email.toLowerCase())
+              ) || parsed.currentUser;
+          }
 
-          // Distinct businesses mapped to canonical seeds with unique owners
-          const loadedBusinesses = seedBusinesses.map((seedBiz) => {
-            const match = (parsed.businesses || []).find((b: Business) => b.id === seedBiz.id);
-            if (match) {
-              return {
-                ...seedBiz,
-                ...match,
-                userId: seedBiz.userId || match.userId,
-                email: seedBiz.email,
-                coreDetails: seedBiz.coreDetails,
-                verification: {
-                  ...seedBiz.verification,
-                  ...(match.verification || {}),
-                  beneficialOwner: seedBiz.verification.beneficialOwner,
-                },
-                nmiPaymentAccount:
-                  seedBiz.id === 'biz-002'
-                    ? seedBiz.nmiPaymentAccount // Apex Creative Studios is always ACTIVE for Devon Lane
-                    : (match.nmiPaymentAccount || seedBiz.nmiPaymentAccount),
-              };
-            }
-            return seedBiz;
-          });
+          // Distinct businesses mapped to canonical seeds with unique owners + any user/vendor-created businesses
+          const customBusinesses: Business[] = (parsed.businesses || [])
+            .filter((b: Business) => !seedBusinesses.some((s) => s.id === b.id));
+
+          const loadedBusinesses = [
+            ...seedBusinesses.map((seedBiz) => {
+              const match = (parsed.businesses || []).find((b: Business) => b.id === seedBiz.id);
+              if (match) {
+                return {
+                  ...seedBiz,
+                  ...match,
+                  userId: seedBiz.userId || match.userId,
+                  email: seedBiz.email,
+                  coreDetails: match.coreDetails || seedBiz.coreDetails,
+                  verification: {
+                    ...seedBiz.verification,
+                    ...(match.verification || {}),
+                    beneficialOwner: match.verification?.beneficialOwner || seedBiz.verification.beneficialOwner,
+                  },
+                  nmiPaymentAccount:
+                    seedBiz.id === 'biz-002'
+                      ? seedBiz.nmiPaymentAccount // Apex Creative Studios is always ACTIVE for Devon Lane
+                      : (match.nmiPaymentAccount || seedBiz.nmiPaymentAccount),
+                };
+              }
+              return seedBiz;
+            }),
+            ...customBusinesses,
+          ];
 
           // Load or initialize platform ledger
           const savedRate = localStorage.getItem(PAYMENT_RATE_STORAGE_KEY);
@@ -341,8 +393,22 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
             businesses: loadedBusinesses,
             users: loadedUsers,
             currentUser: loadedCurrent,
-            activeRole: parsed.activeRole || (loadedCurrent?.role === 'super_admin' ? 'admin' : 'vendor'),
-            activeBusinessId: parsed.activeBusinessId || loadedBusinesses[0]?.id || seedBusinesses[0].id,
+            activeRole:
+              parsed.activeRole ||
+              (loadedCurrent?.role === 'super_admin'
+                ? 'admin'
+                : 'vendor'),
+            activeBusinessId: (() => {
+              if (loadedCurrent) {
+                const userBiz = loadedBusinesses.find(
+                  (b) =>
+                    (b.userId && b.userId === loadedCurrent?.id) ||
+                    (b.email && loadedCurrent?.email && b.email.toLowerCase() === loadedCurrent.email.toLowerCase())
+                );
+                if (userBiz) return userBiz.id;
+              }
+              return parsed.activeBusinessId || loadedBusinesses[0]?.id || seedBusinesses[0].id;
+            })(),
             vendorView: parsed.vendorView || 'list',
             adminView: parsed.adminView || 'queue',
             adminSelectedBusinessId: parsed.adminSelectedBusinessId || null,
@@ -354,9 +420,27 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
               const seedServices = getSeedBusinessServices();
               const storedServices = Array.isArray(parsed.businessServices) ? parsed.businessServices : [];
               const existingServiceIds = new Set(storedServices.map((s: BusinessService) => s.id));
+              const loadedBusinesses = Array.isArray(parsed.businesses) ? parsed.businesses : seedBusinesses;
+
+              // Ensure every existing business has services matching its category
+              const generatedCategoryServices: BusinessService[] = [];
+              loadedBusinesses.forEach((b: Business) => {
+                const hasExisting = storedServices.some((s: BusinessService) => s.business_id === b.id);
+                if (!hasExisting) {
+                  const presets = getPresetServicesForBusiness(b.id, b.coreDetails?.category);
+                  presets.forEach((p) => {
+                    if (!existingServiceIds.has(p.id)) {
+                      generatedCategoryServices.push(p);
+                      existingServiceIds.add(p.id);
+                    }
+                  });
+                }
+              });
+
               return [
                 ...storedServices,
                 ...seedServices.filter((s) => !existingServiceIds.has(s.id)),
+                ...generatedCategoryServices,
               ];
             })(),
             bookings: Array.isArray(parsed.bookings) && parsed.bookings.length > 0
@@ -409,6 +493,87 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [state]);
 
+  // Live Neon PostgreSQL synchronization on mount
+  useEffect(() => {
+    let isMounted = true;
+    async function syncWithNeon() {
+      try {
+        const [bizList, bookingsList, cardsList, usersList] = await Promise.allSettled([
+          businessService.getBusinesses(),
+          bookingService.getBookings(),
+          cardService.getCards('user-customer'),
+          userService.getUsers(),
+        ]);
+
+        if (!isMounted) return;
+
+        setState((prev) => {
+          const next = { ...prev };
+          let changed = false;
+
+          if (usersList.status === 'fulfilled' && Array.isArray(usersList.value) && usersList.value.length > 0) {
+            const dbUsers = usersList.value;
+            const dbUserIds = new Set(dbUsers.map((u) => u.id));
+            const localOnly = prev.users.filter((u) => !dbUserIds.has(u.id));
+            next.users = [...dbUsers, ...localOnly];
+
+            if (prev.currentUser) {
+              const matchedCur = dbUsers.find(
+                (u) =>
+                  u.id === prev.currentUser?.id ||
+                  (u.email && prev.currentUser?.email && u.email.toLowerCase() === prev.currentUser.email.toLowerCase())
+              );
+              if (matchedCur) {
+                next.currentUser = matchedCur;
+              }
+            }
+            changed = true;
+          }
+
+          if (bizList.status === 'fulfilled' && Array.isArray(bizList.value) && bizList.value.length > 0) {
+            next.businesses = bizList.value;
+            const cur = next.currentUser || prev.currentUser;
+            if (cur && cur.role !== 'super_admin' && cur.role !== 'customer') {
+              const userBiz = bizList.value.find(
+                (b) =>
+                  (b.userId && b.userId === cur.id) ||
+                  (b.email && cur.email && b.email.toLowerCase() === cur.email.toLowerCase())
+              );
+              if (userBiz) {
+                next.activeBusinessId = userBiz.id;
+                try {
+                  localStorage.setItem('uspot_vendor_selected_business_id', userBiz.id);
+                } catch (e) {}
+              }
+            }
+            changed = true;
+          }
+
+          if (bookingsList.status === 'fulfilled' && bookingsList.value.length > 0) {
+            const serverBookings = bookingsList.value;
+            const serverIds = new Set(serverBookings.map((b) => b.id));
+            const localOnly = prev.bookings.filter((b) => !serverIds.has(b.id));
+            next.bookings = [...serverBookings, ...localOnly];
+            changed = true;
+          }
+
+          if (cardsList.status === 'fulfilled' && cardsList.value.length > 0) {
+            next.customerSavedCards = cardsList.value;
+            changed = true;
+          }
+
+          return changed ? next : prev;
+        });
+      } catch {
+        // Fall back quietly to local cache
+      }
+    }
+    syncWithNeon();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const activeBusiness = state.businesses.find((b) => b.id === state.activeBusinessId) || null;
   const adminSelectedBusiness =
     state.businesses.find((b) => b.id === state.adminSelectedBusinessId) || null;
@@ -425,71 +590,121 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const unreadNotificationCount = allNotifications.filter((n) => !n.read).length;
 
-  const loginAsUser = (identifier: string) => {
-    setState((prev) => {
-      const lower = identifier.toLowerCase().trim();
+  const loginAsUser = async (
+    identifier: string,
+    password?: string
+  ): Promise<{ success: boolean; user?: UserProfile; business?: any; error?: string }> => {
+    const trimmed = (identifier || '').trim();
+    if (!trimmed) {
+      return { success: false, error: 'Please enter your email or username.' };
+    }
 
-      // 1. Exact ID match first (highest precedence - ensures switching between same-role users works)
-      let matched = prev.users.find((u) => u.id.toLowerCase() === lower);
+    try {
+      // 1. Dynamic authentication via backend API (Neon PostgreSQL)
+      const res = await userService.login(trimmed, password);
+      if (res && res.success && res.user) {
+        const loggedUser: UserProfile = res.user;
+        const loggedBiz = res.business;
 
-      // 2. Exact email match
-      if (!matched) {
-        matched = prev.users.find((u) => u.email.toLowerCase() === lower);
+        setState((prev) => {
+          const updatedUsers = [
+            loggedUser,
+            ...prev.users.filter(
+              (u) => u.id !== loggedUser.id && u.email?.toLowerCase() !== loggedUser.email?.toLowerCase()
+            ),
+          ];
+
+          let updatedBusinesses = prev.businesses;
+          let targetBizId = prev.activeBusinessId;
+
+          if (loggedBiz) {
+            const bizIndex = prev.businesses.findIndex((b) => b.id === loggedBiz.id);
+            if (bizIndex >= 0) {
+              updatedBusinesses = prev.businesses.map((b) => (b.id === loggedBiz.id ? { ...b, ...loggedBiz } : b));
+            } else {
+              updatedBusinesses = [loggedBiz, ...prev.businesses];
+            }
+            targetBizId = loggedBiz.id;
+          } else {
+            const foundBiz = prev.businesses.find(
+              (b) =>
+                (b.userId && b.userId === loggedUser.id) ||
+                (b.email && loggedUser.email && b.email.toLowerCase() === loggedUser.email.toLowerCase())
+            );
+            if (foundBiz) {
+              targetBizId = foundBiz.id;
+            }
+          }
+
+          if (targetBizId) {
+            try {
+              localStorage.setItem('uspot_vendor_selected_business_id', targetBizId);
+            } catch (e) {}
+          }
+
+          const newRole: 'vendor' | 'admin' =
+            loggedUser.role === 'super_admin' || loggedUser.role === 'specialist' ? 'admin' : 'vendor';
+
+          return {
+            ...prev,
+            users: updatedUsers,
+            businesses: updatedBusinesses,
+            currentUser: loggedUser,
+            activeRole: newRole,
+            activeBusinessId: targetBizId,
+            isAuthModalOpen: false,
+            hasExplicitLogin: true,
+          };
+        });
+
+        return { success: true, user: loggedUser, business: loggedBiz };
       }
+    } catch (apiErr) {
+      console.warn('Backend login query failed or unavailable, checking local state:', apiErr);
+    }
 
-      // 3. Exact username match
-      if (!matched) {
-        matched = prev.users.find((u) => u.username.toLowerCase() === lower);
-      }
+    // 2. Fallback to local state if offline or matched locally
+    const lower = trimmed.toLowerCase();
+    const matched = state.users.find(
+      (u) =>
+        u.id.toLowerCase() === lower ||
+        u.email.toLowerCase() === lower ||
+        u.username.toLowerCase() === lower ||
+        u.fullName.toLowerCase() === lower
+    );
 
-      // 4. Exact full name match
-      if (!matched) {
-        matched = prev.users.find((u) => u.fullName.toLowerCase() === lower);
-      }
-
-      // 5. Fallback generic role match
-      if (!matched) {
-        matched = prev.users.find(
-          (u) =>
-            u.role.toLowerCase() === lower ||
-            u.roleLabel.toLowerCase() === lower ||
-            (lower === 'staff' && (u.role === 'specialist' || u.roleLabel.toLowerCase().includes('staff'))) ||
-            (lower === 'admin' && u.role === 'super_admin') ||
-            (lower === 'business' && u.role === 'business') ||
-            (lower === 'customer' && u.role === 'customer')
-        );
-      }
-
-      if (!matched) {
-        matched = prev.users[0];
+    if (matched) {
+      const userBiz = state.businesses.find(
+        (b) =>
+          (b.userId && b.userId === matched.id) ||
+          (b.email && matched.email && b.email.toLowerCase() === matched.email.toLowerCase())
+      );
+      const targetBizId = userBiz?.id || state.activeBusinessId;
+      if (targetBizId) {
+        try {
+          localStorage.setItem('uspot_vendor_selected_business_id', targetBizId);
+        } catch (e) {}
       }
 
       const newRole: 'vendor' | 'admin' =
         matched.role === 'super_admin' || matched.role === 'specialist' ? 'admin' : 'vendor';
 
-      // Automatically identify user business if available
-      let userBiz = prev.businesses.find(
-        (b) => b.email?.toLowerCase() === matched.email?.toLowerCase()
-      );
-      if (!userBiz) {
-        if (matched.id === 'user-business-2' || matched.email.includes('devon')) {
-          userBiz = prev.businesses.find((b) => b.id === 'biz-002');
-        } else if (matched.id === 'user-business' || matched.email.includes('alex')) {
-          userBiz = prev.businesses.find((b) => b.id === 'biz-001');
-        }
-      }
-
-      const targetBizId = userBiz ? userBiz.id : (prev.activeBusinessId || prev.businesses[0]?.id);
-
-      return {
+      setState((prev) => ({
         ...prev,
         currentUser: matched,
         activeRole: newRole,
         activeBusinessId: targetBizId,
         isAuthModalOpen: false,
         hasExplicitLogin: true,
-      };
-    });
+      }));
+
+      return { success: true, user: matched, business: userBiz };
+    }
+
+    return {
+      success: false,
+      error: `Account "${trimmed}" not found. Please verify your credentials or register a new business.`,
+    };
   };
 
   const setActiveBusinessId = (businessId: string) => {
@@ -529,6 +744,268 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
       ...prev,
       users: [newUser, ...prev.users],
     }));
+  };
+
+  const registerUser = async (payload: {
+    accountType: 'personal' | 'business';
+    email: string;
+    password?: string;
+    firstName: string;
+    lastName: string;
+    phone?: string;
+    jobTitle?: string;
+    nickname?: string;
+    username?: string;
+    marketingOptIn?: boolean;
+  }): Promise<{ user: UserProfile; business?: any }> => {
+    try {
+      const res = await userService.register(payload);
+      if (res && res.success && res.user) {
+        const newUser: UserProfile = res.user;
+        const newBusiness = res.business;
+
+        setState((prev) => {
+          const updatedUsers = [newUser, ...prev.users.filter((u) => u.email !== newUser.email)];
+          let updatedBusinesses = prev.businesses;
+          let newActiveBizId = prev.activeBusinessId;
+
+          if (newBusiness) {
+            const fullBiz: Business = {
+              id: newBusiness.id,
+              userId: newUser.id,
+              status: newBusiness.status || 'Draft',
+              business_services: [],
+              email: newBusiness.email,
+              phone: newBusiness.phone,
+              avatarChar: newBusiness.avatarChar || 'B',
+              coreDetails: {
+                businessName: newBusiness.businessName,
+                legalEntityName: newBusiness.legalEntityName,
+                category: newBusiness.category || 'Coworking & Creative Hub',
+                description: newBusiness.description || '',
+                streetAddress: newBusiness.streetAddress || '',
+                city: newBusiness.city || 'San Francisco',
+                state: newBusiness.state || 'CA',
+                zipCode: newBusiness.zipCode || '94105',
+              },
+              operatingHours: DEFAULT_WEEK_HOURS,
+              imageGallery: [],
+              amenities: JSON.parse(JSON.stringify(INITIAL_AMENITIES)),
+              holidaysRules: {
+                holidayClosures: [],
+                businessRules: {
+                  maxCapacity: 50,
+                  petFriendly: false,
+                  ageRequirement: 'All Ages',
+                  byobAllowed: false,
+                },
+              },
+              feesTax: {
+                businessTaxId: '',
+                salesTaxRate: 8.87,
+                taxExempt: false,
+                currency: 'USD',
+                automaticInvoicing: true,
+                serviceFees: [],
+              },
+              verification: {
+                legalEntityType: 'Limited Liability Company (LLC)',
+                einVerification: {
+                  einEntered: '',
+                  tinRaw: '',
+                  tinMasked: '',
+                  tinVerificationStatus: 'not_verified',
+                  tinMatchStatus: 'Not Started',
+                  verifiedAt: null,
+                },
+                entityRegistration: {
+                  documentUploaded: false,
+                  stateRegistryStatus: 'Not Checked',
+                },
+                beneficialOwner: {
+                  fullName: newUser.fullName,
+                  dateOfBirth: '',
+                  ssnLast4: '',
+                  govIdUploaded: false,
+                  selfieUploaded: false,
+                },
+                sanctionsScreening: { status: 'Not Started' },
+                bankAccount: {
+                  accountHolderName: '',
+                  routingNumber: '',
+                  accountNumberMasked: '',
+                  verificationMethod: 'Instant',
+                  verified: false,
+                },
+                riskTier: 'Low',
+                submittedAt: null,
+                reviewedAt: null,
+                reviewedBy: null,
+                rejectionReason: null,
+              },
+              payment: {
+                planSelected: 'Starter',
+                amount: 49,
+                paidAt: new Date().toISOString(),
+              },
+              notifications: [],
+            };
+
+            updatedBusinesses = [fullBiz, ...prev.businesses.filter((b) => b.id !== fullBiz.id)];
+            newActiveBizId = fullBiz.id;
+          }
+
+          if (newActiveBizId) {
+            try {
+              localStorage.setItem('uspot_vendor_selected_business_id', newActiveBizId);
+            } catch (e) {}
+          }
+
+          return {
+            ...prev,
+            users: updatedUsers,
+            businesses: updatedBusinesses,
+            currentUser: newUser,
+            activeRole: newUser.role === 'business' ? 'vendor' : 'admin',
+            activeBusinessId: newActiveBizId,
+            hasExplicitLogin: true,
+            isAuthModalOpen: false,
+          };
+        });
+
+        return res;
+      }
+      throw new Error('Registration did not return a valid user');
+    } catch (err: any) {
+      console.error('Registration API error, applying local fallback:', err);
+      const isBusiness = payload.accountType === 'business';
+      const role = isBusiness ? 'business' : 'customer';
+      const newUserId = `user-${role}-${Date.now()}`;
+      const fullName = `${payload.firstName.trim()} ${payload.lastName.trim()}`;
+      const initials = ((payload.firstName[0] || 'U') + (payload.lastName[0] || '')).toUpperCase();
+      const localUser: UserProfile = {
+        id: newUserId,
+        role,
+        roleLabel: isBusiness ? 'Business' : 'Customer',
+        status: 'active',
+        email: payload.email.trim(),
+        username: payload.username?.trim() || payload.email.split('@')[0],
+        phone: payload.phone?.trim() || '+1 (555) 000-0000',
+        nickname: payload.nickname?.trim() || payload.firstName.trim(),
+        fullName,
+        referralCode: `REF-${Math.floor(1000 + Math.random() * 9000)}`,
+        emailVerified: true,
+        phoneVerified: true,
+        timezone: 'America/New_York',
+        avatarInitials: initials,
+        department: payload.jobTitle?.trim() || (isBusiness ? 'Business Operations' : 'Customer'),
+        memberSince: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+      };
+
+      let localBiz: Business | undefined;
+      if (isBusiness) {
+        const bizId = `biz-${Date.now()}`;
+        localBiz = {
+          id: bizId,
+          userId: localUser.id,
+          status: 'Draft',
+          business_services: [],
+          email: payload.email,
+          phone: payload.phone,
+          avatarChar: payload.firstName[0] || 'B',
+          coreDetails: {
+            businessName: `${fullName}'s Business`,
+            legalEntityName: `${fullName}'s Business LLC`,
+            category: 'Coworking & Creative Hub',
+            description: '',
+            streetAddress: '100 Market St, Suite 400',
+            city: 'San Francisco',
+            state: 'CA',
+            zipCode: '94105',
+          },
+          operatingHours: DEFAULT_WEEK_HOURS,
+          imageGallery: [],
+          amenities: JSON.parse(JSON.stringify(INITIAL_AMENITIES)),
+          holidaysRules: {
+            holidayClosures: [],
+            businessRules: {
+              maxCapacity: 50,
+              petFriendly: false,
+              ageRequirement: 'All Ages',
+              byobAllowed: false,
+            },
+          },
+          feesTax: {
+            businessTaxId: '',
+            salesTaxRate: 8.87,
+            taxExempt: false,
+            currency: 'USD',
+            automaticInvoicing: true,
+            serviceFees: [],
+          },
+          verification: {
+            legalEntityType: 'Limited Liability Company (LLC)',
+            einVerification: {
+              einEntered: '',
+              tinRaw: '',
+              tinMasked: '',
+              tinVerificationStatus: 'not_verified',
+              tinMatchStatus: 'Not Started',
+              verifiedAt: null,
+            },
+            entityRegistration: {
+              documentUploaded: false,
+              stateRegistryStatus: 'Not Checked',
+            },
+            beneficialOwner: {
+              fullName,
+              dateOfBirth: '',
+              ssnLast4: '',
+              govIdUploaded: false,
+              selfieUploaded: false,
+            },
+            sanctionsScreening: { status: 'Not Started' },
+            bankAccount: {
+              accountHolderName: '',
+              routingNumber: '',
+              accountNumberMasked: '',
+              verificationMethod: 'Instant',
+              verified: false,
+            },
+            riskTier: 'Low',
+            submittedAt: null,
+            reviewedAt: null,
+            reviewedBy: null,
+            rejectionReason: null,
+          },
+          payment: {
+            planSelected: 'Starter',
+            amount: 49,
+            paidAt: new Date().toISOString(),
+          },
+          notifications: [],
+        };
+      }
+
+      setState((prev) => ({
+        ...prev,
+        users: [localUser, ...prev.users],
+        businesses: localBiz ? [localBiz, ...prev.businesses] : prev.businesses,
+        currentUser: localUser,
+        activeRole: isBusiness ? 'vendor' : 'customer' as any,
+        activeBusinessId: localBiz ? localBiz.id : prev.activeBusinessId,
+        hasExplicitLogin: true,
+        isAuthModalOpen: false,
+      }));
+
+      if (localBiz) {
+        try {
+          localStorage.setItem('uspot_vendor_selected_business_id', localBiz.id);
+        } catch (e) {}
+      }
+
+      return { user: localUser, business: localBiz };
+    }
   };
 
   const updateUserById = (userId: string, updates: Partial<UserProfile>) => {
@@ -1207,17 +1684,26 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
             ? 'Live'
             : kycComplete
             ? 'Pending KYC Review'
-            : 'Pending Payment';
+            : (b.status === 'Draft' ? 'Draft' : 'Pending Payment');
+
+          // Sync status and payment info with Neon PostgreSQL
+          businessService
+            .updateBusiness(id, {
+              status: nextStatus,
+              subscription: plan,
+              payment: {
+                planSelected: plan,
+                amount,
+                paidAt: now,
+              },
+            })
+            .catch((err) => console.warn('Neon DB payment update failed:', err));
 
           const newNotif: NotificationItem = {
             id: `notif-${Date.now()}`,
             message: isApproved
               ? `🎉 Payment of $${amount} for ${plan} plan confirmed! Your business "${b.coreDetails.businessName}" is now active and Live on the platform.`
-              : `Payment of $${amount} for ${plan} plan successful! ${
-                  kycComplete
-                    ? 'Your application has been forwarded for KYC review.'
-                    : 'Please finish all KYC verification checks to submit for review.'
-                }`,
+              : `Payment of $${amount} for ${plan} plan successful! Your subscription is confirmed and will activate automatically when KYC is approved by Super Admin.`,
             type: 'success',
             read: false,
             timestamp: 'Just now',
@@ -1249,19 +1735,29 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const adminApproveBusiness = (id: string) => {
     updateBusinessInState(id, (b) => {
       const now = new Date().toISOString();
+      const hasPaid = Boolean(b.payment?.paidAt);
+      const targetStatus = hasPaid ? 'Live' : 'KYC Approved';
+
       const newNotif: NotificationItem = {
         id: `notif-${Date.now()}`,
-        message: `🎉 Your business "${b.coreDetails.businessName}" KYC has been approved by the Super Admin! Please choose a subscription plan and complete payment to go live.`,
+        message: hasPaid
+          ? `🎉 Your business "${b.coreDetails.businessName}" KYC has been approved by the Super Admin! Your subscription is active and your business is now Live on the marketplace.`
+          : `🎉 Your business "${b.coreDetails.businessName}" KYC has been approved by the Super Admin! Please choose a subscription plan and complete payment to go live.`,
         type: 'success',
         read: false,
         timestamp: 'Just now',
         businessId: id,
-        actionRequired: 'go_live',
+        actionRequired: hasPaid ? undefined : 'go_live',
       };
+
+      // Sync status change with Neon PostgreSQL
+      businessService
+        .updateBusiness(id, { status: targetStatus })
+        .catch((err) => console.warn('Neon DB admin approve sync failed:', err));
 
       return {
         ...b,
-        status: 'KYC Approved',
+        status: targetStatus,
         subTab: 'approved',
         rejectionReason: null,
         verification: {
@@ -1349,6 +1845,26 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
         ...prev,
         businesses: nextBiz,
         activeBusinessId: nextActiveId,
+      };
+    });
+  };
+
+  const adminToggleBusinessStatus = (id: string, active?: boolean) => {
+    updateBusinessInState(id, (b) => {
+      const isCurrentlyActive = b.status === 'Live' || b.status === 'KYC Approved';
+      const shouldBeActive = active !== undefined ? active : !isCurrentlyActive;
+      const nextStatus: BusinessStatus = shouldBeActive ? 'Live' : 'Draft';
+
+      // Sync status change with Neon PostgreSQL
+      businessService.updateBusiness(id, { status: nextStatus }).catch((err) =>
+        console.warn('Neon DB business status sync failed:', err)
+      );
+
+      return {
+        ...b,
+        status: nextStatus,
+        subTab: shouldBeActive ? 'approved' : 'non-subscription',
+        updated_at: new Date().toISOString(),
       };
     });
   };
@@ -1469,15 +1985,21 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }))
         : formData.imageGallery || existing?.imageGallery || [];
 
-    const computedStatus: BusinessStatus = formData.status
-      ? (formData.status as BusinessStatus)
-      : (formData.kycStatus === 'Verified' || existing?.status === 'KYC Approved' || existing?.status === 'Live')
-      ? (existing?.status === 'Live' ? 'Live' : 'KYC Approved')
-      : (formData.kycStatus === 'Rejected' || existing?.status === 'KYC Rejected')
-      ? 'KYC Rejected'
-      : (formData.kycStatus === 'Pending Review' || kycSub)
-      ? 'Pending KYC Review'
-      : (existing?.status || initialStatus);
+    const computedStatus: BusinessStatus = existing
+      ? (formData.status
+          ? (formData.status as BusinessStatus)
+          : (formData.kycStatus === 'Verified' || existing.status === 'KYC Approved' || existing.status === 'Live')
+          ? (existing.status === 'Live' ? 'Live' : 'KYC Approved')
+          : (formData.kycStatus === 'Rejected' || existing.status === 'KYC Rejected')
+          ? 'KYC Rejected'
+          : (formData.kycStatus === 'Pending Review' || kycSub)
+          ? 'Pending KYC Review'
+          : (existing.status || initialStatus))
+      : (formData.status && formData.status !== 'KYC Approved' && formData.status !== 'Live' && (formData.status as any) !== 'Active'
+          ? (formData.status as BusinessStatus)
+          : kycSub
+          ? 'Pending KYC Review'
+          : 'Draft');
 
     const computedSubTab = formData.subTab
       ? formData.subTab
@@ -1490,8 +2012,13 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
       : (existing?.subTab || 'non-subscription');
 
     if (existing) {
+      const existingBizServices = existing.business_services || [];
+      const hasServices = existingBizServices.length > 0 || state.businessServices.some((s) => s.business_id === businessId);
+      const presetServices = hasServices && existingBizServices.length > 0 ? existingBizServices : getPresetServicesForBusiness(businessId, core.category);
+
       resultBiz = {
         ...existing,
+        business_services: presetServices.length > 0 ? presetServices : existing.business_services,
         userId: existing.userId || state.currentUser?.id,
         coreDetails: core,
         verification,
@@ -1514,14 +2041,23 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signature: verification.signature,
         signatureDate: verification.signatureDate,
       };
-      setState((prev) => ({
-        ...prev,
-        businesses: prev.businesses.map((b) => (b.id === businessId ? resultBiz : b)),
-        activeBusinessId: businessId,
-      }));
+      setState((prev) => {
+        const hasServicesInState = prev.businessServices.some((s) => s.business_id === businessId);
+        const updatedServices = hasServicesInState
+          ? prev.businessServices
+          : [...presetServices, ...prev.businessServices];
+        return {
+          ...prev,
+          businesses: prev.businesses.map((b) => (b.id === businessId ? resultBiz : b)),
+          businessServices: updatedServices,
+          activeBusinessId: businessId,
+        };
+      });
     } else {
+      const presetServices = getPresetServicesForBusiness(businessId, core.category);
       resultBiz = {
         id: businessId,
+        business_services: presetServices,
         userId: state.currentUser?.id,
         email: formData.email || state.currentUser?.email || 'vendor@uspot.com',
         status: computedStatus,
@@ -1574,11 +2110,16 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signature: verification.signature,
         signatureDate: verification.signatureDate,
       };
-      setState((prev) => ({
-        ...prev,
-        businesses: [resultBiz, ...prev.businesses],
-        activeBusinessId: businessId,
-      }));
+      setState((prev) => {
+        const existingIds = new Set(prev.businessServices.map((s) => s.id));
+        const newServices = presetServices.filter((s) => !existingIds.has(s.id));
+        return {
+          ...prev,
+          businesses: [resultBiz, ...prev.businesses],
+          businessServices: [...newServices, ...prev.businessServices],
+          activeBusinessId: businessId,
+        };
+      });
     }
 
     return resultBiz;
@@ -1886,13 +2427,9 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, transaction: null as any, message: 'Target business not found.' };
     }
 
-    // W-9 certification check: if not certified, 24% IRS backup withholding applies
-    const isW9Certified = Boolean(biz.w9 && (biz.w9.status === 'submitted' || biz.w9.status === 'verified'));
+    // 1. Customer Booking Payment via NMI Gateway (received by Main Platform Account)
     const currentCommissionRate = state.platformLedger?.commissionRate ?? 10.0;
-    const platformCommission = Number(((amount * currentCommissionRate) / 100).toFixed(2));
-    const w9WithholdingRate = isW9Certified ? 0 : 24.0;
-    const w9WithholdingAmount = isW9Certified ? 0 : Number(((amount * 24.0) / 100).toFixed(2));
-    const businessAmount = Number((amount - platformCommission - w9WithholdingAmount).toFixed(2));
+    const isW9Certified = Boolean(biz.w9 && (biz.w9.status === 'submitted' || biz.w9.status === 'verified'));
 
     const newTx: MarketplaceTransaction = {
       id: `TX-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 900)}`,
@@ -1905,19 +2442,17 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
       serviceName: serviceName || 'Standard Service Appointment',
       grossAmount: amount,
       commissionRate: currentCommissionRate,
-      platformCommission,
+      platformCommission: 0, // Commission retained at payout time upon Super Admin approval
       w9Submitted: isW9Certified,
-      w9WithholdingRate,
-      w9WithholdingAmount,
-      businessAmount,
+      w9WithholdingRate: 0,
+      w9WithholdingAmount: 0,
+      businessAmount: amount, // Full customer payment credited to vendor balance in Main Account
       currency: 'USD',
       paymentStatus: 'paid',
       withdrawalStatus: 'none',
-      paymentGateway: 'NMI Gateway',
-      maskedBankAccount: biz.verification?.bankAccount?.accountNumberMasked || '•••• •••• 9382',
-      notes: isW9Certified
-        ? 'Payment received via NMI Gateway. Platform commission allocated.'
-        : 'Payment received via NMI Gateway. 24% backup withholding deducted due to missing Form W-9.',
+      paymentGateway: 'NMI Gateway (Main Platform Account)',
+      maskedBankAccount: biz.verification?.bankAccount?.accountNumberMasked || 'Main Platform Vault',
+      notes: `Customer service charge of $${amount.toFixed(2)} received into Main Platform Account. Funds available for vendor payout request.`,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -1930,7 +2465,7 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const newNotif: NotificationItem = {
         id: `notif-${Date.now()}`,
-        message: `💰 Customer paid $${amount.toFixed(2)} via NMI Gateway for "${serviceName}". Internal allocation: $${businessAmount.toFixed(2)} credited to balance${w9WithholdingAmount > 0 ? ` ($${w9WithholdingAmount.toFixed(2)} W-9 backup withholding deducted)` : ''}.`,
+        message: `💰 Customer paid $${amount.toFixed(2)} via Main Account for "${serviceName}". Funds credited to available balance for withdrawal request.`,
         type: 'success',
         read: false,
         timestamp: 'Just now',
@@ -1957,11 +2492,91 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return {
       success: true,
       transaction: newTx,
-      message: `Payment of $${amount.toFixed(2)} processed successfully via NMI Gateway.`,
+      message: `Payment of $${amount.toFixed(2)} processed successfully into Main Platform Account.`,
     };
   };
 
-  // 2. Business Withdrawal Request
+  // 1.5. Link Vendor Bank Account
+  const linkVendorBankAccount = (
+    businessId: string,
+    bankData: {
+      bankName: string;
+      accountHolderName: string;
+      routingNumber: string;
+      accountNumber: string;
+      accountType?: 'checking' | 'savings';
+    }
+  ): { success: boolean; error?: string } => {
+    const cleanRouting = (bankData.routingNumber || '').trim().replace(/\D/g, '');
+    const cleanAccount = (bankData.accountNumber || '').trim().replace(/\D/g, '');
+
+    if (cleanRouting.length !== 9) {
+      return { success: false, error: 'Routing number must be exactly 9 digits.' };
+    }
+    if (cleanAccount.length < 4) {
+      return { success: false, error: 'Account number must be at least 4 digits.' };
+    }
+    if (!bankData.accountHolderName.trim()) {
+      return { success: false, error: 'Account holder name is required.' };
+    }
+
+    const last4 = cleanAccount.slice(-4);
+    const masked = `•••• •••• ${last4}`;
+    const now = new Date().toISOString();
+
+    const newNotif: NotificationItem = {
+      id: `notif-${Date.now()}`,
+      message: `✓ Commercial bank account linked: ${bankData.bankName || 'Bank'} (${masked}). You can now request payouts to this account.`,
+      type: 'success',
+      read: false,
+      timestamp: 'Just now',
+      businessId,
+    };
+
+    setState((prev) => ({
+      ...prev,
+      businesses: prev.businesses.map((b) => {
+        if (b.id !== businessId) return b;
+        return {
+          ...b,
+          verification: {
+            ...b.verification,
+            bankAccount: {
+              accountHolderName: bankData.accountHolderName.trim(),
+              routingNumber: cleanRouting,
+              accountNumber: cleanAccount,
+              accountNumberMasked: masked,
+              bankName: bankData.bankName.trim() || 'Commercial Bank',
+              accountType: bankData.accountType || 'checking',
+              verificationMethod: 'Instant',
+              verified: true,
+              linkedAt: now,
+            },
+          },
+          nmiPaymentAccount: {
+            vendorId: b.id,
+            nmiOnboardingStatus: 'ACTIVE',
+            nmiGatewayId: b.nmiPaymentAccount?.nmiGatewayId || `NMI-${Math.floor(10000000 + Math.random() * 90000000)}`,
+            companyName: bankData.accountHolderName.trim(),
+            federalTaxId: b.verification?.einVerification?.einEntered || '12-3456789',
+            firstName: bankData.accountHolderName.split(' ')[0] || 'Merchant',
+            lastName: bankData.accountHolderName.split(' ').slice(1).join(' ') || 'Account',
+            email: b.email || 'merchant@uspot.com',
+            bankRoutingNumber: cleanRouting,
+            bankAccountNumber: cleanAccount,
+            accountType: bankData.accountType || 'checking',
+            accountHolderType: 'business',
+            activatedAt: now,
+          },
+          notifications: [newNotif, ...(b.notifications || [])],
+        };
+      }),
+    }));
+
+    return { success: true };
+  };
+
+  // 2. Business Withdrawal / Payout Request
   const requestBusinessWithdrawal = (
     businessId: string,
     requestedAmount?: number
@@ -1988,23 +2603,39 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
     }
 
-    // Mandatory NMI Payment Account Verification Gate
-    if (!biz.nmiPaymentAccount || biz.nmiPaymentAccount.nmiOnboardingStatus !== 'ACTIVE') {
+    // Step 1: Pre-requisite Check - Is Bank Account Linked?
+    const bankAcc = biz.verification?.bankAccount;
+    const isBankLinked = Boolean(
+      (bankAcc?.routingNumber && (bankAcc?.accountNumberMasked || bankAcc?.accountNumber)) ||
+      (biz.nmiPaymentAccount?.bankRoutingNumber && biz.nmiPaymentAccount?.bankAccountNumber)
+    );
+
+    if (!isBankLinked) {
       return {
         success: false,
-        error: 'Payment Account Setup Required: To withdraw funds, please complete your payment account setup.',
+        error: 'BANK_NOT_LINKED',
       };
     }
 
     const maskedBank =
-      biz.nmiPaymentAccount.bankAccountNumber
-        ? `•••• •••• ${biz.nmiPaymentAccount.bankAccountNumber.slice(-4)}`
-        : biz.verification?.bankAccount?.accountNumberMasked || '•••• •••• 9382';
+      bankAcc?.accountNumberMasked ||
+      (biz.nmiPaymentAccount?.bankAccountNumber ? `•••• •••• ${biz.nmiPaymentAccount.bankAccountNumber.slice(-4)}` : '•••• •••• 9382');
     const bankHolder =
-      biz.verification?.bankAccount?.accountHolderName ||
-      biz.nmiPaymentAccount.companyName ||
+      bankAcc?.accountHolderName ||
+      biz.nmiPaymentAccount?.companyName ||
       biz.coreDetails.legalEntityName ||
       biz.coreDetails.businessName;
+    const bankName = bankAcc?.bankName || 'Linked Commercial Bank';
+
+    // Step 2: Form W-9 Verification & Tax Deductions
+    // If W-9 is NOT filled: 24% backup withholding + platform commission
+    // If W-9 IS filled: only platform commission is charged
+    const isW9Certified = Boolean(biz.w9 && (biz.w9.status === 'submitted' || biz.w9.status === 'verified'));
+    const currentCommissionRate = state.platformLedger?.commissionRate ?? 10.0;
+    const commissionAmount = Number(((amount * currentCommissionRate) / 100).toFixed(2));
+    const w9WithholdingRate = isW9Certified ? 0 : 24.0;
+    const w9WithholdingAmount = isW9Certified ? 0 : Number(((amount * 24.0) / 100).toFixed(2));
+    const netPayoutAmount = Number((amount - commissionAmount - w9WithholdingAmount).toFixed(2));
 
     const newWithdrawalId = `WD-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 900)}`;
 
@@ -2015,9 +2646,16 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
       businessName: biz.coreDetails.businessName,
       requestedByUserId: state.currentUser?.id || 'user-business',
       requestedByUserName: state.currentUser?.fullName || biz.coreDetails.businessName,
-      amount,
+      amount, // Gross requested amount
+      commissionRate: currentCommissionRate,
+      commissionAmount,
+      w9Status: isW9Certified ? 'verified' : 'unfiled',
+      w9WithholdingRate,
+      w9WithholdingAmount,
+      netPayoutAmount,
       maskedBankAccount: maskedBank,
       bankAccountHolder: bankHolder,
+      bankName,
       status: 'Pending',
       requestDate: new Date().toISOString(),
     };
@@ -2029,20 +2667,22 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
       customerName: 'Platform Settlement',
       businessId: biz.id,
       businessName: biz.coreDetails.businessName,
-      serviceName: `Payout to Bank (${maskedBank})`,
+      serviceName: `Payout to ${bankName} (${maskedBank})`,
       grossAmount: amount,
-      commissionRate: 0,
-      platformCommission: 0,
-      w9Submitted: Boolean(biz.w9 && (biz.w9.status === 'submitted' || biz.w9.status === 'verified')),
-      w9WithholdingRate: 0,
-      w9WithholdingAmount: 0,
-      businessAmount: amount,
+      commissionRate: currentCommissionRate,
+      platformCommission: commissionAmount,
+      w9Submitted: isW9Certified,
+      w9WithholdingRate,
+      w9WithholdingAmount,
+      businessAmount: netPayoutAmount,
       currency: 'USD',
       paymentStatus: 'pending',
       withdrawalStatus: 'pending',
       paymentGateway: 'ACH / Direct Deposit',
       maskedBankAccount: maskedBank,
-      notes: `Withdrawal request submitted by business owner. Pending Super Admin approval.`,
+      notes: isW9Certified
+        ? `Payout request submitted. Form W-9 verified: 0% tax withheld. Fixed ${currentCommissionRate}% commission will be deducted upon Super Admin approval.`
+        : `Payout request submitted. Form W-9 missing: 24% backup withholding tax ($${w9WithholdingAmount.toFixed(2)}) + ${currentCommissionRate}% commission will be deducted upon Super Admin approval.`,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -2055,7 +2695,7 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const newNotif: NotificationItem = {
         id: `notif-${Date.now()}`,
-        message: `Withdrawal request for $${amount.toFixed(2)} submitted to ${maskedBank}. Status: Pending review.`,
+        message: `Withdrawal request for $${amount.toFixed(2)} submitted to ${maskedBank}. ${isW9Certified ? 'W-9 certified (0% tax).' : 'W-9 missing (24% backup withholding applies).'} Status: Pending Super Admin approval.`,
         type: 'info',
         read: false,
         timestamp: 'Just now',
@@ -2126,6 +2766,19 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const newBalances = calculateLedgerBalances(updatedTransactions, updatedWithdrawals);
 
+      const netAmount = withdrawal.netPayoutAmount !== undefined ? withdrawal.netPayoutAmount : withdrawal.amount;
+      const taxAmount = withdrawal.w9WithholdingAmount || 0;
+      const commAmount = withdrawal.commissionAmount || 0;
+
+      const newNotif: NotificationItem = {
+        id: `notif-${Date.now()}`,
+        message: `✓ Super Admin approved your payout of $${withdrawal.amount.toFixed(2)}! Transferred: $${netAmount.toFixed(2)} to ${withdrawal.maskedBankAccount}${commAmount > 0 ? ` ($${commAmount.toFixed(2)} commission deducted)` : ''}${taxAmount > 0 ? ` ($${taxAmount.toFixed(2)} 24% tax withheld - W9 missing)` : ''}.`,
+        type: 'success',
+        read: false,
+        timestamp: 'Just now',
+        businessId: withdrawal.businessId,
+      };
+
       return {
         ...prev,
         platformLedger: {
@@ -2137,6 +2790,11 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
           withdrawals: updatedWithdrawals,
           transactions: updatedTransactions,
         },
+        businesses: prev.businesses.map((b) =>
+          b.id === withdrawal.businessId
+            ? { ...b, notifications: [newNotif, ...(b.notifications || [])] }
+            : b
+        ),
       };
     });
 
@@ -2494,6 +3152,9 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
     paymentMethod: BookingPaymentMethod;
     paymentMethodDisplay?: string;
     notes?: string;
+    totalAmount?: number;
+    taxAmount?: number;
+    referenceNumber?: string;
   }): Promise<{ success: boolean; booking: Booking; message: string }> => {
     const {
       customerId,
@@ -2507,18 +3168,37 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
       paymentMethod,
       paymentMethodDisplay,
       notes,
+      totalAmount: paramTotalAmount,
+      taxAmount: paramTaxAmount,
+      referenceNumber: paramReferenceNumber,
     } = params;
 
     const targetBiz = state.businesses.find((b) => b.id === businessId) || state.businesses[0];
+    const presetServices = getPresetServicesForBusiness(targetBiz.id, targetBiz.coreDetails?.category);
     const catalogServices = [
       ...state.businessServices,
       ...(targetBiz.business_services || []),
+      ...presetServices,
       ...getSalonPresetServices(targetBiz.id),
+      ...getSpaPresetServices(targetBiz.id),
       ...getSeedBusinessServices(),
     ];
-    const bizServices = selectedServiceIds
+
+    let effectiveServiceIds = (selectedServiceIds || []).filter(Boolean);
+    if (effectiveServiceIds.length === 0) {
+      const bizFirst = catalogServices.find((s) => s.business_id === targetBiz.id) || presetServices[0];
+      if (bizFirst) {
+        effectiveServiceIds = [bizFirst.id];
+      }
+    }
+
+    let bizServices = effectiveServiceIds
       .map((id) => catalogServices.find((s) => s.id === id))
       .filter((s): s is BusinessService => Boolean(s));
+
+    if (bizServices.length === 0 && presetServices.length > 0) {
+      bizServices = [presetServices[0]];
+    }
 
     if (bizServices.length === 0) {
       throw new Error('At least one service must be selected.');
@@ -2548,13 +3228,16 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     const totalDuration = items.reduce((sum, item) => sum + item.duration_minutes, 0);
-    const totalAmount = Number(items.reduce((sum, item) => sum + item.price_charged, 0).toFixed(2));
+    const calculatedItemsTotal = Number(items.reduce((sum, item) => sum + item.price_charged, 0).toFixed(2));
+    const totalAmount = paramTotalAmount !== undefined ? Number(paramTotalAmount.toFixed(2)) : calculatedItemsTotal;
+    const taxAmount = paramTaxAmount !== undefined ? Number(paramTaxAmount.toFixed(2)) : 0;
     const endTime = minutesToTimeString(startMins + totalDuration);
 
     const isPaidOnline = paymentMethod === 'credit_card';
 
     const newBooking: Booking = {
       id: bookingId,
+      reference_number: paramReferenceNumber || `#UR-${bookingId.slice(-5)}`,
       customer_id: customerId || state.currentUser?.id || 'user-customer',
       customer_name: customerName || state.currentUser?.fullName || 'Valued Customer',
       customer_email: customerEmail || state.currentUser?.email || 'customer@uspot.com',
@@ -2564,6 +3247,7 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
       total_amount: totalAmount,
       total_price: totalAmount,
       discount_amount: 0,
+      tax_amount: taxAmount,
       net_amount: totalAmount,
       status: 'confirmed',
       payment_status: isPaidOnline ? 'paid' : 'unpaid',
@@ -2600,18 +3284,52 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
       businessId: targetBiz.id,
     };
 
-    setState((prev) => ({
-      ...prev,
-      bookings: [newBooking, ...prev.bookings],
-      businesses: prev.businesses.map((b) =>
-        b.id === targetBiz.id
-          ? {
-              ...b,
-              notifications: [newNotif, ...(b.notifications || [])],
-            }
-          : b
-      ),
-    }));
+    setState((prev) => {
+      const hasServicesInState = prev.businessServices.some((s) => s.business_id === targetBiz.id);
+      const updatedBusinessServices = hasServicesInState
+        ? prev.businessServices
+        : [...presetServices, ...prev.businessServices];
+
+      return {
+        ...prev,
+        businessServices: updatedBusinessServices,
+        bookings: [newBooking, ...prev.bookings],
+        businesses: prev.businesses.map((b) =>
+          b.id === targetBiz.id
+            ? {
+                ...b,
+                business_services: b.business_services && b.business_services.length > 0 ? b.business_services : presetServices,
+                notifications: [newNotif, ...(b.notifications || [])],
+              }
+            : b
+        ),
+      };
+    });
+
+    // Sync with Neon database in background
+    bookingService.createBooking({
+      customerId: newBooking.customer_id,
+      customerName: newBooking.customer_name,
+      customerEmail: newBooking.customer_email,
+      customerPhone: newBooking.customer_phone,
+      businessId: targetBiz.id,
+      items,
+      dateStr,
+      startTime,
+      paymentMethod,
+      paymentMethodDisplay,
+      totalAmount,
+      taxAmount,
+      referenceNumber: newBooking.reference_number,
+      notes,
+    }).then((res) => {
+      if (res?.booking) {
+        setState((prev) => ({
+          ...prev,
+          bookings: prev.bookings.map((b) => (b.id === bookingId ? { ...b, ...res.booking } : b)),
+        }));
+      }
+    }).catch((e) => console.warn('Neon DB booking sync failed:', e));
 
     return {
       success: true,
@@ -2621,6 +3339,7 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const updateBookingStatus = (bookingId: string, status: BookingStatus) => {
+    bookingService.updateStatus(bookingId, status).catch((e) => console.warn('Neon DB status sync failed:', e));
     setState((prev) => ({
       ...prev,
       bookings: prev.bookings.map((b) => (b.id === bookingId ? { ...b, status } : b)),
@@ -2628,6 +3347,7 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const cancelBooking = (bookingId: string) => {
+    bookingService.updateStatus(bookingId, 'cancelled').catch((e) => console.warn('Neon DB cancel sync failed:', e));
     setState((prev) => ({
       ...prev,
       bookings: prev.bookings.map((b) =>
@@ -2698,6 +3418,17 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
         response_deadline: 'Response needed within 24 hours to maintain "Fast Responder" badge.',
       };
 
+      reviewService.addReview({
+        businessId: targetBooking?.business_id || 'biz-001',
+        bookingId,
+        serviceId,
+        serviceName: reviewData.service_name,
+        customerName: targetBooking?.customer_name || 'Alex Taylor',
+        rating: reviewData.rating,
+        reviewText: reviewData.review_text,
+        media: reviewData.media || [],
+      }).catch((e) => console.warn('Neon DB review sync failed:', e));
+
       return {
         ...prev,
         bookings: updatedBookings,
@@ -2707,6 +3438,7 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const addVendorReviewReply = (reviewId: string, replyText: string) => {
+    reviewService.replyToReview(reviewId, replyText).catch((e) => console.warn('Neon DB review reply sync failed:', e));
     setState((prev) => ({
       ...prev,
       businessReviews: (prev.businessReviews || []).map((r) =>
@@ -2727,6 +3459,7 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const addCustomerSavedCard = (cardData: Omit<CustomerSavedCard, 'id' | 'created_at'>) => {
+    cardService.addCard(cardData).catch((e) => console.warn('Neon DB card add sync failed:', e));
     setState((prev) => {
       const newCard: CustomerSavedCard = {
         ...cardData,
@@ -2745,6 +3478,7 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const removeCustomerSavedCard = (cardId: string) => {
+    cardService.removeCard(cardId).catch((e) => console.warn('Neon DB card remove sync failed:', e));
     setState((prev) => {
       const remaining = (prev.customerSavedCards || []).filter((c) => c.id !== cardId);
       if (remaining.length > 0 && !remaining.some((c) => c.is_default)) {
@@ -2758,6 +3492,7 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const setDefaultCustomerSavedCard = (cardId: string) => {
+    cardService.setDefaultCard(cardId, 'user-customer').catch((e) => console.warn('Neon DB card default sync failed:', e));
     setState((prev) => ({
       ...prev,
       customerSavedCards: (prev.customerSavedCards || []).map((c) => ({
@@ -2768,6 +3503,7 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const rescheduleBooking = (bookingId: string, newDate: string, newStartTime: string) => {
+    bookingService.reschedule(bookingId, newDate, newStartTime).catch((e) => console.warn('Neon DB reschedule sync failed:', e));
     setState((prev) => {
       const updatedBookings = prev.bookings.map((b) => {
         if (b.id !== bookingId) return b;
@@ -2799,6 +3535,7 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setAuthModalOpen,
         updateUserProfile,
         createUser,
+        registerUser,
         updateUserById,
         deleteUserById,
         toggleUserStatus,
@@ -2837,6 +3574,7 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
         processPayment,
         adminApproveBusiness,
         adminRejectBusiness,
+        adminToggleBusinessStatus,
         publishAndGoLive,
         deleteBusinessById,
         saveVendorBusiness,
@@ -2845,6 +3583,7 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
         resetW9Data,
         saveNmiPaymentAccount,
         getNmiPaymentAccount,
+        linkVendorBankAccount,
         // Marketplace Ledger, Balances & Withdrawals
         platformLedger: state.platformLedger || DEFAULT_LEDGER_STATE,
         getBusinessBalance,

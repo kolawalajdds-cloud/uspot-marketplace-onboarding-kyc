@@ -214,6 +214,10 @@ export interface VerificationData {
     verificationFailed?: boolean;
     voidedCheckUploaded?: boolean;
     voidedCheckFileName?: string;
+    bankName?: string;
+    accountType?: 'checking' | 'savings';
+    accountNumber?: string;
+    linkedAt?: string;
   };
   riskTier: RiskTier;
   submittedAt: string | null;
@@ -455,9 +459,16 @@ export interface WithdrawalRequest {
   businessName: string;
   requestedByUserId: string;
   requestedByUserName: string;
-  amount: number;
+  amount: number; // Gross requested payout
+  commissionRate?: number; // Super Admin fixed commission %
+  commissionAmount?: number; // Commission deducted by Super Admin
+  w9Status?: 'verified' | 'unfiled' | 'submitted';
+  w9WithholdingRate?: number; // 24 if unfiled, 0 if verified
+  w9WithholdingAmount?: number; // 24% tax deducted if unfiled
+  netPayoutAmount?: number; // Final net amount transferred to vendor's bank
   maskedBankAccount: string;
   bankAccountHolder: string;
+  bankName?: string;
   status: 'Pending' | 'Processing' | 'Completed' | 'Rejected';
   requestDate: string;
   processedDate?: string;
@@ -520,10 +531,12 @@ export interface BusinessService {
   service_category_id: string;
   category_name: string;
   name: string;
+  description?: string;
   photo_url?: string; // Primary thumbnail / display image
   thumbnail_url?: string; // Explicit thumbnail image (1 image allowed)
   gallery_photos?: string[]; // Showcase gallery images (up to 10 images)
   base_price: number;
+  pricing_type?: 'fixed' | 'time_based';
   hourly_rate?: number;
   min_billing_duration_minutes?: number;
   rounding_rule?: string;

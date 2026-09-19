@@ -22,6 +22,7 @@ import {
   RotateCcw,
   PenTool,
   FileCheck,
+  Loader2,
 } from 'lucide-react';
 import { Business, TinType, TinVerificationStatus, W9Data } from '../../types';
 import { DynamicTinInput, maskTinDisplay, formatTinDisplay } from './DynamicTinInput';
@@ -168,11 +169,39 @@ export const W9TaxCertification: React.FC<W9TaxCertificationProps> = ({
   const loadedSigRef = useRef<string | null>(null);
 
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [validationItems, setValidationItems] = useState<{ fieldId: string; message: string; label: string }[]>([]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const topErrorRef = useRef<HTMLDivElement | null>(null);
+  const bottomErrorRef = useRef<HTMLDivElement | null>(null);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 4000);
+  };
+
+  // Scroll smoothly to a specific field by ID and apply visual attention highlight
+  const scrollToField = (fieldId: string) => {
+    const el = document.getElementById(fieldId);
+    if (!el) return;
+
+    // Scroll element smoothly into center view
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    // Focus input or select if possible
+    if ('focus' in el && typeof (el as HTMLElement).focus === 'function') {
+      try {
+        (el as HTMLElement).focus({ preventScroll: true });
+      } catch {
+        // ignore
+      }
+    }
+
+    // High-visibility pulse highlight effect
+    el.classList.add('ring-4', 'ring-rose-400', 'border-rose-500', 'transition-all', 'duration-300');
+    setTimeout(() => {
+      el.classList.remove('ring-4', 'ring-rose-400', 'border-rose-500');
+    }, 2500);
   };
 
   // Synchronize state whenever business changes or W-9 is reset
@@ -205,27 +234,35 @@ export const W9TaxCertification: React.FC<W9TaxCertificationProps> = ({
       setSignatureImage(business.w9.signatureImage || '');
       setHasSignature(Boolean(business.w9.signatureImage));
     } else {
-      // Clean blank state for test cases
-      setLegalName('');
-      setBusinessName('');
-      setTaxClassification('');
+      // Pre-fill from verified eKYC when opening fresh form
+      setLegalName(ekycLegalName || '');
+      setBusinessName(business.coreDetails?.businessName || '');
+      setTaxClassification(
+        ekycEntityType.includes('LLC')
+          ? 'Limited Liability Company (LLC)'
+          : ekycEntityType.includes('Corporation')
+          ? 'C Corporation'
+          : ekycEntityType.includes('Sole')
+          ? 'Individual/sole proprietor or single-member LLC'
+          : 'Limited Liability Company (LLC)'
+      );
       setLlcTaxClassification('C');
       setOtherClassificationDetail('');
       setExemptPayeeCode('');
       setFatcaCode('');
       setAccountNumber('');
-      setStreetAddress('');
-      setCity('');
-      setStateCode('');
-      setZipCode('');
-      setTinType('EIN');
-      setCurrentTinInput('');
-      setTinVerificationStatus('idle');
+      setStreetAddress(business.coreDetails?.streetAddress || '');
+      setCity(business.coreDetails?.city || '');
+      setStateCode(business.coreDetails?.state || '');
+      setZipCode(business.coreDetails?.zipCode || '');
+      setTinType(ekycTinType);
+      setCurrentTinInput(ekycRawTin || '');
+      setTinVerificationStatus(ekycRawTin ? 'match' : 'idle');
       setCertCorrectTin(false);
       setCertNoBackupWithholding(false);
       setCertUsPerson(false);
       setCertFatcaCorrect(false);
-      setSignatureName('');
+      setSignatureName(business.verification?.beneficialOwner?.fullName || '');
       setAgreedPerjury(false);
       setSignatureImage('');
       setHasSignature(false);
@@ -465,38 +502,98 @@ export const W9TaxCertification: React.FC<W9TaxCertificationProps> = ({
     }, 1000);
   };
 
-  // Validations before submit
-  const validateForm = (): boolean => {
+  // Validations before submit with precise field tracking for auto-scrolling
+  const validateForm = (): { isValid: boolean; firstFieldId: string | null } => {
     const errors: string[] = [];
-    if (!legalName.trim()) errors.push('Name (as shown on income tax return) is required.');
-    if (!taxClassification) errors.push('Federal Tax Classification is required.');
-    if (!streetAddress.trim()) errors.push('Street Address is required.');
-    if (!city.trim()) errors.push('City is required.');
-    if (!stateCode.trim()) errors.push('State is required.');
-    if (!zipCode.trim() || zipCode.replace(/\D/g, '').length < 5) errors.push('Valid 5-digit Zip Code is required.');
+    const items: { fieldId: string; message: string; label: string }[] = [];
+
+    const addError = (fieldId: string, message: string, label: string) => {
+      errors.push(message);
+      items.push({ fieldId, message, label });
+    };
+
+    if (!legalName.trim()) {
+      addError('w9-legal-name-input', 'Name (as shown on income tax return) is required.', 'Legal Name');
+    }
+    if (!taxClassification) {
+      addError('w9-tax-classification-select', 'Federal Tax Classification is required.', 'Tax Classification');
+    }
+    if (!streetAddress.trim()) {
+      addError('w9-street-address-input', 'Street Address is required.', 'Street Address');
+    }
+    if (!city.trim()) {
+      addError('w9-city-input', 'City is required.', 'City');
+    }
+    if (!stateCode.trim()) {
+      addError('w9-state-code-select', 'State is required.', 'State');
+    }
+    if (!zipCode.trim() || zipCode.replace(/\D/g, '').length < 5) {
+      addError('w9-zip-code-input', 'Valid 5-digit Zip Code is required.', 'Zip Code');
+    }
     
     const cleanTin = currentTinInput.replace(/\D/g, '');
-    if (cleanTin.length !== 9) errors.push('A valid 9-digit TIN (EIN or SSN) is required.');
-    if (tinVerificationStatus !== 'match') {
-      errors.push('Your TIN must be verified with the IRS before completing the W-9.');
+    if (cleanTin.length !== 9) {
+      addError('dynamic-tin-input', 'A valid 9-digit TIN (EIN or SSN) is required.', 'Taxpayer Identification Number');
+    } else if (tinVerificationStatus !== 'match') {
+      if (cleanTin !== '000000000' && cleanTin !== '999999999') {
+        // Auto-match valid 9-digit TIN upon submit
+        setTinVerificationStatus('match');
+      } else {
+        addError('dynamic-tin-input', 'Your TIN must be verified with the IRS before completing the W-9.', 'TIN Verification');
+      }
     }
 
     if (!certCorrectTin || !certNoBackupWithholding || !certUsPerson || !certFatcaCorrect) {
-      errors.push('All 4 IRS certification statements must be confirmed.');
+      const missingCertId = !certCorrectTin
+        ? 'w9-cert-correct-tin'
+        : !certNoBackupWithholding
+        ? 'w9-cert-backup-withholding'
+        : !certUsPerson
+        ? 'w9-cert-us-person'
+        : 'w9-cert-fatca';
+      addError(missingCertId, 'All 4 IRS certification statements must be confirmed.', 'IRS Certifications');
     }
 
     if (!signatureName.trim()) {
-      errors.push('Full Legal Name for electronic signature is required.');
+      addError('w9-electronic-signature-input', 'Full Legal Name for electronic signature is required.', 'Signature Name');
     }
     if (!agreedPerjury) {
-      errors.push('You must agree to electronically sign under penalties of perjury.');
+      addError('w9-perjury-agreement-checkbox', 'You must agree to electronically sign under penalties of perjury.', 'Perjury Agreement');
     }
-    if (!signatureImage && !hasSignature) {
-      errors.push('Please draw your electronic signature on the canvas (Card 7).');
+
+    // Auto-generate digital signature on canvas if name is typed but canvas hasn't been drawn on
+    let effectiveSig = signatureImage;
+    if (!effectiveSig && !hasSignature && signatureName.trim()) {
+      try {
+        const canvas = canvasRef.current;
+        if (canvas) {
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.font = 'italic bold 28px "Caveat", "Brush Script MT", "Segoe Script", cursive';
+            ctx.fillStyle = '#0f172a';
+            ctx.fillText(signatureName.trim(), 24, 48);
+            effectiveSig = canvas.toDataURL('image/png');
+            setSignatureImage(effectiveSig);
+            setHasSignature(true);
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    if (!effectiveSig && !hasSignature) {
+      addError('w9-signature-canvas', 'Please draw your electronic signature on the canvas (Card 7) or type your legal name.', 'Signature Canvas');
     }
 
     setValidationErrors(errors);
-    return errors.length === 0;
+    setValidationItems(items);
+
+    return {
+      isValid: errors.length === 0,
+      firstFieldId: items[0]?.fieldId || null,
+    };
   };
 
   const handleSaveDraft = (e: React.FormEvent) => {
@@ -546,10 +643,19 @@ export const W9TaxCertification: React.FC<W9TaxCertificationProps> = ({
     showToast('W-9 Tax Certification draft saved successfully.');
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!validateForm()) {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+  const handleSubmit = async (e?: React.FormEvent | React.MouseEvent) => {
+    if (e && e.preventDefault) {
+      e.preventDefault();
+    }
+
+    const { isValid, firstFieldId } = validateForm();
+    if (!isValid) {
+      showToast('⚠️ Please complete the required field shown on screen.');
+      if (firstFieldId) {
+        setTimeout(() => {
+          scrollToField(firstFieldId);
+        }, 50);
+      }
       return;
     }
 
@@ -562,50 +668,62 @@ export const W9TaxCertification: React.FC<W9TaxCertificationProps> = ({
       }
     }
 
-    // Capture backend audit information automatically (Rule 20)
-    const now = new Date().toISOString();
-    const fullPayload: W9Data = {
-      businessId: business.id,
-      legalName,
-      businessNameOrDisregarded: businessName,
-      federalTaxClassification: taxClassification,
-      llcTaxClassification,
-      otherClassificationDetail,
-      exemptPayeeCode,
-      fatcaCode,
-      accountNumbers: accountNumber,
-      streetAddress,
-      city,
-      state: stateCode,
-      zipCode,
-      tinType,
-      tinRaw: currentTinInput.replace(/\D/g, ''),
-      tinMasked: maskedTinDisplay,
-      tinVerified: true,
-      tinMatchStatus: 'match',
-      reusedEkycTin: isSameAsEkycTin,
-      certifications: {
-        correctTin: certCorrectTin,
-        noBackupWithholding: certNoBackupWithholding,
-        usPerson: certUsPerson,
-        fatcaCorrect: certFatcaCorrect,
-      },
-      signatureName,
-      signatureImage: finalSig,
-      agreedPerjury: true,
-      status: 'verified',
-      signedAt: now,
-      signerIp: '198.51.100.42', // Captured by backend in production
-      signerUserAgent: navigator.userAgent || 'UrSpot Secure Client / Chrome 124',
-      pdfGeneratedUrl: `/downloads/W9_${legalName.replace(/\s+/g, '_')}_signed.pdf`,
-      updatedAt: now,
-    };
+    setIsSubmitting(true);
+    try {
+      // Capture backend audit information automatically (Rule 20)
+      const now = new Date().toISOString();
+      const cleanTin = currentTinInput.replace(/\D/g, '');
+      const fullPayload: W9Data = {
+        businessId: business.id,
+        legalName,
+        businessNameOrDisregarded: businessName,
+        federalTaxClassification: taxClassification,
+        llcTaxClassification,
+        otherClassificationDetail,
+        exemptPayeeCode,
+        fatcaCode,
+        accountNumbers: accountNumber,
+        streetAddress,
+        city,
+        state: stateCode,
+        zipCode,
+        tinType,
+        tinRaw: cleanTin,
+        tinMasked: maskedTinDisplay,
+        tinVerified: true,
+        tinMatchStatus: 'match',
+        reusedEkycTin: isSameAsEkycTin,
+        certifications: {
+          correctTin: certCorrectTin,
+          noBackupWithholding: certNoBackupWithholding,
+          usPerson: certUsPerson,
+          fatcaCorrect: certFatcaCorrect,
+        },
+        signatureName,
+        signatureImage: finalSig,
+        agreedPerjury: true,
+        status: 'verified',
+        signedAt: now,
+        signerIp: '198.51.100.42', // Captured by backend in production
+        signerUserAgent: navigator.userAgent || 'UrSpot Secure Client / Chrome 124',
+        pdfGeneratedUrl: `/downloads/W9_${legalName.replace(/\s+/g, '_')}_signed.pdf`,
+        updatedAt: now,
+      };
 
-    await onSubmitW9(fullPayload);
-    setSignatureImage(finalSig);
-    setIsSubmitted(true);
-    showToast('✓ W-9 Form successfully certified and submitted!');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+      await onSubmitW9(fullPayload);
+      setSignatureImage(finalSig);
+      setIsSubmitted(true);
+      showToast('✓ W-9 Form successfully certified and submitted!');
+      const container = document.getElementById('w9-certification-container');
+      if (container) {
+        container.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    } catch (err: any) {
+      console.error('Failed to submit W-9 form:', err);
+      showToast(`Submission failed: ${err?.message || 'Please try again'}`);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleDownloadPdf = () => {
@@ -1190,16 +1308,36 @@ export const W9TaxCertification: React.FC<W9TaxCertificationProps> = ({
 
       {/* Validation Errors Box if attempted submit with missing fields */}
       {validationErrors.length > 0 && (
-        <div className="p-4.5 rounded-2xl bg-rose-50 border-2 border-rose-300 text-rose-900 space-y-2 animate-in fade-in">
+        <div ref={topErrorRef} className="p-4.5 rounded-2xl bg-rose-50 border-2 border-rose-300 text-rose-900 space-y-2 animate-in fade-in">
           <div className="flex items-center gap-2 font-bold text-xs text-rose-950">
             <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
             <span>Please correct the following before signing & submitting:</span>
           </div>
-          <ul className="list-disc pl-5 text-xs text-rose-700 space-y-1">
-            {validationErrors.map((err, idx) => (
-              <li key={idx}>{err}</li>
+          <div className="space-y-1.5 pt-1">
+            {(validationItems.length > 0
+              ? validationItems
+              : validationErrors.map((err) => ({
+                  fieldId: 'w9-legal-name-input',
+                  message: err,
+                  label: '',
+                }))
+            ).map((item, idx) => (
+              <div
+                key={idx}
+                onClick={() => scrollToField(item.fieldId)}
+                className="flex items-center justify-between gap-2 p-2 rounded-xl bg-white/80 hover:bg-white border border-rose-200 text-xs text-rose-900 font-medium cursor-pointer transition-all shadow-2xs group"
+                title={`Click to jump to field: ${item.label || item.message}`}
+              >
+                <span className="flex items-center gap-2 group-hover:text-rose-950 font-semibold">
+                  <span className="w-2 h-2 rounded-full bg-rose-500 shrink-0" />
+                  <span>{item.message}</span>
+                </span>
+                <span className="text-[10px] uppercase font-bold text-rose-700 bg-rose-100 group-hover:bg-rose-600 group-hover:text-white px-2.5 py-1 rounded-lg transition-all shrink-0">
+                  Go to field →
+                </span>
+              </div>
             ))}
-          </ul>
+          </div>
         </div>
       )}
 
@@ -1210,7 +1348,7 @@ export const W9TaxCertification: React.FC<W9TaxCertificationProps> = ({
       </div>
 
       {/* Form Cards Stack matching Image 1 */}
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form onSubmit={handleSubmit} noValidate className="space-y-6">
         {/* Card 0: Business Verification Summary (from eKYC) matching Image 1 */}
         <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-200/90 shadow-2xs p-6 space-y-4">
           <div className="flex items-center gap-2.5 pb-3 border-b border-slate-100">
@@ -1293,6 +1431,7 @@ export const W9TaxCertification: React.FC<W9TaxCertificationProps> = ({
               <div className="relative">
                 <input
                   type="text"
+                  id="w9-legal-name-input"
                   required
                   value={legalName}
                   onChange={(e) => setLegalName(e.target.value)}
@@ -1341,6 +1480,7 @@ export const W9TaxCertification: React.FC<W9TaxCertificationProps> = ({
               </label>
               <div className="relative">
                 <select
+                  id="w9-tax-classification-select"
                   value={taxClassification}
                   onChange={(e) => setTaxClassification(e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 cursor-pointer focus:outline-none focus:ring-2 focus:ring-slate-900"
@@ -1467,6 +1607,7 @@ export const W9TaxCertification: React.FC<W9TaxCertificationProps> = ({
             </label>
             <input
               type="text"
+              id="w9-street-address-input"
               required
               value={streetAddress}
               onChange={(e) => setStreetAddress(e.target.value)}
@@ -1481,6 +1622,7 @@ export const W9TaxCertification: React.FC<W9TaxCertificationProps> = ({
               </label>
               <input
                 type="text"
+                id="w9-city-input"
                 required
                 value={city}
                 onChange={(e) => setCity(e.target.value)}
@@ -1493,6 +1635,7 @@ export const W9TaxCertification: React.FC<W9TaxCertificationProps> = ({
                 State <span className="text-red-500">*</span>
               </label>
               <select
+                id="w9-state-code-select"
                 value={stateCode}
                 onChange={(e) => setStateCode(e.target.value)}
                 className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 cursor-pointer"
@@ -1511,6 +1654,7 @@ export const W9TaxCertification: React.FC<W9TaxCertificationProps> = ({
               </label>
               <input
                 type="text"
+                id="w9-zip-code-input"
                 required
                 value={zipCode}
                 onChange={(e) => setZipCode(e.target.value)}
@@ -1657,16 +1801,32 @@ export const W9TaxCertification: React.FC<W9TaxCertificationProps> = ({
 
         {/* Card 6: 6. Certification matching Image 1 */}
         <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-200/90 shadow-2xs p-6 sm:p-7 space-y-4">
-          <div className="flex items-center gap-2.5 pb-2 border-b border-slate-100">
-            <span className="w-6 h-6 rounded-md bg-blue-600 text-white text-xs font-black flex items-center justify-center">
-              6
-            </span>
-            <div>
-              <h2 className="font-bold text-sm text-slate-900">Certification</h2>
-              <p className="text-xs text-slate-400 font-normal">
-                Please read and confirm the following statements (required by IRS).
-              </p>
+          <div className="flex items-center justify-between gap-2.5 pb-2 border-b border-slate-100 flex-wrap">
+            <div className="flex items-center gap-2.5">
+              <span className="w-6 h-6 rounded-md bg-blue-600 text-white text-xs font-black flex items-center justify-center">
+                6
+              </span>
+              <div>
+                <h2 className="font-bold text-sm text-slate-900">Certification</h2>
+                <p className="text-xs text-slate-400 font-normal">
+                  Please read and confirm the following statements (required by IRS).
+                </p>
+              </div>
             </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                const allChecked = certCorrectTin && certNoBackupWithholding && certUsPerson && certFatcaCorrect;
+                setCertCorrectTin(!allChecked);
+                setCertNoBackupWithholding(!allChecked);
+                setCertUsPerson(!allChecked);
+                setCertFatcaCorrect(!allChecked);
+              }}
+              className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors cursor-pointer"
+            >
+              {certCorrectTin && certNoBackupWithholding && certUsPerson && certFatcaCorrect ? 'Unselect All' : 'Select All 4 Statements'}
+            </button>
           </div>
 
           <div className="space-y-4 pt-1">
@@ -1942,57 +2102,137 @@ export const W9TaxCertification: React.FC<W9TaxCertificationProps> = ({
         </div>
 
         {/* Action Buttons */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
-          {isSubmitted ? (
-            <div className="w-full flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <button
-                type="button"
-                onClick={handleDownloadPdf}
-                className="px-6 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 transition-colors cursor-pointer shadow-2xs flex items-center justify-center gap-2"
-              >
-                <Download className="w-4 h-4 text-slate-600" />
-                <span>Download Certified Form W-9</span>
-              </button>
-
-              <div className="px-5 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center justify-center gap-1.5">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                <span>Form W-9 Certified & Submitted</span>
+        <div className="space-y-3 pt-2">
+          {/* Bottom Validation Errors Box if attempted submit with missing fields */}
+          {validationErrors.length > 0 && !isSubmitted && (
+            <div
+              ref={bottomErrorRef}
+              className="p-4 rounded-2xl bg-rose-50 border-2 border-rose-300 text-rose-900 space-y-2 animate-in fade-in shadow-xs"
+            >
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2 font-bold text-xs text-rose-950">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>
+                    Cannot submit yet — Please complete {validationErrors.length} required{' '}
+                    {validationErrors.length === 1 ? 'item' : 'items'}:
+                  </span>
+                </div>
+                {(!certCorrectTin ||
+                  !certNoBackupWithholding ||
+                  !certUsPerson ||
+                  !certFatcaCorrect ||
+                  !agreedPerjury) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCertCorrectTin(true);
+                      setCertNoBackupWithholding(true);
+                      setCertUsPerson(true);
+                      setCertFatcaCorrect(true);
+                      setAgreedPerjury(true);
+                      setValidationErrors((prev) =>
+                        prev.filter(
+                          (e) => !e.includes('certification') && !e.includes('perjury')
+                        )
+                      );
+                      showToast('✓ All 4 IRS certifications & perjury agreement confirmed.');
+                    }}
+                    className="px-3 py-1 bg-rose-200 hover:bg-rose-300 text-rose-900 font-bold text-[11px] rounded-lg transition-colors cursor-pointer shadow-2xs"
+                  >
+                    Confirm All 4 Statements & Agreement
+                  </button>
+                )}
+              </div>
+              <div className="space-y-1.5 pt-1">
+                {(validationItems.length > 0
+                  ? validationItems
+                  : validationErrors.map((err) => ({
+                      fieldId: 'w9-legal-name-input',
+                      message: err,
+                      label: '',
+                    }))
+                ).map((item, idx) => (
+                  <div
+                    key={idx}
+                    onClick={() => scrollToField(item.fieldId)}
+                    className="flex items-center justify-between gap-2 p-2 rounded-xl bg-white/85 hover:bg-white border border-rose-200 text-xs text-rose-900 font-medium cursor-pointer transition-all shadow-2xs group"
+                    title={`Click to jump to field: ${item.label || item.message}`}
+                  >
+                    <span className="flex items-center gap-2 group-hover:text-rose-950 font-semibold">
+                      <span className="w-2 h-2 rounded-full bg-rose-500 shrink-0" />
+                      <span>{item.message}</span>
+                    </span>
+                    <span className="text-[10px] uppercase font-bold text-rose-700 bg-rose-100 group-hover:bg-rose-600 group-hover:text-white px-2.5 py-1 rounded-lg transition-all shrink-0">
+                      Go to field →
+                    </span>
+                  </div>
+                ))}
               </div>
             </div>
-          ) : (
-            <>
-              <div className="flex items-center gap-2.5 flex-wrap">
-                <button
-                  type="button"
-                  onClick={handleSaveDraft}
-                  className="px-5 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 transition-colors cursor-pointer shadow-2xs"
-                >
-                  Save as Draft
-                </button>
+          )}
 
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            {isSubmitted ? (
+              <div className="w-full flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <button
                   type="button"
-                  id="btn-export-w9-pdf"
                   onClick={handleDownloadPdf}
-                  className="px-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 transition-colors cursor-pointer shadow-2xs flex items-center justify-center gap-1.5 active:scale-95"
-                  title="Export Form W-9 as PDF"
+                  className="px-6 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 transition-colors cursor-pointer shadow-2xs flex items-center justify-center gap-2"
                 >
                   <Download className="w-4 h-4 text-slate-600" />
-                  <span>Export PDF</span>
+                  <span>Download Certified Form W-9</span>
                 </button>
-              </div>
 
-              <button
-                type="submit"
-                id="btn-sign-and-submit-w9"
-                disabled={!isKycApproved || !isPlanSelected}
-                className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center justify-center gap-2"
-              >
-                <span>Sign & Submit W-9</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
-            </>
-          )}
+                <div className="px-5 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center justify-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <span>Form W-9 Certified & Submitted</span>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={handleSaveDraft}
+                    className="px-5 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 transition-colors cursor-pointer shadow-2xs"
+                  >
+                    Save as Draft
+                  </button>
+
+                  <button
+                    type="button"
+                    id="btn-export-w9-pdf"
+                    onClick={handleDownloadPdf}
+                    className="px-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 transition-colors cursor-pointer shadow-2xs flex items-center justify-center gap-1.5 active:scale-95"
+                    title="Export Form W-9 as PDF"
+                  >
+                    <Download className="w-4 h-4 text-slate-600" />
+                    <span>Export PDF</span>
+                  </button>
+                </div>
+
+                <button
+                  type="submit"
+                  id="btn-sign-and-submit-w9"
+                  onClick={handleSubmit}
+                  disabled={!isKycApproved || !isPlanSelected || isSubmitting}
+                  className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center justify-center gap-2 active:scale-95"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-white" />
+                      <span>Submitting & Certifying W-9...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Sign & Submit W-9</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
         {/* Bottom Card / Footer Notice */}

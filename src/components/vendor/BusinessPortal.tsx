@@ -74,10 +74,12 @@ import {
   CalendarCheck,
   AlertCircle,
   Wallet,
+  Landmark,
   Scissors,
   Copy,
   CheckCircle,
   XCircle,
+  FileCheck2,
 } from 'lucide-react';
 import { BusinessWizard } from './BusinessWizard';
 import { BusinessMultiStepPage, DEFAULT_FORM_DATA } from './multistep/BusinessMultiStepPage';
@@ -118,6 +120,7 @@ export const BusinessPortal: React.FC = () => {
     loginAsUser,
     logout,
     state,
+    adminToggleBusinessStatus,
     selectBusinessForVendor,
     setActiveBusinessId,
     createNewBusiness,
@@ -134,11 +137,13 @@ export const BusinessPortal: React.FC = () => {
     platformLedger,
     getBusinessBalance,
     requestBusinessWithdrawal,
+    linkVendorBankAccount,
     resetW9Data,
     saveNmiPaymentAccount,
     getNmiPaymentAccount,
     businessServices,
     bookings,
+    businessReviews,
     addBusinessService,
     updateBusinessService,
     deleteBusinessService,
@@ -150,12 +155,62 @@ export const BusinessPortal: React.FC = () => {
     cancelBooking,
   } = useDemo();
 
-  // Active Tab State
-  const [activeTab, setActiveTab] = useState<BusinessPortalTab>('dashboard');
-  const [isBusinessesMenuOpen, setIsBusinessesMenuOpen] = useState(true);
-  const [isBookingsMenuOpen, setIsBookingsMenuOpen] = useState(true);
-  const [isMyServicesMenuOpen, setIsMyServicesMenuOpen] = useState(true);
+  // Active Tab State with localStorage Persistence
+  const [activeTab, setActiveTab] = useState<BusinessPortalTab>(() => {
+    try {
+      const saved = localStorage.getItem('uspot_vendor_active_tab') as BusinessPortalTab;
+      const validTabs: BusinessPortalTab[] = [
+        'dashboard',
+        'w9-form',
+        'my-businesses',
+        'business-details',
+        'followed-businesses',
+        'bookings',
+        'booking-management',
+        'advanced-booking-workflow',
+        'my-services',
+        'service-availability',
+        'workers',
+        'payouts',
+        'customers',
+        'reviews',
+        'subscriptions',
+        'account',
+        'settings',
+      ];
+      if (saved && validTabs.includes(saved)) {
+        return saved;
+      }
+    } catch (e) {}
+    return 'dashboard';
+  });
+
+  const [isBusinessesMenuOpen, setIsBusinessesMenuOpen] = useState(
+    () => ['my-businesses', 'business-details', 'followed-businesses'].includes(activeTab) || true
+  );
+  const [isBookingsMenuOpen, setIsBookingsMenuOpen] = useState(
+    () => ['bookings', 'booking-management', 'advanced-booking-workflow'].includes(activeTab) || true
+  );
+  const [isMyServicesMenuOpen, setIsMyServicesMenuOpen] = useState(
+    () => ['my-services', 'service-availability'].includes(activeTab) || true
+  );
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+  // Sync activeTab to localStorage and auto-expand corresponding parent menus
+  useEffect(() => {
+    try {
+      localStorage.setItem('uspot_vendor_active_tab', activeTab);
+    } catch (e) {}
+    if (['my-businesses', 'business-details', 'followed-businesses'].includes(activeTab)) {
+      setIsBusinessesMenuOpen(true);
+    }
+    if (['bookings', 'booking-management', 'advanced-booking-workflow'].includes(activeTab)) {
+      setIsBookingsMenuOpen(true);
+    }
+    if (['my-services', 'service-availability'].includes(activeTab)) {
+      setIsMyServicesMenuOpen(true);
+    }
+  }, [activeTab]);
 
   // Top Nav State
   const [searchQuery, setSearchQuery] = useState('');
@@ -205,49 +260,260 @@ export const BusinessPortal: React.FC = () => {
   // BUSINESSES TAB STATE (My Businesses 2 View Options)
   // ==========================================
   const [selectedBusinessId, setSelectedBusinessId] = useState<string>(() => {
-    if (currentUser?.email) {
-      let userBiz = state.businesses.find(
-        (b) => b.email?.toLowerCase() === currentUser.email?.toLowerCase()
+    if (currentUser) {
+      const userBiz = state.businesses.find(
+        (b) =>
+          (b.userId && b.userId === currentUser.id) ||
+          (b.email && currentUser.email && b.email.toLowerCase() === currentUser.email.toLowerCase())
       );
-      if (!userBiz) {
-        if (currentUser.id === 'user-business-2' || currentUser.email.includes('devon')) {
-          userBiz = state.businesses.find((b) => b.id === 'biz-002');
-        } else if (currentUser.id === 'user-business' || currentUser.email.includes('alex')) {
-          userBiz = state.businesses.find((b) => b.id === 'biz-001');
-        }
-      }
       if (userBiz) return userBiz.id;
     }
+    try {
+      const savedBizId = localStorage.getItem('uspot_vendor_selected_business_id');
+      if (savedBizId && state.businesses.some((b) => b.id === savedBizId)) {
+        return savedBizId;
+      }
+    } catch (e) {}
     return state.activeBusinessId || state.businesses[0]?.id || '';
   });
 
-  // Keep selected business in sync when current user switches or state activeBusinessId changes
+  // Sync selectedBusinessId to localStorage
   useEffect(() => {
-    if (currentUser?.email) {
-      let userBiz = state.businesses.find(
-        (b) => b.email?.toLowerCase() === currentUser.email?.toLowerCase()
-      );
-      if (!userBiz) {
-        if (currentUser.id === 'user-business-2' || currentUser.email.includes('devon')) {
-          userBiz = state.businesses.find((b) => b.id === 'biz-002');
-        } else if (currentUser.id === 'user-business' || currentUser.email.includes('alex')) {
-          userBiz = state.businesses.find((b) => b.id === 'biz-001');
-        }
-      }
-      if (userBiz && userBiz.id !== selectedBusinessId) {
+    if (selectedBusinessId) {
+      try {
+        localStorage.setItem('uspot_vendor_selected_business_id', selectedBusinessId);
+      } catch (e) {}
+    }
+  }, [selectedBusinessId]);
+
+  // Keep selected business in sync with currentUser's owned business
+  useEffect(() => {
+    if (!currentUser) return;
+    const userBiz = state.businesses.find(
+      (b) =>
+        (b.userId && b.userId === currentUser.id) ||
+        (b.email && currentUser.email && b.email.toLowerCase() === currentUser.email.toLowerCase())
+    );
+    if (userBiz) {
+      if (selectedBusinessId !== userBiz.id) {
         setSelectedBusinessId(userBiz.id);
+      }
+      if (state.activeBusinessId !== userBiz.id) {
         setActiveBusinessId(userBiz.id);
       }
-    } else if (state.activeBusinessId && state.activeBusinessId !== selectedBusinessId) {
-      setSelectedBusinessId(state.activeBusinessId);
+    } else {
+      const exists = state.businesses.some((b) => b.id === selectedBusinessId);
+      if (!exists && state.businesses.length > 0) {
+        setSelectedBusinessId(state.businesses[0].id);
+        setActiveBusinessId(state.businesses[0].id);
+      }
     }
-  }, [currentUser?.id, currentUser?.email, state.activeBusinessId, state.businesses]);
+  }, [currentUser?.id, currentUser?.email, state.businesses]);
+
+  // Filter businesses strictly for the currently logged-in vendor user
+  const vendorOwnedBusinesses = useMemo(() => {
+    if (!currentUser) return state.businesses;
+    if (currentUser.role === 'business') {
+      const matched = state.businesses.filter(
+        (b) =>
+          (b.userId && b.userId === currentUser.id) ||
+          (b.email && currentUser.email && b.email.toLowerCase() === currentUser.email.toLowerCase())
+      );
+      if (matched.length > 0) return matched;
+      return [];
+    }
+    return state.businesses;
+  }, [state.businesses, currentUser]);
+
+  const selectedBusiness =
+    vendorOwnedBusinesses.find((b) => b.id === selectedBusinessId) ||
+    vendorOwnedBusinesses[0] ||
+    state.businesses.find((b) => b.id === selectedBusinessId) ||
+    state.businesses[0];
+
+  const selectedServiceBiz = selectedBusiness;
+  const selectedServiceBizId = selectedBusiness?.id || 'biz-001';
+
+  const setSelectedServiceBizId = (id: string) => {
+    setSelectedBusinessId(id);
+    setActiveBusinessId(id);
+  };
+
+  // Vendor-level metrics for sidebar indicators
+  const currentVendorBusiness = selectedBusiness || state.businesses.find((b) => b.id === selectedBusinessId) || state.businesses[0];
+  const isVendorBankLinked = Boolean(
+    currentVendorBusiness?.nmiPaymentAccount?.payoutBankDetails?.accountNumber ||
+    currentVendorBusiness?.nmiPaymentAccount?.payoutBankDetails?.routingNumber
+  );
+  const isVendorW9Certified = Boolean(currentVendorBusiness?.w9Data?.isCertified);
+  const vendorPendingWithdrawalsCount = (platformLedger?.withdrawals || []).filter(
+    (w) =>
+      (w.businessId === selectedBusinessId || w.businessName === currentVendorBusiness?.name) &&
+      w.status === 'Pending'
+  ).length;
+  const vendorCurrentBalance = getBusinessBalance ? getBusinessBalance(selectedBusinessId) : { availableBalance: 0 };
+  const vendorPendingBookingsCount = (bookings || []).filter((b) => {
+    const matchesBiz =
+      b.business_id === selectedBusinessId ||
+      (b.business_name && (
+        b.business_name.toLowerCase() === (currentVendorBusiness?.coreDetails?.businessName || '').toLowerCase() ||
+        b.business_name.toLowerCase() === ((currentVendorBusiness as any)?.name || '').toLowerCase()
+      )) ||
+      vendorOwnedBusinesses.some((v) => v.id === b.business_id);
+    return matchesBiz && (b.status === 'pending' || b.status === 'confirmed');
+  }).length;
+  const vendorUnrepliedReviewsCount = (businessReviews || []).filter(
+    (r) => r.business_id === selectedBusinessId && !r.vendor_reply
+  ).length;
+  const isVendorKycPending = Boolean(
+    currentVendorBusiness?.status === 'Draft' ||
+    currentVendorBusiness?.status === 'Pending KYC Review' ||
+    currentVendorBusiness?.status === 'Submitted' ||
+    currentVendorBusiness?.status === 'Under Review'
+  );
+
+  // Track acknowledged / opened counts so notifications disappear once the user visits the page
+  const [seenVendorPayoutsCount, setSeenVendorPayoutsCount] = useState<number>(() => {
+    try {
+      const val = localStorage.getItem('uspot_vendor_seen_payouts_count');
+      return val ? parseInt(val, 10) : 0;
+    } catch (e) {
+      return 0;
+    }
+  });
+
+  const [hasOpenedVendorBankNotice, setHasOpenedVendorBankNotice] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('uspot_vendor_seen_bank_notice') === 'true';
+    } catch (e) {
+      return false;
+    }
+  });
+
+  const [hasOpenedVendorW9, setHasOpenedVendorW9] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('uspot_vendor_seen_w9') === 'true';
+    } catch (e) {
+      return false;
+    }
+  });
+
+  const [seenVendorBookingsCount, setSeenVendorBookingsCount] = useState<number>(() => {
+    try {
+      const val = localStorage.getItem('uspot_vendor_seen_bookings_count');
+      return val ? parseInt(val, 10) : 0;
+    } catch (e) {
+      return 0;
+    }
+  });
+
+  const [seenVendorReviewsCount, setSeenVendorReviewsCount] = useState<number>(() => {
+    try {
+      const val = localStorage.getItem('uspot_vendor_seen_reviews_count');
+      return val ? parseInt(val, 10) : 0;
+    } catch (e) {
+      return 0;
+    }
+  });
+
+  const [hasOpenedVendorBusinesses, setHasOpenedVendorBusinesses] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('uspot_vendor_seen_businesses') === 'true';
+    } catch (e) {
+      return false;
+    }
+  });
+
+  // When user opens Payouts, clear payouts notification & bank notice
+  useEffect(() => {
+    if (activeTab === 'payouts') {
+      setSeenVendorPayoutsCount(vendorPendingWithdrawalsCount);
+      setHasOpenedVendorBankNotice(true);
+      try {
+        localStorage.setItem('uspot_vendor_seen_payouts_count', String(vendorPendingWithdrawalsCount));
+        localStorage.setItem('uspot_vendor_seen_bank_notice', 'true');
+      } catch (e) {}
+    } else if (vendorPendingWithdrawalsCount === 0 && seenVendorPayoutsCount > 0) {
+      setSeenVendorPayoutsCount(0);
+      try {
+        localStorage.setItem('uspot_vendor_seen_payouts_count', '0');
+      } catch (e) {}
+    }
+  }, [activeTab, vendorPendingWithdrawalsCount, seenVendorPayoutsCount]);
+
+  // When user opens W-9 Form, clear W-9 warning notification
+  useEffect(() => {
+    if (activeTab === 'w9-form') {
+      setHasOpenedVendorW9(true);
+      try {
+        localStorage.setItem('uspot_vendor_seen_w9', 'true');
+      } catch (e) {}
+    }
+  }, [activeTab]);
+
+  // When user opens Bookings, clear bookings notification
+  useEffect(() => {
+    if (activeTab === 'bookings' || activeTab === 'booking-management' || activeTab === 'advanced-booking-workflow') {
+      setSeenVendorBookingsCount(vendorPendingBookingsCount);
+      try {
+        localStorage.setItem('uspot_vendor_seen_bookings_count', String(vendorPendingBookingsCount));
+      } catch (e) {}
+    } else if (vendorPendingBookingsCount === 0 && seenVendorBookingsCount > 0) {
+      setSeenVendorBookingsCount(0);
+      try {
+        localStorage.setItem('uspot_vendor_seen_bookings_count', '0');
+      } catch (e) {}
+    }
+  }, [activeTab, vendorPendingBookingsCount, seenVendorBookingsCount]);
+
+  // When user opens Reviews, clear reviews notification
+  useEffect(() => {
+    if (activeTab === 'reviews') {
+      setSeenVendorReviewsCount(vendorUnrepliedReviewsCount);
+      try {
+        localStorage.setItem('uspot_vendor_seen_reviews_count', String(vendorUnrepliedReviewsCount));
+      } catch (e) {}
+    } else if (vendorUnrepliedReviewsCount === 0 && seenVendorReviewsCount > 0) {
+      setSeenVendorReviewsCount(0);
+      try {
+        localStorage.setItem('uspot_vendor_seen_reviews_count', '0');
+      } catch (e) {}
+    }
+  }, [activeTab, vendorUnrepliedReviewsCount, seenVendorReviewsCount]);
+
+  // When user opens Businesses, clear KYC in review notice
+  useEffect(() => {
+    if (activeTab === 'my-businesses' || activeTab === 'business-details') {
+      setHasOpenedVendorBusinesses(true);
+      try {
+        localStorage.setItem('uspot_vendor_seen_businesses', 'true');
+      } catch (e) {}
+    }
+  }, [activeTab]);
+
+  // Unread counts / notifications (cleared when user has opened that page)
+  const unreadVendorPayoutsCount = activeTab === 'payouts' ? 0 : Math.max(0, vendorPendingWithdrawalsCount - seenVendorPayoutsCount);
+  const showVendorBankNotice = !isVendorBankLinked && vendorCurrentBalance.availableBalance > 0 && !hasOpenedVendorBankNotice && activeTab !== 'payouts';
+  const showVendorW9Alert = !isVendorW9Certified && !hasOpenedVendorW9 && activeTab !== 'w9-form';
+  const isViewingVendorBookings = activeTab === 'bookings' || activeTab === 'booking-management' || activeTab === 'advanced-booking-workflow';
+  const unreadVendorBookingsCount = isViewingVendorBookings ? 0 : Math.max(0, vendorPendingBookingsCount - seenVendorBookingsCount);
+  const unreadVendorReviewsCount = activeTab === 'reviews' ? 0 : Math.max(0, vendorUnrepliedReviewsCount - seenVendorReviewsCount);
+  const showVendorKycNotice = isVendorKycPending && !hasOpenedVendorBusinesses && activeTab !== 'my-businesses' && activeTab !== 'business-details';
 
   const [viewingBusinessId, setViewingBusinessId] = useState<string | null>(null);
   const [businessSearchFilter, setBusinessSearchFilter] = useState('');
   const [businessStatusFilter, setBusinessStatusFilter] = useState<string>('All');
   const [isPayoutModalOpen, setIsPayoutModalOpen] = useState(false);
   const [payoutAmount, setPayoutAmount] = useState('2,450.00');
+  const [isLinkBankModalOpen, setIsLinkBankModalOpen] = useState(false);
+  const [bankFormData, setBankFormData] = useState({
+    bankName: 'JPMorgan Chase',
+    accountHolderName: '',
+    routingNumber: '121000358',
+    accountNumber: '',
+    confirmAccountNumber: '',
+    accountType: 'CHECKING' as 'CHECKING' | 'SAVINGS',
+  });
   const [isNmiSetupModalOpen, setIsNmiSetupModalOpen] = useState(false);
   const [isNmiRequiredModalOpen, setIsNmiRequiredModalOpen] = useState(false);
   const [proceedToWithdrawAfterNmi, setProceedToWithdrawAfterNmi] = useState(false);
@@ -300,7 +566,10 @@ export const BusinessPortal: React.FC = () => {
     if (!selectedPlanForConfirmation) return;
     const targetId = payingBusinessId || selectedBusinessId;
     const targetBiz = state.businesses.find((b) => b.id === targetId);
-    if (!targetBiz) return;
+    if (!targetBiz) {
+      showToast('Please select a valid business to subscribe.');
+      return;
+    }
 
     setIsProcessingPayment(true);
     try {
@@ -309,7 +578,11 @@ export const BusinessPortal: React.FC = () => {
         selectedPlanForConfirmation.plan,
         selectedPlanForConfirmation.price
       );
-      showToast(`🎉 Payment confirmed! "${targetBiz.coreDetails.businessName}" is now active and Live.`);
+      showToast(
+        targetBiz.status === 'KYC Approved'
+          ? `🎉 Payment confirmed! "${targetBiz.coreDetails.businessName}" is now active and Live.`
+          : `🎉 Subscription confirmed for "${targetBiz.coreDetails.businessName}"! Your business will activate once KYC is approved.`
+      );
       setIsPlanConfirmModalOpen(false);
       setSelectedPlanForConfirmation(null);
       setPayingBusinessId(null);
@@ -322,42 +595,7 @@ export const BusinessPortal: React.FC = () => {
     }
   };
 
-  // Filter businesses strictly for the currently logged-in vendor user (Strict 1:1 Business Ownership)
-  const vendorOwnedBusinesses = useMemo(() => {
-    if (!currentUser) return state.businesses;
-    if (currentUser.role === 'business') {
-      const isDevon = currentUser.id === 'user-business-2' || currentUser.email?.toLowerCase().includes('devon');
-      const isAlex = currentUser.id === 'user-business' || currentUser.email?.toLowerCase().includes('alex');
 
-      if (isDevon) {
-        const spaBiz = state.businesses.filter((b) => b.id === 'biz-002' || b.userId === 'user-business-2');
-        if (spaBiz.length > 0) return spaBiz;
-      }
-      if (isAlex) {
-        const salonBiz = state.businesses.filter((b) => b.id === 'biz-001' || b.userId === 'user-business');
-        if (salonBiz.length > 0) return salonBiz;
-      }
-
-      const matched = state.businesses.filter((b) => b.userId === currentUser.id);
-      if (matched.length > 0) return matched;
-      return [state.businesses[0]];
-    }
-    return state.businesses;
-  }, [state.businesses, currentUser]);
-
-  const selectedBusiness =
-    vendorOwnedBusinesses.find((b) => b.id === selectedBusinessId) ||
-    state.businesses.find((b) => b.id === selectedBusinessId) ||
-    vendorOwnedBusinesses[0] ||
-    state.businesses[0];
-
-  const selectedServiceBiz = selectedBusiness;
-  const selectedServiceBizId = selectedBusiness?.id || 'biz-001';
-
-  const setSelectedServiceBizId = (id: string) => {
-    setSelectedBusinessId(id);
-    setActiveBusinessId(id);
-  };
 
   // Synchronized directly with DemoContext so changes in Business User reflect in Super Admin and vice versa!
   const myBusinessesList = useMemo(() => {
@@ -510,7 +748,7 @@ export const BusinessPortal: React.FC = () => {
   const [newBizCity, setNewBizCity] = useState('');
   const [newBizServices, setNewBizServices] = useState(10);
   const [newBizWorkers, setNewBizWorkers] = useState(6);
-  const [newBizStatus, setNewBizStatus] = useState<'Active' | 'Pending' | 'Inactive'>('Active');
+  const [newBizStatus, setNewBizStatus] = useState<'Draft'>('Draft');
 
   const [isEditBusinessModalOpen, setIsEditBusinessModalOpen] = useState(false);
   const [editingBiz, setEditingBiz] = useState<{
@@ -632,15 +870,14 @@ export const BusinessPortal: React.FC = () => {
   };
 
   const toggleBusinessActive = (bizId: string) => {
+    if (currentUser?.role !== 'super_admin') {
+      showToast('Business active/inactive status can only be managed by Super Admin.');
+      return;
+    }
     const biz = state.businesses.find((b) => b.id === bizId);
     if (!biz) return;
     const isNowActive = biz.status === 'KYC Approved' || biz.status === 'Live';
-    const nextStatus = isNowActive ? 'Draft' : 'KYC Approved';
-    saveVendorBusiness({
-      ...convertBusinessToFormData(biz),
-      id: biz.id,
-      status: nextStatus,
-    });
+    adminToggleBusinessStatus(bizId, !isNowActive);
     showToast(
       `${biz.coreDetails.businessName} is now ${
         !isNowActive ? 'Active and accepting orders' : 'Paused / Inactive'
@@ -662,23 +899,22 @@ export const BusinessPortal: React.FC = () => {
     const newId = `biz-${Date.now()}`;
     const newBiz = saveVendorBusiness({
       id: newId,
+      userId: currentUser?.id || 'user-business',
       businessName: newBizName.trim(),
       category: newBizCategory,
       city: newBizCity.trim() || 'San Francisco',
-      status:
-        newBizStatus === 'Active'
-          ? 'KYC Approved'
-          : newBizStatus === 'Pending'
-          ? 'Pending KYC Review'
-          : 'Draft',
-      kycSubmitted: newBizStatus === 'Pending',
+      status: 'Draft',
+      kycSubmitted: false,
       servicesCount: Number(newBizServices) || 1,
       workersCount: Number(newBizWorkers) || 1,
     });
+    setSelectedBusinessId(newBiz.id);
+    setActiveBusinessId(newBiz.id);
+    setPayingBusinessId(newBiz.id);
     setIsCreateBusinessModalOpen(false);
     setNewBizName('');
     setNewBizCity('');
-    showToast(`Successfully registered "${newBiz.coreDetails.businessName}"!`);
+    showToast(`Successfully registered "${newBiz.coreDetails.businessName}" as Draft. Submit KYC for admin approval.`);
   };
 
   const handleEditBusinessSubmit = (e: React.FormEvent) => {
@@ -691,13 +927,8 @@ export const BusinessPortal: React.FC = () => {
       businessName: editingBiz.name,
       category: editingBiz.category,
       city: editingBiz.city,
-      status:
-        editingBiz.status === 'Active'
-          ? 'KYC Approved'
-          : editingBiz.status === 'Pending'
-          ? 'Pending KYC Review'
-          : 'Draft',
-      kycSubmitted: editingBiz.status === 'Pending',
+      status: biz?.status || 'Draft',
+      kycSubmitted: Boolean(biz?.verification?.kycSubmitted),
       servicesCount: editingBiz.services,
       workersCount: editingBiz.workers,
     });
@@ -850,6 +1081,7 @@ export const BusinessPortal: React.FC = () => {
 
   // Booking Management State
   const [bookingStatusFilter, setBookingStatusFilter] = useState<'all' | 'confirmed' | 'visited' | 'cancelled'>('all');
+  const [bookingLocationFilter, setBookingLocationFilter] = useState<string>('all');
   const [bookingSearchTerm, setBookingSearchTerm] = useState('');
   const [selectedBookingDetails, setSelectedBookingDetails] = useState<Booking | null>(null);
 
@@ -934,7 +1166,7 @@ export const BusinessPortal: React.FC = () => {
   };
 
   const handleGalleryFilesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
+    const files = Array.from(e.target.files || []) as File[];
     if (!files.length) return;
 
     const availableSlots = 10 - serviceGalleryImagesInput.length;
@@ -1065,21 +1297,47 @@ export const BusinessPortal: React.FC = () => {
   };
 
   const bookingsForSelectedBiz = useMemo(() => {
-    const activeBizId = selectedBusiness?.id;
-    if (!activeBizId) return [];
     return bookings.filter((b) => {
-      // Strictly enforce business isolation: display only bookings for this particular business
-      const matchBiz = b.business_id === activeBizId;
+      // 1. Business / Location Matching
+      let matchBiz = false;
+      if (bookingLocationFilter === 'all') {
+        // If viewing all: match any business associated with this vendor (or all bookings if viewing all)
+        const vendorBizIds = vendorOwnedBusinesses.map((bz) => bz.id);
+        const vendorBizNames = vendorOwnedBusinesses.map((bz) => (bz.coreDetails?.businessName || (bz as any)?.name || '').toLowerCase());
+        const matchesVendor =
+          vendorBizIds.includes(b.business_id) ||
+          vendorBizNames.includes(b.business_name?.toLowerCase());
+
+        matchBiz =
+          matchesVendor ||
+          b.business_id === selectedBusiness?.id ||
+          (b.business_name && b.business_name.toLowerCase() === (selectedBusiness?.coreDetails?.businessName || '').toLowerCase());
+      } else {
+        matchBiz =
+          b.business_id === bookingLocationFilter ||
+          (b.business_name &&
+            state.businesses.some(
+              (bz) =>
+                bz.id === bookingLocationFilter &&
+                (bz.coreDetails?.businessName?.toLowerCase() === b.business_name.toLowerCase() ||
+                  (bz as any)?.name?.toLowerCase() === b.business_name.toLowerCase())
+            ));
+      }
+
+      // 2. Status matching
       const matchStatus = bookingStatusFilter === 'all' || b.status === bookingStatusFilter;
+
+      // 3. Search text matching
       const matchSearch =
         !bookingSearchTerm.trim() ||
         (b.customer_name && b.customer_name.toLowerCase().includes(bookingSearchTerm.toLowerCase())) ||
         (b.items && b.items.some((i) => i.service_name && i.service_name.toLowerCase().includes(bookingSearchTerm.toLowerCase()))) ||
         (b.business_name && b.business_name.toLowerCase().includes(bookingSearchTerm.toLowerCase())) ||
         (b.id && b.id.toLowerCase().includes(bookingSearchTerm.toLowerCase()));
+
       return matchBiz && matchStatus && matchSearch;
     });
-  }, [bookings, selectedBusiness?.id, bookingStatusFilter, bookingSearchTerm]);
+  }, [bookings, vendorOwnedBusinesses, selectedBusiness?.id, selectedBusiness?.coreDetails?.businessName, bookingLocationFilter, bookingStatusFilter, bookingSearchTerm, state.businesses]);
 
   // Handlers for Reference Images 2 & 3 Full-Page Form
   const handleOpenCreateServiceView = () => {
@@ -1335,18 +1593,64 @@ export const BusinessPortal: React.FC = () => {
     selectedBusiness?.w9 &&
       (selectedBusiness.w9.status === 'submitted' || selectedBusiness.w9.status === 'verified')
   );
+  const selectedBizBankAccount = selectedBusiness?.verification?.bankAccount;
+  const isBankLinked = Boolean(
+    selectedBizBankAccount?.routingNumber &&
+      (selectedBizBankAccount?.accountNumberMasked || selectedBizBankAccount?.accountNumber)
+  );
 
   const handleOpenWithdrawalModal = () => {
-    // Intercept withdrawal if NMI sub-account is not active
-    const nmiAccount = selectedBusiness?.nmiPaymentAccount;
-    if (!nmiAccount || nmiAccount.nmiOnboardingStatus !== 'ACTIVE') {
-      setIsNmiRequiredModalOpen(true);
+    // 1. Mandatory bank check: vendor must have a linked commercial bank account before requesting payout
+    if (!isBankLinked) {
+      setBankFormData((prev) => ({
+        ...prev,
+        accountHolderName:
+          selectedBusiness?.coreDetails?.legalEntityName ||
+          selectedBusiness?.coreDetails?.businessName ||
+          prev.accountHolderName,
+        bankName: selectedBizBankAccount?.bankName || prev.bankName || 'JPMorgan Chase',
+        routingNumber: selectedBizBankAccount?.routingNumber || prev.routingNumber || '121000358',
+      }));
+      setIsLinkBankModalOpen(true);
       return;
     }
 
     const bal = getBusinessBalance(selectedBusiness?.id || '');
     setPayoutAmount(bal.availableBalance > 0 ? bal.availableBalance.toFixed(2) : '0.00');
     setIsPayoutModalOpen(true);
+  };
+
+  const handleSaveBankAccount = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!bankFormData.routingNumber || bankFormData.routingNumber.length !== 9) {
+      showToast('Please enter a valid 9-digit Routing Number.');
+      return;
+    }
+    if (!bankFormData.accountNumber || bankFormData.accountNumber.length < 4) {
+      showToast('Please enter a valid Account Number.');
+      return;
+    }
+    if (bankFormData.confirmAccountNumber && bankFormData.confirmAccountNumber !== bankFormData.accountNumber) {
+      showToast('Account Numbers do not match.');
+      return;
+    }
+
+    linkVendorBankAccount(selectedBusiness.id, {
+      bankName: bankFormData.bankName || 'Commercial Bank',
+      accountHolderName: bankFormData.accountHolderName || selectedBusiness.coreDetails.businessName,
+      routingNumber: bankFormData.routingNumber,
+      accountNumber: bankFormData.accountNumber,
+      accountType: bankFormData.accountType,
+    });
+
+    setIsLinkBankModalOpen(false);
+    showToast(`✓ Bank account (${bankFormData.bankName}) linked successfully!`);
+
+    const bal = getBusinessBalance(selectedBusiness.id);
+    if (bal.availableBalance > 0) {
+      setPayoutAmount(bal.availableBalance.toFixed(2));
+      setIsPayoutModalOpen(true);
+    }
   };
 
   const handleRequestPayout = (e: React.FormEvent) => {
@@ -1365,13 +1669,19 @@ export const BusinessPortal: React.FC = () => {
     const res = requestBusinessWithdrawal(selectedBusiness.id, parsed);
     if (res.success) {
       setIsPayoutModalOpen(false);
+      const destBank = selectedBusiness.verification?.bankAccount?.bankName || 'Commercial Bank';
+      const destAcc = selectedBusiness.verification?.bankAccount?.accountNumberMasked || '•••• 9382';
       showToast(
-        `✓ Withdrawal request for $${parsed.toFixed(2)} submitted to ${
-          selectedBusiness.verification?.bankAccount?.accountNumberMasked || '•••• 9382'
-        }. Status: Pending review.`
+        `✓ Payout request for $${parsed.toFixed(2)} submitted to ${destBank} (${destAcc})! Awaiting Super Admin review.`
       );
     } else {
-      showToast(res.error || 'Failed to submit withdrawal request.');
+      if (res.error === 'BANK_NOT_LINKED') {
+        setIsPayoutModalOpen(false);
+        setIsLinkBankModalOpen(true);
+        showToast('Please link your commercial bank account before requesting a payout.');
+      } else {
+        showToast(res.error || 'Failed to submit withdrawal request.');
+      }
     }
   };
 
@@ -1513,18 +1823,33 @@ export const BusinessPortal: React.FC = () => {
                     ? 'text-white font-bold bg-slate-800/60'
                     : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
                 }`}
-                title={isSidebarCollapsed ? 'Businesses' : undefined}
+                title={isSidebarCollapsed ? (showVendorKycNotice ? 'Businesses (KYC In Review)' : 'Businesses') : undefined}
               >
                 <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
-                  <Building2 className="w-4 h-4 shrink-0" />
+                  <div className="relative flex items-center justify-center">
+                    <Building2 className="w-4 h-4 shrink-0" />
+                    {isSidebarCollapsed && showVendorKycNotice && (
+                      <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
+                      </span>
+                    )}
+                  </div>
                   {!isSidebarCollapsed && <span>Businesses</span>}
                 </div>
                 {!isSidebarCollapsed && (
-                  <ChevronDown
-                    className={`w-3.5 h-3.5 text-slate-400 transition-transform ${
-                      isBusinessesMenuOpen ? 'rotate-180' : ''
-                    }`}
-                  />
+                  <div className="flex items-center gap-1.5">
+                    {showVendorKycNotice && (
+                      <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                        In Review
+                      </span>
+                    )}
+                    <ChevronDown
+                      className={`w-3.5 h-3.5 text-slate-400 transition-transform ${
+                        isBusinessesMenuOpen ? 'rotate-180' : ''
+                      }`}
+                    />
+                  </div>
                 )}
               </button>
 
@@ -1608,18 +1933,35 @@ export const BusinessPortal: React.FC = () => {
                     ? 'text-white font-bold bg-slate-800/60'
                     : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
                 }`}
-                title={isSidebarCollapsed ? 'Bookings' : undefined}
+                title={isSidebarCollapsed ? (unreadVendorBookingsCount > 0 ? `Bookings (${unreadVendorBookingsCount} Pending)` : 'Bookings') : undefined}
               >
                 <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
-                  <Calendar className="w-4 h-4 shrink-0" />
+                  <div className="relative flex items-center justify-center">
+                    <Calendar className="w-4 h-4 shrink-0" />
+                    {isSidebarCollapsed && unreadVendorBookingsCount > 0 && (
+                      <span className="absolute -top-1.5 -right-2 flex h-3.5 w-3.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-blue-600 text-[8px] font-black text-white items-center justify-center">
+                          {unreadVendorBookingsCount > 9 ? '9+' : unreadVendorBookingsCount}
+                        </span>
+                      </span>
+                    )}
+                  </div>
                   {!isSidebarCollapsed && <span>Bookings</span>}
                 </div>
                 {!isSidebarCollapsed && (
-                  <ChevronDown
-                    className={`w-3.5 h-3.5 text-slate-400 transition-transform ${
-                      isBookingsMenuOpen ? 'rotate-180' : ''
-                    }`}
-                  />
+                  <div className="flex items-center gap-1.5">
+                    {unreadVendorBookingsCount > 0 && (
+                      <span className="px-1.5 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-500 text-white shadow-2xs">
+                        {unreadVendorBookingsCount}
+                      </span>
+                    )}
+                    <ChevronDown
+                      className={`w-3.5 h-3.5 text-slate-400 transition-transform ${
+                        isBookingsMenuOpen ? 'rotate-180' : ''
+                      }`}
+                    />
+                  </div>
                 )}
               </button>
 
@@ -1629,14 +1971,21 @@ export const BusinessPortal: React.FC = () => {
                   <button
                     id="sidebar-subtab-booking-management"
                     onClick={() => setActiveTab('booking-management')}
-                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition-colors cursor-pointer flex items-center gap-2 ${
+                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition-colors cursor-pointer flex items-center justify-between ${
                       activeTab === 'booking-management' || activeTab === 'bookings'
                         ? 'text-white font-bold bg-slate-800'
                         : 'text-slate-400 hover:text-slate-200'
                     }`}
                   >
-                    <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
-                    <span>Booking Management</span>
+                    <div className="flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+                      <span>Booking Management</span>
+                    </div>
+                    {unreadVendorBookingsCount > 0 && (
+                      <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                        {unreadVendorBookingsCount}
+                      </span>
+                    )}
                   </button>
 
                   <button
@@ -1742,18 +2091,92 @@ export const BusinessPortal: React.FC = () => {
 
             {/* 7. Payouts */}
             <button
+              id="sidebar-tab-payouts"
               onClick={() => setActiveTab('payouts')}
               className={`w-full flex items-center ${
-                isSidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'
+                isSidebarCollapsed ? 'justify-center px-0' : 'justify-between px-3'
               } py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                 activeTab === 'payouts'
-                  ? 'bg-slate-800/90 text-white font-bold'
+                  ? 'bg-slate-800/90 text-white font-bold shadow-xs'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
               }`}
-              title={isSidebarCollapsed ? 'Payouts' : undefined}
+              title={isSidebarCollapsed ? (unreadVendorPayoutsCount > 0 ? `Payouts (${unreadVendorPayoutsCount} Pending Payouts)` : 'Payouts') : undefined}
             >
-              <DollarSign className="w-4 h-4 shrink-0" />
-              {!isSidebarCollapsed && <span>Payouts</span>}
+              <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
+                <div className="relative flex items-center justify-center">
+                  <DollarSign className="w-4 h-4 shrink-0" />
+                  {isSidebarCollapsed && (
+                    unreadVendorPayoutsCount > 0 ? (
+                      <span className="absolute -top-1.5 -right-2 flex h-3.5 w-3.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-amber-500 text-[8px] font-black text-slate-950 items-center justify-center">
+                          {unreadVendorPayoutsCount > 9 ? '9+' : unreadVendorPayoutsCount}
+                        </span>
+                      </span>
+                    ) : showVendorBankNotice ? (
+                      <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500"></span>
+                      </span>
+                    ) : null
+                  )}
+                </div>
+                {!isSidebarCollapsed && <span>Payouts</span>}
+              </div>
+              {!isSidebarCollapsed && (
+                unreadVendorPayoutsCount > 0 ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500 text-slate-950 shadow-sm animate-pulse">
+                    <span className="w-1.5 h-1.5 rounded-full bg-slate-950 animate-ping" />
+                    {unreadVendorPayoutsCount} Pending
+                  </span>
+                ) : showVendorBankNotice ? (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                    Link Bank
+                  </span>
+                ) : null
+              )}
+            </button>
+
+            {/* W-9 Tax Certification */}
+            <button
+              id="sidebar-tab-w9-form"
+              onClick={() => setActiveTab('w9-form')}
+              className={`w-full flex items-center ${
+                isSidebarCollapsed ? 'justify-center px-0' : 'justify-between px-3'
+              } py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                activeTab === 'w9-form'
+                  ? 'bg-slate-800/90 text-white font-bold shadow-xs'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
+              }`}
+              title={isSidebarCollapsed ? (isVendorW9Certified ? 'W-9 Form (Certified)' : showVendorW9Alert ? 'W-9 Form (Action Required - 24% Backup Withholding)' : 'W-9 Form') : undefined}
+            >
+              <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
+                <div className="relative flex items-center justify-center">
+                  <FileCheck2 className="w-4 h-4 shrink-0" />
+                  {isSidebarCollapsed && (
+                    showVendorW9Alert ? (
+                      <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
+                      </span>
+                    ) : isVendorW9Certified ? (
+                      <span className="absolute -top-1 -right-1 flex h-2 w-2 rounded-full bg-emerald-500"></span>
+                    ) : null
+                  )}
+                </div>
+                {!isSidebarCollapsed && <span>W-9 Tax Form</span>}
+              </div>
+              {!isSidebarCollapsed && (
+                isVendorW9Certified ? (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                    ✓ Certified
+                  </span>
+                ) : showVendorW9Alert ? (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                    24% Tax Alert
+                  </span>
+                ) : null
+              )}
             </button>
 
             {/* 8. Customers */}
@@ -1774,18 +2197,36 @@ export const BusinessPortal: React.FC = () => {
 
             {/* 9. Reviews */}
             <button
+              id="sidebar-tab-reviews"
               onClick={() => setActiveTab('reviews')}
               className={`w-full flex items-center ${
-                isSidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'
+                isSidebarCollapsed ? 'justify-center px-0' : 'justify-between px-3'
               } py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                 activeTab === 'reviews'
-                  ? 'bg-slate-800/90 text-white font-bold'
+                  ? 'bg-slate-800/90 text-white font-bold shadow-xs'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
               }`}
-              title={isSidebarCollapsed ? 'Reviews' : undefined}
+              title={isSidebarCollapsed ? (unreadVendorReviewsCount > 0 ? `Reviews (${unreadVendorReviewsCount} New)` : 'Reviews') : undefined}
             >
-              <MessageSquare className="w-4 h-4 shrink-0" />
-              {!isSidebarCollapsed && <span>Reviews</span>}
+              <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
+                <div className="relative flex items-center justify-center">
+                  <MessageSquare className="w-4 h-4 shrink-0" />
+                  {isSidebarCollapsed && unreadVendorReviewsCount > 0 && (
+                    <span className="absolute -top-1.5 -right-2 flex h-3.5 w-3.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-indigo-600 text-[8px] font-black text-white items-center justify-center">
+                        {unreadVendorReviewsCount > 9 ? '9+' : unreadVendorReviewsCount}
+                      </span>
+                    </span>
+                  )}
+                </div>
+                {!isSidebarCollapsed && <span>Reviews</span>}
+              </div>
+              {!isSidebarCollapsed && unreadVendorReviewsCount > 0 && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                  {unreadVendorReviewsCount} New
+                </span>
+              )}
             </button>
 
             {/* 10. Subscriptions */}
@@ -2124,21 +2565,11 @@ export const BusinessPortal: React.FC = () => {
                     <div className="space-y-1.5 max-h-72 overflow-y-auto pr-0.5">
                       {users.map((u) => {
                         const isCurrent = u.id === currentUser?.id;
-                        let userBiz = state.businesses.find(
-                          (b) => b.userId && b.userId === u.id
+                        const userBiz = state.businesses.find(
+                          (b) =>
+                            (b.userId && b.userId === u.id) ||
+                            (b.email && u.email && b.email.toLowerCase() === u.email.toLowerCase())
                         );
-                        if (!userBiz) {
-                          userBiz = state.businesses.find(
-                            (b) => b.email?.toLowerCase() === u.email?.toLowerCase()
-                          );
-                        }
-                        if (!userBiz) {
-                          if (u.id === 'user-business-2' || u.email.includes('devon')) {
-                            userBiz = state.businesses.find((b) => b.id === 'biz-002');
-                          } else if (u.id === 'user-business' || u.email.includes('alex')) {
-                            userBiz = state.businesses.find((b) => b.id === 'biz-001');
-                          }
-                        }
                         const isNmiActive = userBiz?.nmiPaymentAccount?.nmiOnboardingStatus === 'ACTIVE';
 
                         return (
@@ -2915,8 +3346,8 @@ export const BusinessPortal: React.FC = () => {
 
                             {/* Actions (Eye, Pencil, Trash2, Toggle Switch OR Eye + Pay Now) */}
                             <td className="py-4 px-6">
-                              {biz.isAwaitingPayment ? (
-                                <div className="flex items-center gap-2.5">
+                              {!biz.payment?.paidAt ? (
+                                <div className="flex items-center gap-2">
                                   <button
                                     id={`view-biz-btn-${biz.id}`}
                                     onClick={() => {
@@ -2931,11 +3362,36 @@ export const BusinessPortal: React.FC = () => {
                                   <button
                                     id={`pay-now-btn-${biz.id}`}
                                     onClick={() => handleOpenPaymentForBusiness(biz.id)}
-                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-black text-white hover:bg-slate-800 transition-all shadow-xs cursor-pointer active:scale-95"
-                                    title="Pay Now to activate your business"
+                                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95 ${
+                                      biz.isAwaitingPayment
+                                        ? 'bg-black text-white hover:bg-slate-800'
+                                        : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'
+                                    }`}
+                                    title={biz.isAwaitingPayment ? 'Pay Now to activate your business' : 'Select Subscription Plan & Pay'}
                                   >
-                                    <CreditCard className="w-3.5 h-3.5 text-emerald-400" />
-                                    <span>Pay Now</span>
+                                    <CreditCard className="w-3.5 h-3.5 text-emerald-500" />
+                                    <span>{biz.isAwaitingPayment ? 'Pay Now' : 'Select Plan'}</span>
+                                  </button>
+                                  <button
+                                    id={`edit-biz-btn-${biz.id}`}
+                                    onClick={() => {
+                                      const fullBiz = state.businesses.find((b) => b.id === biz.id);
+                                      if (fullBiz) {
+                                        handleOpenEditMultiStep(fullBiz);
+                                      }
+                                    }}
+                                    className="text-slate-400 hover:text-slate-700 transition-colors cursor-pointer p-1 rounded-md hover:bg-slate-100"
+                                    title="Edit Business"
+                                  >
+                                    <Pencil className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    id={`delete-biz-btn-${biz.id}`}
+                                    onClick={() => handleDeleteBusiness(biz.id)}
+                                    className="text-slate-300 hover:text-rose-600 transition-colors cursor-pointer p-1 rounded-md hover:bg-rose-50"
+                                    title="Delete Business"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
                                   </button>
                                 </div>
                               ) : (
@@ -2966,27 +3422,29 @@ export const BusinessPortal: React.FC = () => {
                                     <Trash2 className="w-4 h-4" />
                                   </button>
 
-                                  {/* Interactive Toggle Switch */}
-                                  <button
-                                    type="button"
-                                    role="switch"
-                                    aria-checked={biz.isActive}
-                                    onClick={() => toggleBusinessActive(biz.id)}
-                                    title={
-                                      biz.isActive
-                                        ? 'Active - click to pause'
-                                        : 'Inactive - click to activate'
-                                    }
-                                    className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                                      biz.isActive ? 'bg-black' : 'bg-slate-300'
-                                    }`}
-                                  >
-                                    <span
-                                      className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out ${
-                                        biz.isActive ? 'translate-x-4' : 'translate-x-0'
+                                  {/* Interactive Toggle Switch - Super Admin Only */}
+                                  {currentUser?.role === 'super_admin' && (
+                                    <button
+                                      type="button"
+                                      role="switch"
+                                      aria-checked={biz.isActive}
+                                      onClick={() => toggleBusinessActive(biz.id)}
+                                      title={
+                                        biz.isActive
+                                          ? 'Active - click to pause'
+                                          : 'Inactive - click to activate'
+                                      }
+                                      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                        biz.isActive ? 'bg-black' : 'bg-slate-300'
                                       }`}
-                                    />
-                                  </button>
+                                    >
+                                      <span
+                                        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out ${
+                                          biz.isActive ? 'translate-x-4' : 'translate-x-0'
+                                        }`}
+                                      />
+                                    </button>
+                                  )}
                                 </div>
                               )}
                             </td>
@@ -3107,7 +3565,7 @@ export const BusinessPortal: React.FC = () => {
 
                       {/* Bottom Row: Actions (Eye + Pay Now OR Eye, Pencil, Trash & Toggle Switch) */}
                       <div className="flex items-center justify-between pt-1 border-t border-slate-100">
-                        {biz.isAwaitingPayment ? (
+                        {!biz.payment?.paidAt ? (
                           <div className="flex items-center justify-between w-full">
                             <button
                               id={`grid-view-biz-btn-${biz.id}`}
@@ -3124,11 +3582,15 @@ export const BusinessPortal: React.FC = () => {
                             <button
                               id={`grid-pay-now-btn-${biz.id}`}
                               onClick={() => handleOpenPaymentForBusiness(biz.id)}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-black text-white hover:bg-slate-800 transition-all shadow-xs cursor-pointer active:scale-95"
-                              title="Pay Now to activate your business"
+                              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95 ${
+                                biz.isAwaitingPayment
+                                  ? 'bg-black text-white hover:bg-slate-800'
+                                  : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'
+                              }`}
+                              title={biz.isAwaitingPayment ? 'Pay Now to activate your business' : 'Select Subscription Plan & Pay'}
                             >
-                              <CreditCard className="w-3.5 h-3.5 text-emerald-400" />
-                              <span>Pay Now</span>
+                              <CreditCard className="w-3.5 h-3.5 text-emerald-500" />
+                              <span>{biz.isAwaitingPayment ? 'Pay Now' : 'Select Plan'}</span>
                             </button>
                           </div>
                         ) : (
@@ -3161,27 +3623,29 @@ export const BusinessPortal: React.FC = () => {
                               </button>
                             </div>
 
-                            {/* Toggle Switch */}
-                            <button
-                              type="button"
-                              role="switch"
-                              aria-checked={biz.isActive}
-                              onClick={() => toggleBusinessActive(biz.id)}
-                              title={
-                                biz.isActive
-                                  ? 'Active - click to deactivate'
-                                  : 'Inactive - click to activate'
-                              }
-                              className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                                biz.isActive ? 'bg-black' : 'bg-slate-300'
-                              }`}
-                            >
-                              <span
-                                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out ${
-                                  biz.isActive ? 'translate-x-4' : 'translate-x-0'
+                            {/* Toggle Switch - Super Admin Only */}
+                            {currentUser?.role === 'super_admin' && (
+                              <button
+                                type="button"
+                                role="switch"
+                                aria-checked={biz.isActive}
+                                onClick={() => toggleBusinessActive(biz.id)}
+                                title={
+                                  biz.isActive
+                                    ? 'Active - click to deactivate'
+                                    : 'Inactive - click to activate'
+                                }
+                                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                  biz.isActive ? 'bg-black' : 'bg-slate-300'
                                 }`}
-                              />
-                            </button>
+                              >
+                                <span
+                                  className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out ${
+                                    biz.isActive ? 'translate-x-4' : 'translate-x-0'
+                                  }`}
+                                />
+                              </button>
+                            )}
                           </>
                         )}
                       </div>
@@ -3396,42 +3860,56 @@ export const BusinessPortal: React.FC = () => {
               {/* Location Switcher */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center font-bold">
+                  <div className="w-9 h-9 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center font-bold shrink-0">
                     <Building2 className="w-4 h-4" />
                   </div>
                   <div>
                     <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Viewing Location</span>
                     <p className="text-xs font-extrabold text-slate-900">
-                      {selectedBusiness?.coreDetails?.businessName || (selectedBusiness as any)?.name || 'Selected Business'}
+                      {bookingLocationFilter === 'all'
+                        ? `All Locations & Venues (${bookingsForSelectedBiz.length} ${bookingsForSelectedBiz.length === 1 ? 'booking' : 'bookings'})`
+                        : (state.businesses.find((b) => b.id === bookingLocationFilter)?.coreDetails?.businessName ||
+                            selectedBusiness?.coreDetails?.businessName ||
+                            (selectedBusiness as any)?.name ||
+                            'Selected Venue')}
                     </p>
                   </div>
                 </div>
 
-                {vendorOwnedBusinesses.length > 1 ? (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-slate-500 font-medium">Switch Location:</span>
-                    <select
-                      id="select-booking-biz"
-                      value={selectedBusiness.id}
-                      onChange={(e) => setSelectedServiceBizId(e.target.value)}
-                      className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 cursor-pointer"
-                    >
-                      {vendorOwnedBusinesses.map((biz) => {
-                        const count = bookings.filter((b) => b.business_id === biz.id).length;
-                        return (
-                          <option key={biz.id} value={biz.id}>
-                            {biz.coreDetails?.businessName || (biz as any)?.name} ({count} {count === 1 ? 'booking' : 'bookings'})
-                          </option>
-                        );
-                      })}
-                    </select>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                    <span>Single Venue Account</span>
-                  </div>
-                )}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-500 font-medium">Filter Location:</span>
+                  <select
+                    id="select-booking-biz"
+                    value={bookingLocationFilter}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setBookingLocationFilter(val);
+                      if (val !== 'all') {
+                        setSelectedServiceBizId(val);
+                      }
+                    }}
+                    className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 cursor-pointer max-w-[280px] truncate"
+                  >
+                    <option value="all">
+                      🌐 All Locations / Venues ({bookings.length} total)
+                    </option>
+                    {state.businesses.map((biz) => {
+                      const count = bookings.filter(
+                        (b) =>
+                          b.business_id === biz.id ||
+                          (b.business_name &&
+                            b.business_name.toLowerCase() ===
+                              (biz.coreDetails?.businessName || '').toLowerCase())
+                      ).length;
+                      const isOwner = vendorOwnedBusinesses.some((v) => v.id === biz.id);
+                      return (
+                        <option key={biz.id} value={biz.id}>
+                          {biz.coreDetails?.businessName || (biz as any)?.name} {isOwner ? '(My Venue)' : ''} ({count} {count === 1 ? 'booking' : 'bookings'})
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
               </div>
 
               {/* Metric Cards */}
@@ -3557,6 +4035,14 @@ export const BusinessPortal: React.FC = () => {
                               }`}
                             >
                               {b.status}
+                            </span>
+                            <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-200 flex items-center gap-1">
+                              <Building2 className="w-3 h-3 text-slate-500" />
+                              <span>
+                                {b.business_name ||
+                                  state.businesses.find((bz) => bz.id === b.business_id)?.coreDetails?.businessName ||
+                                  'Venue'}
+                              </span>
                             </span>
                             <span className="text-[11px] text-slate-400 font-medium">
                               Booked on {new Date(b.created_at).toLocaleDateString()}
@@ -5286,68 +5772,73 @@ export const BusinessPortal: React.FC = () => {
                 </div>
               )}
 
-              {/* NMI Sub-Account Status Alert in Payouts */}
-              {selectedBusiness && (
-                selectedBusiness.nmiPaymentAccount?.nmiOnboardingStatus !== 'ACTIVE' ? (
-                  <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-900">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center shrink-0 font-bold">
-                        <AlertCircle className="w-4 h-4 text-slate-950" />
-                      </div>
-                      <div>
-                        <h4 className="text-xs font-bold text-amber-950">
-                          Payment Account Setup Required — Payouts Locked
+              {/* Bank Account Status Banner */}
+              {!isBankLinked ? (
+                <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-900">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center shrink-0 font-bold">
+                      <Landmark className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-amber-950">
+                        Commercial Bank Account Required — Payouts Locked
+                      </h4>
+                      <p className="text-[11px] text-amber-800 mt-0.5">
+                        Before requesting a payout, you must link your commercial bank account. Funds are transferred via direct ACH upon Super Admin authorization.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBankFormData((prev) => ({
+                        ...prev,
+                        accountHolderName: selectedBusiness?.coreDetails?.legalEntityName || selectedBusiness?.coreDetails?.businessName || '',
+                      }));
+                      setIsLinkBankModalOpen(true);
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-amber-900 hover:bg-black text-white text-xs font-bold transition-colors cursor-pointer self-start sm:self-auto whitespace-nowrap flex items-center gap-1.5"
+                  >
+                    <Landmark className="w-3.5 h-3.5" />
+                    <span>Link Commercial Bank</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-emerald-900">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 font-bold">
+                      <CheckCircle2 className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-xs font-bold text-emerald-950">
+                          {selectedBusiness.verification?.bankAccount?.bankName || 'Commercial Bank'} Linked
                         </h4>
-                        <p className="text-[11px] text-amber-800 mt-0.5">
-                          To withdraw funds, please complete your payment account setup. Direct ACH disbursements require an active NMI vendor sub-account.
-                        </p>
+                        <span className="font-mono text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300">
+                          Ready for ACH Payouts
+                        </span>
                       </div>
+                      <p className="text-[11px] text-emerald-800 mt-0.5 font-mono">
+                        Account: {selectedBusiness.verification?.bankAccount?.accountNumberMasked || '•••• 9382'} • Routing: {selectedBusiness.verification?.bankAccount?.routingNumber || '121000358'} ({selectedBusiness.verification?.bankAccount?.accountHolderName || selectedBusiness.coreDetails.businessName})
+                      </p>
                     </div>
-                    <button
-                      type="button"
-                      id="btn-complete-payouts-nmi"
-                      onClick={() => {
-                        setProceedToWithdrawAfterNmi(true);
-                        setIsNmiSetupModalOpen(true);
-                      }}
-                      className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-black text-white text-xs font-bold transition-colors cursor-pointer self-start sm:self-auto whitespace-nowrap flex items-center gap-1"
-                    >
-                      <span>Complete Setup</span>
-                      <ArrowRight className="w-3 h-3" />
-                    </button>
                   </div>
-                ) : (
-                  <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-emerald-900">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 font-bold">
-                        <CheckCircle2 className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h4 className="text-xs font-bold text-emerald-950">
-                            NMI Payment Account Connected
-                          </h4>
-                          <span className="font-mono text-[11px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded">
-                            {selectedBusiness.nmiPaymentAccount.nmiGatewayId}
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-emerald-800 mt-0.5">
-                          Sub-account is fully configured. Available balance can be disbursed directly to your bank account.
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setProceedToWithdrawAfterNmi(false);
-                        setIsNmiSetupModalOpen(true);
-                      }}
-                      className="text-xs font-bold text-emerald-700 hover:text-emerald-900 underline self-start sm:self-auto whitespace-nowrap"
-                    >
-                      Edit Account Details
-                    </button>
-                  </div>
-                )
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBankFormData((prev) => ({
+                        ...prev,
+                        accountHolderName: selectedBusiness?.verification?.bankAccount?.accountHolderName || selectedBusiness?.coreDetails?.businessName || '',
+                        bankName: selectedBusiness?.verification?.bankAccount?.bankName || 'JPMorgan Chase',
+                        routingNumber: selectedBusiness?.verification?.bankAccount?.routingNumber || '121000358',
+                      }));
+                      setIsLinkBankModalOpen(true);
+                    }}
+                    className="text-xs font-bold text-emerald-800 hover:text-emerald-950 underline self-start sm:self-auto whitespace-nowrap cursor-pointer"
+                  >
+                    Change Bank Details
+                  </button>
+                </div>
               )}
 
               {/* 4 Balance Cards */}
@@ -5407,25 +5898,48 @@ export const BusinessPortal: React.FC = () => {
               <div className="p-5 bg-white rounded-2xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-3.5">
                   <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-800 flex items-center justify-center font-black">
-                    <CreditCard className="w-5 h-5" />
+                    <Landmark className="w-5 h-5 text-slate-700" />
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="font-extrabold text-sm text-slate-900">
-                        {selectedBusiness.verification?.bankAccount?.accountHolderName || selectedBusiness.coreDetails.legalEntityName || selectedBusiness.coreDetails.businessName}
+                        {selectedBusiness.verification?.bankAccount?.bankName || 'Commercial Bank'}
                       </span>
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                        Verified Bank Account
-                      </span>
+                      {isBankLinked ? (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                          Active Destination
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                          Unlinked
+                        </span>
+                      )}
                     </div>
                     <p className="text-xs text-slate-500 font-mono mt-0.5">
-                      Account: {selectedBusiness.verification?.bankAccount?.accountNumberMasked || '•••• •••• 9382'} • Routing: {selectedBusiness.verification?.bankAccount?.routingNumber || '121000358'}
+                      {isBankLinked
+                        ? `Account: ${selectedBusiness.verification?.bankAccount?.accountNumberMasked || '•••• 9382'} • Routing: ${selectedBusiness.verification?.bankAccount?.routingNumber || '121000358'} • ${selectedBusiness.verification?.bankAccount?.accountHolderName || selectedBusiness.coreDetails.businessName}`
+                        : 'No bank account linked. Payout requests require a destination bank.'}
                     </p>
                   </div>
                 </div>
 
-                <div className="text-xs text-slate-400 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100">
-                  <span>Withdrawals automatically route here • No re-entry needed</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBankFormData((prev) => ({
+                        ...prev,
+                        accountHolderName: selectedBusiness?.verification?.bankAccount?.accountHolderName || selectedBusiness?.coreDetails?.businessName || '',
+                        bankName: selectedBusiness?.verification?.bankAccount?.bankName || 'JPMorgan Chase',
+                        routingNumber: selectedBusiness?.verification?.bankAccount?.routingNumber || '121000358',
+                      }));
+                      setIsLinkBankModalOpen(true);
+                    }}
+                    className="px-3.5 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Landmark className="w-3.5 h-3.5" />
+                    <span>{isBankLinked ? 'Change Bank' : 'Link Bank Account'}</span>
+                  </button>
                 </div>
               </div>
 
@@ -5436,7 +5950,7 @@ export const BusinessPortal: React.FC = () => {
                   <div className="p-5 border-b border-slate-100 flex items-center justify-between">
                     <div>
                       <h3 className="font-extrabold text-sm text-slate-900">Withdrawal Request History</h3>
-                      <p className="text-xs text-slate-400 mt-0.5">Recent payout requests and their approval statuses</p>
+                      <p className="text-xs text-slate-400 mt-0.5">Recent payout requests, withholding deductions, and authorization status</p>
                     </div>
                     <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg font-mono">
                       {platformLedger.withdrawals.filter((w) => w.businessId === selectedBusiness.id).length} record(s)
@@ -5459,46 +5973,68 @@ export const BusinessPortal: React.FC = () => {
                         <table className="w-full text-left border-collapse text-xs">
                           <thead>
                             <tr className="border-b border-slate-100 text-[11px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50/50">
-                              <th className="py-3 px-5">ID</th>
-                              <th className="py-3 px-5">Requested Date</th>
-                              <th className="py-3 px-5">Amount</th>
-                              <th className="py-3 px-5">Destination Bank</th>
-                              <th className="py-3 px-5">Status</th>
-                              <th className="py-3 px-5">Details / Notes</th>
+                              <th className="py-3 px-4">ID</th>
+                              <th className="py-3 px-4">Date</th>
+                              <th className="py-3 px-4">Gross Amount</th>
+                              <th className="py-3 px-4">Commission</th>
+                              <th className="py-3 px-4">Tax Withheld</th>
+                              <th className="py-3 px-4">Net Payout</th>
+                              <th className="py-3 px-4">Destination Bank</th>
+                              <th className="py-3 px-4">Status</th>
+                              <th className="py-3 px-4">Notes</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
-                            {bizWithdrawals.map((w) => (
-                              <tr key={w.id} className="hover:bg-slate-50/60 transition-colors">
-                                <td className="py-3.5 px-5 font-mono font-bold text-slate-900">{w.id}</td>
-                                <td className="py-3.5 px-5 text-slate-600">
-                                  {new Date(w.requestDate).toLocaleDateString()} at{' '}
-                                  {new Date(w.requestDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                </td>
-                                <td className="py-3.5 px-5 font-mono font-black text-slate-900">${w.amount.toFixed(2)}</td>
-                                <td className="py-3.5 px-5 font-mono text-slate-600">{w.maskedBankAccount}</td>
-                                <td className="py-3.5 px-5">
-                                  <span
-                                    className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
-                                      w.status === 'Completed'
-                                        ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
-                                        : w.status === 'Rejected'
-                                        ? 'bg-rose-100 text-rose-800 border-rose-200'
-                                        : 'bg-amber-100 text-amber-800 border-amber-200'
-                                    }`}
-                                  >
-                                    {w.status}
-                                  </span>
-                                </td>
-                                <td className="py-3.5 px-5 text-slate-500 text-[11px]">
-                                  {w.status === 'Rejected'
-                                    ? `Declined: ${w.rejectionReason || 'Restored to balance'}`
-                                    : w.status === 'Completed'
-                                    ? `Approved by ${w.processedBy || 'Super Admin'}`
-                                    : 'Awaiting Super Admin approval'}
-                                </td>
-                              </tr>
-                            ))}
+                            {bizWithdrawals.map((w) => {
+                              const wComm = w.commissionAmount !== undefined ? w.commissionAmount : (w.amount * ((w.commissionRate || 10) / 100));
+                              const wTax = w.w9WithholdingAmount || 0;
+                              const wNet = w.netPayoutAmount !== undefined ? w.netPayoutAmount : (w.amount - wComm - wTax);
+                              return (
+                                <tr key={w.id} className="hover:bg-slate-50/60 transition-colors">
+                                  <td className="py-3.5 px-4 font-mono font-bold text-slate-900">{w.id}</td>
+                                  <td className="py-3.5 px-4 text-slate-600">
+                                    {new Date(w.requestDate).toLocaleDateString()}
+                                  </td>
+                                  <td className="py-3.5 px-4 font-mono font-black text-slate-900">${w.amount.toFixed(2)}</td>
+                                  <td className="py-3.5 px-4 font-mono text-violet-700 font-bold">
+                                    -${wComm.toFixed(2)} ({w.commissionRate || 10}%)
+                                  </td>
+                                  <td className="py-3.5 px-4 font-mono">
+                                    {wTax > 0 ? (
+                                      <span className="text-rose-600 font-bold">-${wTax.toFixed(2)} (24%)</span>
+                                    ) : (
+                                      <span className="text-slate-400">$0.00 (0%)</span>
+                                    )}
+                                  </td>
+                                  <td className="py-3.5 px-4 font-mono font-black text-emerald-600">
+                                    ${wNet.toFixed(2)}
+                                  </td>
+                                  <td className="py-3.5 px-4 font-mono text-slate-600 text-[11px]">
+                                    {w.bankName || 'Bank'} ({w.maskedBankAccount})
+                                  </td>
+                                  <td className="py-3.5 px-4">
+                                    <span
+                                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                                        w.status === 'Completed'
+                                          ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                                          : w.status === 'Rejected'
+                                          ? 'bg-rose-100 text-rose-800 border-rose-200'
+                                          : 'bg-amber-100 text-amber-800 border-amber-200'
+                                      }`}
+                                    >
+                                      {w.status}
+                                    </span>
+                                  </td>
+                                  <td className="py-3.5 px-4 text-slate-500 text-[11px]">
+                                    {w.status === 'Rejected'
+                                      ? `Declined: ${w.rejectionReason || 'Restored to balance'}`
+                                      : w.status === 'Completed'
+                                      ? `Approved by ${w.processedBy || 'Super Admin'}`
+                                      : 'Awaiting Super Admin review'}
+                                  </td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
@@ -5633,6 +6169,7 @@ export const BusinessPortal: React.FC = () => {
           {activeTab === 'subscriptions' && (
             <div className="space-y-6 animate-in fade-in duration-150 pb-16">
               {/* Context banner if opened for a specific KYC Approved business */}
+              {/* Context banner if opened for a specific business */}
               {payingBiz && (
                 <div className="bg-slate-900 text-white p-4 sm:p-5 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-md border border-slate-800">
                   <div className="flex items-center gap-3.5">
@@ -5644,24 +6181,53 @@ export const BusinessPortal: React.FC = () => {
                         <span className="font-extrabold text-sm sm:text-base text-white">
                           {payingBiz.coreDetails.businessName}
                         </span>
-                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                          KYC Approved
+                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                          payingBiz.status === 'KYC Approved' || payingBiz.status === 'Live'
+                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                            : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                        }`}>
+                          {payingBiz.status === 'KYC Approved' ? 'KYC Approved' : payingBiz.status}
                         </span>
                       </div>
                       <p className="text-xs text-slate-400 mt-0.5">
-                        {payingBiz.coreDetails.category} • {payingBiz.coreDetails.city} • Select a tier below to activate and go live on the marketplace.
+                        {payingBiz.coreDetails.category} • {payingBiz.coreDetails.city} • {
+                          payingBiz.status === 'KYC Approved'
+                            ? 'Select a tier below to activate and go live on the marketplace.'
+                            : 'Select a tier below. Your subscription will be confirmed and your business will activate once KYC is approved.'
+                        }
                       </p>
                     </div>
                   </div>
-                  <button
-                    onClick={() => {
-                      setPayingBusinessId(null);
-                      setActiveTab('my-businesses');
-                    }}
-                    className="text-xs text-slate-300 hover:text-white font-medium underline cursor-pointer shrink-0"
-                  >
-                    ← Back to My Businesses
-                  </button>
+                  <div className="flex items-center gap-3">
+                    {vendorOwnedBusinesses.length > 1 && (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs text-slate-400">Business:</span>
+                        <select
+                          value={payingBiz.id}
+                          onChange={(e) => {
+                            setPayingBusinessId(e.target.value);
+                            setSelectedBusinessId(e.target.value);
+                          }}
+                          className="bg-slate-800 text-white border border-slate-700 rounded-lg px-2.5 py-1 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                        >
+                          {vendorOwnedBusinesses.map((b) => (
+                            <option key={b.id} value={b.id}>
+                              {b.coreDetails.businessName} ({b.status})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                    <button
+                      onClick={() => {
+                        setPayingBusinessId(null);
+                        setActiveTab('my-businesses');
+                      }}
+                      className="text-xs text-slate-300 hover:text-white font-medium underline cursor-pointer shrink-0"
+                    >
+                      ← Back to My Businesses
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -5998,108 +6564,350 @@ export const BusinessPortal: React.FC = () => {
       {/* ========================================================================= */}
       {/* MODAL: WITHDRAWAL REQUEST                                                 */}
       {/* ========================================================================= */}
-      {isPayoutModalOpen && (
+      {isPayoutModalOpen && (() => {
+        const parsedAmount = parseFloat(payoutAmount.replace(/,/g, '')) || 0;
+        const activeCommRate = platformLedger?.commissionRate ?? 10.0;
+        const calcCommission = Number(((parsedAmount * activeCommRate) / 100).toFixed(2));
+        const calcTaxRate = isSelectedBizW9Certified ? 0 : 24.0;
+        const calcTaxWithheld = isSelectedBizW9Certified ? 0 : Number(((parsedAmount * 0.24).toFixed(2)));
+        const calcNetTransfer = Math.max(0, Number((parsedAmount - calcCommission - calcTaxWithheld).toFixed(2)));
+        const destBankName = selectedBusiness.verification?.bankAccount?.bankName || 'Commercial Bank';
+        const destMasked = selectedBusiness.verification?.bankAccount?.accountNumberMasked || '•••• 9382';
+        const destRouting = selectedBusiness.verification?.bankAccount?.routingNumber || '121000358';
+        const destHolder = selectedBusiness.verification?.bankAccount?.accountHolderName || selectedBusiness.coreDetails.businessName;
+
+        return (
+          <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-lg w-full overflow-hidden animate-in zoom-in-95 duration-150">
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 border border-emerald-200 flex items-center justify-center font-bold">
+                    <Wallet className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-slate-900 text-base">Withdrawal Request</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">Disburse available earnings to verified commercial bank</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsPayoutModalOpen(false)}
+                  className="w-8 h-8 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleRequestPayout} className="p-6 space-y-4">
+                {/* Available Balance Banner */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Available to Withdraw</label>
+                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between">
+                    <span className="text-xs text-emerald-800 font-semibold">Current Available Balance</span>
+                    <span className="font-mono font-black text-emerald-700 text-base">
+                      ${currentBusinessBalance.availableBalance.toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Amount Input */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-slate-700">Withdrawal Amount ($ USD) *</label>
+                    <button
+                      type="button"
+                      onClick={() => setPayoutAmount(currentBusinessBalance.availableBalance.toFixed(2))}
+                      className="text-[11px] text-blue-600 hover:text-blue-800 font-bold cursor-pointer"
+                    >
+                      Withdraw All (${currentBusinessBalance.availableBalance.toFixed(2)})
+                    </button>
+                  </div>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    max={currentBusinessBalance.availableBalance}
+                    required
+                    value={payoutAmount}
+                    onChange={(e) => setPayoutAmount(e.target.value)}
+                    className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-sm font-mono font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900"
+                  />
+                  {parseFloat(payoutAmount) > currentBusinessBalance.availableBalance && (
+                    <p className="text-[11px] text-rose-600 font-semibold mt-1">
+                      Amount cannot exceed available balance of ${currentBusinessBalance.availableBalance.toFixed(2)}.
+                    </p>
+                  )}
+                </div>
+
+                {/* Destination Bank Account Card */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-slate-700">Destination Commercial Bank</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsPayoutModalOpen(false);
+                        setBankFormData((prev) => ({
+                          ...prev,
+                          accountHolderName: destHolder,
+                          bankName: destBankName,
+                          routingNumber: destRouting,
+                        }));
+                        setIsLinkBankModalOpen(true);
+                      }}
+                      className="text-[11px] text-blue-600 hover:text-blue-800 font-bold cursor-pointer flex items-center gap-1"
+                    >
+                      <Landmark className="w-3 h-3" />
+                      <span>Change Bank</span>
+                    </button>
+                  </div>
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+                    <div className="flex items-center justify-between text-xs font-mono font-bold text-slate-900">
+                      <span>{destBankName} • {destHolder}</span>
+                      <span className="text-[10px] font-sans font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3" /> Linked & Verified
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs text-slate-600 font-mono">
+                      <span>Routing: {destRouting} • Account: {destMasked}</span>
+                      <span className="text-[10px] font-sans text-slate-400 font-medium">Direct ACH Disbursement</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Transparent Deduction Breakdown Card */}
+                {parsedAmount > 0 && (
+                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+                    <div className="text-xs font-bold text-slate-700 flex items-center justify-between pb-2 border-b border-slate-200">
+                      <span>Disbursement Calculation Preview</span>
+                      <span className="text-[10px] font-medium text-slate-500">Super Admin Deductions</span>
+                    </div>
+
+                    <div className="space-y-1.5 text-xs">
+                      <div className="flex items-center justify-between text-slate-600">
+                        <span>Gross Requested Amount</span>
+                        <span className="font-mono font-bold text-slate-900">${parsedAmount.toFixed(2)}</span>
+                      </div>
+
+                      <div className="flex items-center justify-between text-slate-600">
+                        <span>Platform Commission ({activeCommRate}%)</span>
+                        <span className="font-mono font-bold text-violet-700">-${calcCommission.toFixed(2)}</span>
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <span className="flex items-center gap-1">
+                          <span>IRS Backup Withholding</span>
+                          {isSelectedBizW9Certified ? (
+                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 font-bold">
+                              0% W-9 Certified
+                            </span>
+                          ) : (
+                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-100 text-amber-900 font-bold">
+                              24% W-9 Missing
+                            </span>
+                          )}
+                        </span>
+                        <span className={`font-mono font-bold ${calcTaxWithheld > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
+                          {calcTaxWithheld > 0 ? `-$${calcTaxWithheld.toFixed(2)}` : '$0.00'}
+                        </span>
+                      </div>
+
+                      <div className="pt-2 border-t border-slate-200 flex items-center justify-between">
+                        <span className="font-extrabold text-slate-900">Estimated Net Payout</span>
+                        <span className="font-mono font-black text-emerald-600 text-base">
+                          ${calcNetTransfer.toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* W-9 Form Warning Banner if not certified */}
+                {!isSelectedBizW9Certified && (
+                  <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2.5 text-amber-900">
+                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div className="text-xs space-y-1">
+                      <p className="font-bold text-amber-950">
+                        Form W-9 Missing — 24% tax ($${calcTaxWithheld.toFixed(2)}) will be withheld!
+                      </p>
+                      <p className="text-[11px] text-amber-800">
+                        Complete your Form W-9 tax certification to eliminate the 24% backup withholding tax and receive full net earnings.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsPayoutModalOpen(false);
+                          setActiveTab('w9-form');
+                        }}
+                        className="text-[11px] font-bold text-amber-950 underline hover:text-amber-800 cursor-pointer pt-0.5"
+                      >
+                        Complete Form W-9 Now (0% Tax) ›
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setIsPayoutModalOpen(false)}
+                    className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={
+                      currentBusinessBalance.availableBalance <= 0 ||
+                      parsedAmount <= 0 ||
+                      parsedAmount > currentBusinessBalance.availableBalance ||
+                      isNaN(parsedAmount)
+                    }
+                    className={`px-5 py-2.5 rounded-xl text-xs font-bold shadow-xs transition-all ${
+                      currentBusinessBalance.availableBalance > 0 &&
+                      parsedAmount > 0 &&
+                      parsedAmount <= currentBusinessBalance.availableBalance
+                        ? 'bg-black text-white hover:bg-slate-800 cursor-pointer'
+                        : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                    }`}
+                  >
+                    Submit Payout Request (${calcNetTransfer.toFixed(2)} Net)
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ========================================================================= */}
+      {/* MODAL: LINK COMMERCIAL BANK ACCOUNT                                       */}
+      {/* ========================================================================= */}
+      {isLinkBankModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-md w-full overflow-hidden animate-in zoom-in-95 duration-150">
             <div className="p-6 border-b border-slate-100 flex items-center justify-between">
-              <div>
-                <h3 className="font-extrabold text-slate-900 text-base">Withdrawal Request</h3>
-                <p className="text-xs text-slate-500 mt-0.5">Disburse available earnings to verified bank account</p>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-600 border border-blue-200 flex items-center justify-center font-bold">
+                  <Landmark className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-slate-900 text-base">Link Commercial Bank</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Required for direct ACH payout disbursements</p>
+                </div>
               </div>
               <button
-                onClick={() => setIsPayoutModalOpen(false)}
+                onClick={() => setIsLinkBankModalOpen(false)}
                 className="w-8 h-8 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <form onSubmit={handleRequestPayout} className="p-6 space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Available to Withdraw</label>
-                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between">
-                  <span className="text-xs text-emerald-800 font-semibold">Current Available Balance</span>
-                  <span className="font-mono font-black text-emerald-700 text-base">
-                    ${currentBusinessBalance.availableBalance.toFixed(2)}
+
+            <form onSubmit={handleSaveBankAccount} className="p-6 space-y-4">
+              <div className="p-3 bg-blue-50/70 border border-blue-200/80 rounded-2xl text-xs text-blue-900 flex items-start gap-2.5">
+                <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold block">Direct ACH Settlement</span>
+                  <span className="text-[11px] text-blue-800">
+                    When Super Admin authorizes your payouts, funds will transfer directly to this verified commercial bank account.
                   </span>
                 </div>
               </div>
 
               <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block text-xs font-bold text-slate-700">Withdrawal Amount ($ USD) *</label>
-                  <button
-                    type="button"
-                    onClick={() => setPayoutAmount(currentBusinessBalance.availableBalance.toFixed(2))}
-                    className="text-[11px] text-blue-600 hover:text-blue-800 font-bold cursor-pointer"
-                  >
-                    Withdraw All (${currentBusinessBalance.availableBalance.toFixed(2)})
-                  </button>
-                </div>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  max={currentBusinessBalance.availableBalance}
-                  required
-                  value={payoutAmount}
-                  onChange={(e) => setPayoutAmount(e.target.value)}
-                  className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-sm font-mono font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900"
-                />
-                {parseFloat(payoutAmount) > currentBusinessBalance.availableBalance && (
-                  <p className="text-[11px] text-rose-600 font-semibold mt-1">
-                    Amount cannot exceed available balance of ${currentBusinessBalance.availableBalance.toFixed(2)}.
-                  </p>
-                )}
+                <label className="block text-xs font-bold text-slate-700 mb-1">Financial Institution *</label>
+                <select
+                  value={bankFormData.bankName}
+                  onChange={(e) => setBankFormData({ ...bankFormData, bankName: e.target.value })}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 cursor-pointer"
+                >
+                  <option value="JPMorgan Chase">JPMorgan Chase Bank</option>
+                  <option value="Bank of America">Bank of America</option>
+                  <option value="Wells Fargo">Wells Fargo Bank</option>
+                  <option value="Citibank">Citibank, N.A.</option>
+                  <option value="PNC Bank">PNC Bank</option>
+                  <option value="US Bank">U.S. Bank National Association</option>
+                  <option value="Capital One">Capital One</option>
+                  <option value="Silicon Valley Bank">Silicon Valley Bank</option>
+                  <option value="Other Commercial Bank">Other Commercial Bank</option>
+                </select>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Destination NMI Settlement Bank</label>
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5">
-                  <div className="flex items-center justify-between text-xs font-mono font-bold text-slate-800">
-                    <span>{selectedBusiness.nmiPaymentAccount?.companyName || selectedBusiness.verification?.bankAccount?.accountHolderName || selectedBusiness.coreDetails.businessName}</span>
-                    <span className="text-[10px] font-sans font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
-                      <CheckCircle2 className="w-3 h-3" /> NMI Sub-Account Active
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between text-xs text-slate-600 font-mono">
-                    <span>
-                      Routing: •••• {selectedBusiness.nmiPaymentAccount?.bankRoutingNumber ? selectedBusiness.nmiPaymentAccount.bankRoutingNumber.slice(-4) : (selectedBusiness.verification?.bankAccount?.routingNumber?.slice(-4) || '0024')} | Acc: •••• {selectedBusiness.nmiPaymentAccount?.bankAccountNumber ? selectedBusiness.nmiPaymentAccount.bankAccountNumber.slice(-4) : '4321'}
-                    </span>
-                    <span className="text-blue-600 text-[11px] font-bold">
-                      {selectedBusiness.nmiPaymentAccount?.nmiGatewayId || 'NMI-ACTIVE'}
-                    </span>
-                  </div>
-                  <div className="text-[10px] text-slate-400">
-                    Direct ACH transfer via NMI Gateway. Settlement automatically routes to this verified sub-account.
-                  </div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Account Holder Name *</label>
+                <input
+                  type="text"
+                  required
+                  value={bankFormData.accountHolderName}
+                  onChange={(e) => setBankFormData({ ...bankFormData, accountHolderName: e.target.value })}
+                  placeholder="Legal Entity or Business DBA Name"
+                  className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Account Type *</label>
+                  <select
+                    value={bankFormData.accountType}
+                    onChange={(e) => setBankFormData({ ...bankFormData, accountType: e.target.value as any })}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900 cursor-pointer"
+                  >
+                    <option value="CHECKING">Business Checking</option>
+                    <option value="SAVINGS">Business Savings</option>
+                  </select>
                 </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Routing Number (9 Digits) *</label>
+                  <input
+                    type="text"
+                    maxLength={9}
+                    required
+                    value={bankFormData.routingNumber}
+                    onChange={(e) => setBankFormData({ ...bankFormData, routingNumber: e.target.value.replace(/\D/g, '').slice(0, 9) })}
+                    placeholder="e.g. 121000358"
+                    className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Account Number *</label>
+                <input
+                  type="password"
+                  required
+                  value={bankFormData.accountNumber}
+                  onChange={(e) => setBankFormData({ ...bankFormData, accountNumber: e.target.value.replace(/\D/g, '') })}
+                  placeholder="Enter commercial account number"
+                  className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Confirm Account Number *</label>
+                <input
+                  type="text"
+                  required
+                  value={bankFormData.confirmAccountNumber}
+                  onChange={(e) => setBankFormData({ ...bankFormData, confirmAccountNumber: e.target.value.replace(/\D/g, '') })}
+                  placeholder="Re-enter commercial account number"
+                  className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900"
+                />
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
                 <button
                   type="button"
-                  onClick={() => setIsPayoutModalOpen(false)}
+                  onClick={() => setIsLinkBankModalOpen(false)}
                   className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={
-                    currentBusinessBalance.availableBalance <= 0 ||
-                    parseFloat(payoutAmount) <= 0 ||
-                    parseFloat(payoutAmount) > currentBusinessBalance.availableBalance ||
-                    isNaN(parseFloat(payoutAmount))
-                  }
-                  className={`px-5 py-2 rounded-xl text-xs font-bold shadow-xs transition-all ${
-                    currentBusinessBalance.availableBalance > 0 &&
-                    parseFloat(payoutAmount) > 0 &&
-                    parseFloat(payoutAmount) <= currentBusinessBalance.availableBalance
-                      ? 'bg-black text-white hover:bg-slate-800 cursor-pointer'
-                      : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                  }`}
+                  className="px-5 py-2.5 rounded-xl text-xs font-bold bg-black text-white hover:bg-slate-800 cursor-pointer transition-all shadow-xs"
                 >
-                  Confirm Withdrawal
+                  Save & Link Bank Account
                 </button>
               </div>
             </form>
@@ -6200,19 +7008,12 @@ export const BusinessPortal: React.FC = () => {
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Launch Status
+                    Initial Status
                   </label>
-                  <select
-                    value={newBizStatus}
-                    onChange={(e) =>
-                      setNewBizStatus(e.target.value as 'Active' | 'Pending' | 'Inactive')
-                    }
-                    className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900"
-                  >
-                    <option value="Active">Active</option>
-                    <option value="Pending">Pending</option>
-                    <option value="Inactive">Inactive</option>
-                  </select>
+                  <div className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-600 flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                    <span>Draft (Pending KYC & Admin Approval)</span>
+                  </div>
                 </div>
               </div>
 
@@ -6319,21 +7120,10 @@ export const BusinessPortal: React.FC = () => {
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Status</label>
-                  <select
-                    value={editingBiz.status}
-                    onChange={(e) =>
-                      setEditingBiz({
-                        ...editingBiz,
-                        status: e.target.value as 'Active' | 'Pending' | 'Inactive',
-                        isActive: e.target.value === 'Active',
-                      })
-                    }
-                    className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900"
-                  >
-                    <option value="Active">Active</option>
-                    <option value="Pending">Pending</option>
-                    <option value="Inactive">Inactive</option>
-                  </select>
+                  <div className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 flex items-center justify-between">
+                    <span>{editingBiz.status}</span>
+                    <span className="text-[10px] text-slate-400 font-medium">(Super Admin managed)</span>
+                  </div>
                 </div>
               </div>
 
@@ -6567,8 +7357,12 @@ export const BusinessPortal: React.FC = () => {
                       </p>
                     </div>
                   </div>
-                  <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/80 shrink-0">
-                    KYC Verified
+                  <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold shrink-0 ${
+                    payingBiz.status === 'KYC Approved' || payingBiz.status === 'Live'
+                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/80'
+                      : 'bg-amber-50 text-amber-700 border border-amber-200/80'
+                  }`}>
+                    {payingBiz.status === 'KYC Approved' ? 'KYC Verified' : payingBiz.status}
                   </span>
                 </div>
               )}

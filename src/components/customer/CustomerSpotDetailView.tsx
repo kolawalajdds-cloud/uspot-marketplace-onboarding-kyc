@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { useDemo } from '../../context/DemoContext';
 import { Business, BusinessService } from '../../types';
+import { getPresetServicesForBusiness } from '../../data/seedData';
 
 interface CustomerSpotDetailViewProps {
   businessId: string;
@@ -69,9 +70,15 @@ export const CustomerSpotDetailView: React.FC<CustomerSpotDetailViewProps> = ({
   const [selectedServiceForDetails, setSelectedServiceForDetails] = useState<BusinessService | null>(null);
   const [serviceModalImageIndex, setServiceModalImageIndex] = useState<number>(0);
 
-  // Group services by category
+  // Group services by category with robust preset fallback
   const servicesByCategory = useMemo(() => {
-    const services = state.businessServices.filter((s) => s.business_id === business.id && s.status === 'active');
+    let services = state.businessServices.filter((s) => s.business_id === business.id && s.status === 'active');
+    if (services.length === 0 && business.business_services && business.business_services.length > 0) {
+      services = business.business_services.filter((s) => s.status === 'active');
+    }
+    if (services.length === 0) {
+      services = getPresetServicesForBusiness(business.id, business.coreDetails?.category);
+    }
     const groups: Record<string, BusinessService[]> = {};
 
     services.forEach((s) => {
@@ -81,7 +88,7 @@ export const CustomerSpotDetailView: React.FC<CustomerSpotDetailViewProps> = ({
     });
 
     return groups;
-  }, [state.businessServices, business.id]);
+  }, [state.businessServices, business.id, business.business_services, business.coreDetails?.category]);
 
   // Dynamic working hours from given data
   const currentDayName = useMemo(() => {

@@ -13,8 +13,7 @@ const MainLayout: React.FC = () => {
   if (!currentUser) {
     return (
       <div className="h-full w-full bg-[#F8FAFC] text-slate-900 flex flex-col font-sans overflow-y-auto">
-        <Navbar />
-        <div className="flex-1">
+        <div className="flex-1 flex items-center justify-center">
           <LoginView />
         </div>
       </div>

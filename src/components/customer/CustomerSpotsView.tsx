@@ -41,9 +41,7 @@ export const CustomerSpotsView: React.FC<CustomerSpotsViewProps> = ({
   const [activeCategoryPill, setActiveCategoryPill] = useState<string>(
     initialCategory || 'All'
   );
-  const [selectedCategories, setSelectedCategories] = useState<string[]>([
-    'Barber Shops',
-  ]);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [distanceVal, setDistanceVal] = useState<number>(15);
   const [sortBy, setSortBy] = useState<'highest-rated' | 'most-popular' | 'distance'>('highest-rated');
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -71,103 +69,72 @@ export const CustomerSpotsView: React.FC<CustomerSpotsViewProps> = ({
     );
   };
 
-  // Spot list matching Screen 2
-  const spotsList: SpotItem[] = useMemo(() => [
-    {
-      id: 'spot-1',
-      businessId: 'biz-001', // Glow Salon / The Groomer
-      name: 'The Groomer',
-      categoryBadge: 'BARBER',
-      categoryFilter: 'Barber',
-      rating: 4.9,
-      address: '224 West 57th St, NY',
-      image: 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=800&q=80',
-    },
-    {
-      id: 'spot-2',
-      businessId: 'biz-002', // Onyx Spa / Luxe Spa
-      name: 'Luxe Spa',
-      categoryBadge: 'SPA',
-      categoryFilter: 'Spa',
-      rating: 4.7,
-      address: '450 Hudson Street, NY',
-      image: 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=800&q=80',
-    },
-    {
-      id: 'spot-3',
-      businessId: 'biz-001',
-      name: 'Zen Wellness',
-      categoryBadge: 'WELLNESS',
-      categoryFilter: 'Wellness',
-      rating: 4.8,
-      address: '120 Broadway, NY',
-      image: 'https://images.unsplash.com/photo-1545205597-3d9d02c29597?auto=format&fit=crop&w=800&q=80',
-    },
-    {
-      id: 'spot-4',
-      businessId: 'biz-001',
-      name: 'Ink Master',
-      categoryBadge: 'TATTOO',
-      categoryFilter: 'Tattoo',
-      rating: 4.8,
-      address: '89 Bowery, NY',
-      image: 'https://images.unsplash.com/photo-1598371839696-5c5bb00bdc28?auto=format&fit=crop&w=800&q=80',
-    },
-    {
-      id: 'spot-5',
-      businessId: 'biz-001',
-      name: 'The Barber House',
-      categoryBadge: 'BARBER',
-      categoryFilter: 'Barber',
-      rating: 4.5,
-      address: '34th Ave, Queens',
-      image: 'https://images.unsplash.com/photo-1585747860715-2ba37e788b70?auto=format&fit=crop&w=800&q=80',
-    },
-    {
-      id: 'spot-6',
-      businessId: 'biz-002',
-      name: 'Serene Nails',
-      categoryBadge: 'NAILS',
-      categoryFilter: 'Nails',
-      rating: 4.4,
-      address: '15th St, Chelsea',
-      image: 'https://images.unsplash.com/photo-1604654894610-df63bc536371?auto=format&fit=crop&w=800&q=80',
-    },
-    {
-      id: 'spot-7',
-      businessId: 'biz-001',
-      name: 'Apex Hair Lounge',
-      categoryBadge: 'HAIR',
-      categoryFilter: 'Barber',
-      rating: 4.9,
-      address: '102 Madison Ave, NY',
-      image: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=800&q=80',
-    },
-    {
-      id: 'spot-8',
-      businessId: 'biz-002',
-      name: 'Onyx Mineral Baths',
-      categoryBadge: 'SPA',
-      categoryFilter: 'Spa',
-      rating: 5.0,
-      address: '88 Mayfair Blvd, LON',
-      image: 'https://images.unsplash.com/photo-1512290900672-1f4f5f5c35df?auto=format&fit=crop&w=800&q=80',
-    },
-  ], []);
+  // Only display verified & live businesses approved by Super Admin
+  const displayBusinesses = useMemo(() => {
+    return state.businesses.filter(
+      (b) =>
+        b.status === 'Live' ||
+        b.status === 'KYC Approved' ||
+        (b as any).status === 'Active'
+    );
+  }, [state.businesses]);
+
+  // Derived available categories from vendor businesses
+  const availableCategories = useMemo(() => {
+    const set = new Set<string>();
+    displayBusinesses.forEach((b) => {
+      if (b.coreDetails?.category) set.add(b.coreDetails.category);
+    });
+    return Array.from(set);
+  }, [displayBusinesses]);
+
+  // Spot list dynamically populated with actual vendor businesses
+  const spotsList: SpotItem[] = useMemo(() => {
+    return displayBusinesses.map((biz) => {
+      const coverImg =
+        biz.imageGallery?.find((img) => img.isCover)?.url ||
+        biz.imageGallery?.[0]?.url ||
+        (biz.coreDetails?.category?.toLowerCase().includes('cowork')
+          ? 'https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=800&q=80'
+          : 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=800&q=80');
+
+      const category = biz.coreDetails?.category || 'General';
+      const addrParts = [
+        biz.coreDetails?.streetAddress,
+        biz.coreDetails?.city,
+        biz.coreDetails?.state,
+      ].filter(Boolean);
+      const address = addrParts.length > 0 ? addrParts.join(', ') : 'United States';
+
+      return {
+        id: `spot-${biz.id}`,
+        businessId: biz.id,
+        name: biz.coreDetails?.businessName || 'Untitled Business',
+        categoryBadge: category.toUpperCase(),
+        categoryFilter: category,
+        rating: (biz as any).rating || 4.9,
+        address,
+        image: coverImg,
+      };
+    });
+  }, [displayBusinesses]);
 
   const filteredSpots = useMemo(() => {
     return spotsList.filter((s) => {
       const matchPill =
         activeCategoryPill === 'All' ||
         s.categoryFilter.toLowerCase() === activeCategoryPill.toLowerCase();
+      const matchCategoryCheck =
+        selectedCategories.length === 0 ||
+        selectedCategories.includes(s.categoryFilter);
       const matchQuery =
         !searchQuery.trim() ||
         s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         s.categoryBadge.toLowerCase().includes(searchQuery.toLowerCase()) ||
         s.address.toLowerCase().includes(searchQuery.toLowerCase());
-      return matchPill && matchQuery;
+      return matchPill && matchCategoryCheck && matchQuery;
     });
-  }, [spotsList, activeCategoryPill, searchQuery]);
+  }, [spotsList, activeCategoryPill, selectedCategories, searchQuery]);
 
   return (
     <div className="w-full bg-white animate-in fade-in duration-200">
@@ -197,9 +164,9 @@ export const CustomerSpotsView: React.FC<CustomerSpotsViewProps> = ({
           </div>
         </div>
 
-        {/* Category Pills (All, Barber, Spa, Wellness, Tattoo, Nails) */}
+        {/* Dynamic Category Pills */}
         <div className="flex flex-wrap items-center justify-center gap-2">
-          {['All', 'Barber', 'Spa', 'Wellness', 'Tattoo', 'Nails'].map((pill) => {
+          {['All', ...availableCategories].map((pill) => {
             const isSelected = activeCategoryPill === pill;
             return (
               <button
@@ -238,13 +205,7 @@ export const CustomerSpotsView: React.FC<CustomerSpotsViewProps> = ({
                 CATEGORIES
               </span>
               <div className="space-y-2.5 text-xs text-slate-700">
-                {[
-                  'Barber Shops',
-                  'Massage & Spa',
-                  'Yoga Studios',
-                  'Skincare Centers',
-                  'Hair Salons',
-                ].map((cat) => {
+                {(availableCategories.length > 0 ? availableCategories : ['General']).map((cat) => {
                   const isChecked = selectedCategories.includes(cat);
                   return (
                     <label
@@ -304,7 +265,7 @@ export const CustomerSpotsView: React.FC<CustomerSpotsViewProps> = ({
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-100">
               <div>
                 <span className="text-xs text-slate-400 font-medium block">
-                  Showing 1-{Math.min(filteredSpots.length, 8)} of 124 results
+                  Showing {filteredSpots.length > 0 ? 1 : 0}-{filteredSpots.length} of {displayBusinesses.length} results
                 </span>
                 <h2 className="text-xl font-black text-slate-900 tracking-tight mt-0.5">
                   Available Spots
@@ -328,8 +289,13 @@ export const CustomerSpotsView: React.FC<CustomerSpotsViewProps> = ({
               </div>
             </div>
 
-            {/* 3-Column Grid of Spot Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredSpots.length === 0 ? (
+              <div className="p-12 text-center bg-slate-50 rounded-2xl border border-slate-200">
+                <p className="text-sm font-bold text-slate-800">No businesses found matching your criteria</p>
+                <p className="text-xs text-slate-500 mt-1">Try resetting your category filters or search term.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredSpots.map((spot) => {
                 const isFav = !!favorites[spot.id];
                 return (
@@ -393,6 +359,7 @@ export const CustomerSpotsView: React.FC<CustomerSpotsViewProps> = ({
                 );
               })}
             </div>
+          )}
 
             {/* Pagination at Bottom */}
             <div className="flex items-center justify-center gap-2 pt-8">

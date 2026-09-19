@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { CustomerNavbar, CustomerNavPage } from './CustomerNavbar';
 import { CustomerFooter } from './CustomerFooter';
 import { CustomerHomeView } from './CustomerHomeView';
@@ -13,17 +13,82 @@ import { CustomerReviewServiceView } from './CustomerReviewServiceView';
 import { CustomerSettingsView } from './CustomerSettingsView';
 
 export const CustomerPortal: React.FC = () => {
-  const [activePage, setActivePage] = useState<CustomerNavPage>('home');
+  const [activePage, setActivePage] = useState<CustomerNavPage>(() => {
+    try {
+      const saved = localStorage.getItem('uspot_customer_active_page') as CustomerNavPage;
+      const validPages: CustomerNavPage[] = [
+        'home',
+        'spots',
+        'categories',
+        'cities',
+        'spot-detail',
+        'booking',
+        'my-bookings',
+        'booking-detail',
+        'review-service',
+        'settings',
+      ];
+      if (saved && validPages.includes(saved)) {
+        return saved;
+      }
+    } catch (e) {}
+    return 'home';
+  });
+
   const [spotsCategory, setSpotsCategory] = useState<string | undefined>(undefined);
   const [spotsQuery, setSpotsQuery] = useState<string | undefined>(undefined);
   const [spotsLocation, setSpotsLocation] = useState<string | undefined>(undefined);
 
   // Selected business and service for spot-detail and booking flow
-  const [selectedBusinessId, setSelectedBusinessId] = useState<string>('biz-001');
-  const [selectedServiceId, setSelectedServiceId] = useState<string | undefined>(undefined);
+  const [selectedBusinessId, setSelectedBusinessId] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('uspot_customer_selected_business_id');
+      if (saved) return saved;
+    } catch (e) {}
+    return 'biz-001';
+  });
+  const [selectedServiceId, setSelectedServiceId] = useState<string | undefined>(() => {
+    try {
+      const saved = localStorage.getItem('uspot_customer_selected_service_id');
+      if (saved) return saved;
+    } catch (e) {}
+    return undefined;
+  });
 
   // Selected booking for booking-detail and review-service views
-  const [selectedBookingId, setSelectedBookingId] = useState<string>('BK-USR-992834');
+  const [selectedBookingId, setSelectedBookingId] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('uspot_customer_selected_booking_id');
+      if (saved) return saved;
+    } catch (e) {}
+    return 'BK-USR-992834';
+  });
+
+  // Sync navigation states to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('uspot_customer_active_page', activePage);
+    } catch (e) {}
+  }, [activePage]);
+
+  useEffect(() => {
+    try {
+      if (selectedBusinessId) localStorage.setItem('uspot_customer_selected_business_id', selectedBusinessId);
+    } catch (e) {}
+  }, [selectedBusinessId]);
+
+  useEffect(() => {
+    try {
+      if (selectedServiceId) localStorage.setItem('uspot_customer_selected_service_id', selectedServiceId);
+      else localStorage.removeItem('uspot_customer_selected_service_id');
+    } catch (e) {}
+  }, [selectedServiceId]);
+
+  useEffect(() => {
+    try {
+      if (selectedBookingId) localStorage.setItem('uspot_customer_selected_booking_id', selectedBookingId);
+    } catch (e) {}
+  }, [selectedBookingId]);
 
   const handleNavigateSpots = (category?: string, query?: string, location?: string) => {
     setSpotsCategory(category);

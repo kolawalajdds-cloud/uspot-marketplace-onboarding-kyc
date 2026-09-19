@@ -104,7 +104,7 @@ export const CustomerReviewServiceView: React.FC<CustomerReviewServiceViewProps>
     const remainingSlots = 13 - currentList.length; // max 10 photos + 3 videos
     if (remainingSlots <= 0) return;
 
-    const newFiles = Array.from(e.target.files).slice(0, remainingSlots);
+    const newFiles = (Array.from(e.target.files) as File[]).slice(0, remainingSlots);
     const newUrls = newFiles.map((file) => URL.createObjectURL(file));
 
     setReviewsState((prev) => ({

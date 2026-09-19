@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Search,
   ArrowRight,
@@ -62,288 +62,150 @@ export const CustomerCategoriesView: React.FC<CustomerCategoriesViewProps> = ({
     setIsServiceBookingModalOpen(true);
   };
 
-  // 8 Categories matching Screen 3
-  const allCategories: CategoryItem[] = [
-    {
-      id: 'barber',
-      name: 'Barber',
-      countText: '28+ Locations',
-      image: 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=700&q=80',
-      heroImage: 'https://images.unsplash.com/photo-1585747860715-2ba37e788b70?auto=format&fit=crop&w=1600&q=80',
-      description:
-        'From precision master fades to traditional hot towel straight-razor shaves, discover top-rated barbershops curated for discerning gentlemen.',
-      featuredSpots: [
-        {
-          id: 'b-spot-1',
-          businessId: 'biz-001',
-          name: 'The Sovereign Barber Club',
-          tag: 'LUXURY EXPERIENCE',
-          rating: 4.9,
-          reviews: 142,
-          address: '45 Spring St, SoHo, New York',
-          image: 'https://images.unsplash.com/photo-1621605815971-fbc98d665033?auto=format&fit=crop&w=700&q=80',
-          description: 'A bespoke sanctuary offering private grooming suites, single-barrel bourbon tastings, and master barber craftsmanship.',
-        },
-        {
-          id: 'b-spot-2',
-          businessId: 'biz-001',
-          name: 'Crown & Blade Atelier',
-          tag: 'TRADITIONAL & MODERN',
-          rating: 5.0,
-          reviews: 88,
-          address: '112 Mercer St, New York',
-          image: 'https://images.unsplash.com/photo-1599351431202-1e0f0137899a?auto=format&fit=crop&w=700&q=80',
-          description: 'Combining classic Italian barbering techniques with contemporary styling and signature herbal scalp treatments.',
-        },
-      ],
-    },
-    {
-      id: 'spa',
-      name: 'Spa',
-      countText: '35+ Locations',
-      image: 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=700&q=80',
-      heroImage: 'https://images.unsplash.com/photo-1600334129128-685c5582fd35?auto=format&fit=crop&w=1600&q=80',
-      description:
-        'Rejuvenate mind and body in serene sanctuaries offering thermal hydrotherapy, restorative facials, and holistic wellness therapies.',
-      featuredSpots: [
-        {
-          id: 's-spot-1',
-          businessId: 'biz-002',
-          name: 'Onyx Sanctuary & Thermal Baths',
-          tag: 'LUXURY SPA',
-          rating: 4.9,
-          reviews: 198,
-          address: '88 Franklin St, Tribeca, New York',
-          image: 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=700&q=80',
-          description: 'Subterranean thermal pools, Finnish cedar saunas, and custom aromatic oils formulated for cellular restoration.',
-        },
-        {
-          id: 's-spot-2',
-          businessId: 'biz-002',
-          name: 'Aura Thermal & Body Suite',
-          tag: 'HOLISTIC WELLNESS',
-          rating: 4.8,
-          reviews: 115,
-          address: '220 West End Ave, New York',
-          image: 'https://images.unsplash.com/photo-1515377905703-c4788e51af15?auto=format&fit=crop&w=700&q=80',
-          description: 'Personalized mineral body wraps, deep tissue botanical infusions, and guided sensory deprivation therapy.',
-        },
-      ],
-    },
-    {
-      id: 'nails',
-      name: 'Nails',
-      countText: '42+ Locations',
-      image: 'https://images.unsplash.com/photo-1604654894610-df63bc536371?auto=format&fit=crop&w=700&q=80',
-      heroImage: 'https://images.unsplash.com/photo-1632345031435-8727f6897d53?auto=format&fit=crop&w=1600&q=80',
-      description:
-        'High-concept nail artistry, organic Japanese gel treatments, and meticulous manicure care designed for clean luxury.',
-      featuredSpots: [
-        {
-          id: 'n-spot-1',
-          businessId: 'biz-001',
-          name: 'L’Atelier De Beauté Nails',
-          tag: 'ORGANIC GEL & ART',
-          rating: 4.9,
-          reviews: 164,
-          address: '77 Greene St, SoHo, New York',
-          image: 'https://images.unsplash.com/photo-1604654894610-df63bc536371?auto=format&fit=crop&w=700&q=80',
-          description: 'Specializing in non-toxic Japanese gels, editorial hand-painted nail designs, and collagen hydration treatments.',
-        },
-        {
-          id: 'n-spot-2',
-          businessId: 'biz-001',
-          name: 'Nail Lounge NYC',
-          tag: 'CLASSIC & MODERN',
-          rating: 4.8,
-          reviews: 92,
-          address: '410 Bleecker St, West Village, NY',
-          image: 'https://images.unsplash.com/photo-1519014816548-bf785179c24c?auto=format&fit=crop&w=700&q=80',
-          description: 'Relaxed minimalist setting offering Russian dry manicures, keratin cuticle treatments, and crystal embellishments.',
-        },
-      ],
-    },
-    {
-      id: 'fitness',
-      name: 'Fitness',
-      countText: '30+ Locations',
-      image: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?auto=format&fit=crop&w=700&q=80',
-      heroImage: 'https://images.unsplash.com/photo-1540497077202-7c8a3999166f?auto=format&fit=crop&w=1600&q=80',
-      description:
-        'Private personal training suites, elite biomechanical performance labs, and high-intensity boutique fitness spaces.',
-      featuredSpots: [
-        {
-          id: 'f-spot-1',
-          businessId: 'biz-002',
-          name: 'Kinetic Performance Lab',
-          tag: 'ELITE TRAINING',
-          rating: 4.9,
-          reviews: 130,
-          address: '150 Crosby St, New York',
-          image: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?auto=format&fit=crop&w=700&q=80',
-          description: 'Olympic coaching standards, VO2 max diagnostic analysis, and private strength and conditioning suites.',
-        },
-        {
-          id: 'f-spot-2',
-          businessId: 'biz-002',
-          name: 'Core Studio Greenwich',
-          tag: 'PILATES & MOVEMENT',
-          rating: 4.8,
-          reviews: 84,
-          address: '93 Greenwich Ave, New York',
-          image: 'https://images.unsplash.com/photo-1518611012118-696072aa579a?auto=format&fit=crop&w=700&q=80',
-          description: 'Reformer Pilates, postural alignment conditioning, and athletic stretch therapy under master instructors.',
-        },
-      ],
-    },
-    {
-      id: 'wellness',
-      name: 'Wellness',
-      countText: '25+ Locations',
-      image: 'https://images.unsplash.com/photo-1545205597-3d9d02c29597?auto=format&fit=crop&w=700&q=80',
-      heroImage: 'https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&w=1600&q=80',
-      description:
-        'Holistic longevity therapies, infrared sauna sessions, cold plunge therapy, and sound resonance meditation.',
-      featuredSpots: [
-        {
-          id: 'w-spot-1',
-          businessId: 'biz-002',
-          name: 'Zenith Longevity & Wellness',
-          tag: 'RECOVERY & SOUND',
-          rating: 4.8,
-          reviews: 110,
-          address: '302 Bowery, East Village, New York',
-          image: 'https://images.unsplash.com/photo-1545205597-3d9d02c29597?auto=format&fit=crop&w=700&q=80',
-          description: 'Tibetan sound bath chambers, medical-grade hyperbaric oxygen therapy, and contrast hydrotherapy circuits.',
-        },
-        {
-          id: 'w-spot-2',
-          businessId: 'biz-002',
-          name: 'Veda Holistic Haven',
-          tag: 'MINDFULNESS',
-          rating: 4.9,
-          reviews: 75,
-          address: '58 E 11th St, New York',
-          image: 'https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&w=700&q=80',
-          description: 'Ayurvedic body consultations, chakra alignment therapy, and custom adaptogenic tea pairings.',
-        },
-      ],
-    },
-    {
-      id: 'beauty',
-      name: 'Beauty',
-      countText: '48+ Locations',
-      image: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=700&q=80',
-      heroImage: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=1600&q=80',
-      description:
-        'Award-winning hair styling, custom balayage, editorial makeup, and clinical skin treatments by master beauty artists.',
-      featuredSpots: [
-        {
-          id: 'bt-spot-1',
-          businessId: 'biz-001',
-          name: 'Glow Haute Coiffure',
-          tag: 'HAIR & STYLING',
-          rating: 4.9,
-          reviews: 215,
-          address: '124 Grand St, SoHo, New York',
-          image: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=700&q=80',
-          description: 'Premier salon trusted by fashion editors for dimensional color, precision French cutting, and botanical glosses.',
-        },
-        {
-          id: 'bt-spot-2',
-          businessId: 'biz-001',
-          name: 'Maison Glow Aesthetics',
-          tag: 'FACIAL & SKIN',
-          rating: 5.0,
-          reviews: 134,
-          address: '68 Prince St, New York',
-          image: 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?auto=format&fit=crop&w=700&q=80',
-          description: 'Customized lymphatic drainage facials, microcurrent sculpting, and bespoke active enzyme peels.',
-        },
-      ],
-    },
-    {
-      id: 'tailor',
-      name: 'Tailor',
-      countText: '16+ Locations',
-      image: 'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?auto=format&fit=crop&w=700&q=80',
-      heroImage: 'https://images.unsplash.com/photo-1598808503746-f34c53b9323e?auto=format&fit=crop&w=1600&q=80',
-      description:
-        'Handcrafted bespoke suiting, precision garment alteration, and custom wardrobe tailoring using English and Italian wools.',
-      featuredSpots: [
-        {
-          id: 't-spot-1',
-          businessId: 'biz-001',
-          name: 'Savile & Fifth Bespoke',
-          tag: 'BESPOKE TAILORING',
-          rating: 4.9,
-          reviews: 96,
-          address: '520 Madison Ave, New York',
-          image: 'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?auto=format&fit=crop&w=700&q=80',
-          description: 'Three-fitting master tailoring, hand-stitched canvassing, and rare fabric rolls from Loro Piana and Scabal.',
-        },
-        {
-          id: 't-spot-2',
-          businessId: 'biz-001',
-          name: 'The Garment Workshop',
-          tag: 'ALTERATIONS & FIT',
-          rating: 4.8,
-          reviews: 64,
-          address: '28 Bond St, New York',
-          image: 'https://images.unsplash.com/photo-1598808503746-f34c53b9323e?auto=format&fit=crop&w=700&q=80',
-          description: 'Same-week precision taper, re-lining, and custom fit alterations for designer garments and tuxedos.',
-        },
-      ],
-    },
-    {
-      id: 'massage',
-      name: 'Massage',
-      countText: '38+ Locations',
-      image: 'https://images.unsplash.com/photo-1600334129128-685c5582fd35?auto=format&fit=crop&w=700&q=80',
-      heroImage: 'https://images.unsplash.com/photo-1519823551278-64ac92734fb1?auto=format&fit=crop&w=1600&q=80',
-      description:
-        'Therapeutic deep tissue, Swedish relaxation, prenatal massage, and basalt hot stone therapies by licensed bodyworkers.',
-      featuredSpots: [
-        {
-          id: 'm-spot-1',
-          businessId: 'biz-002',
-          name: 'Soma Therapeutic Bodywork',
-          tag: 'DEEP TISSUE & RECOVERY',
-          rating: 4.9,
-          reviews: 182,
-          address: '142 W 10th St, New York',
-          image: 'https://images.unsplash.com/photo-1600334129128-685c5582fd35?auto=format&fit=crop&w=700&q=80',
-          description: 'Targeted neuromuscular release, myofascial trigger therapies, and custom organic botanical oils.',
-        },
-        {
-          id: 'm-spot-2',
-          businessId: 'biz-002',
-          name: 'Zenith Restorative Massage',
-          tag: 'HOT STONE & RELAX',
-          rating: 4.8,
-          reviews: 104,
-          address: '74 5th Ave, Flatiron, New York',
-          image: 'https://images.unsplash.com/photo-1519823551278-64ac92734fb1?auto=format&fit=crop&w=700&q=80',
-          description: 'Heated volcanic stone treatments, warm organic coconut balm, and gentle neck tension decompression.',
-        },
-      ],
-    },
-  ];
+  // Only display verified & live businesses approved by Super Admin
+  const displayBusinesses = useMemo(() => {
+    return state.businesses.filter(
+      (b) =>
+        b.status === 'Live' ||
+        b.status === 'KYC Approved' ||
+        (b as any).status === 'Active'
+    );
+  }, [state.businesses]);
+
+  // Categories populated dynamically with actual vendor businesses
+  const allCategories: CategoryItem[] = useMemo(() => {
+    const baseCategories = [
+      {
+        id: 'barber',
+        name: 'Barber',
+        image: 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=700&q=80',
+        heroImage: 'https://images.unsplash.com/photo-1585747860715-2ba37e788b70?auto=format&fit=crop&w=1600&q=80',
+        description: 'From precision master fades to traditional hot towel straight-razor shaves, discover top-rated barbershops curated for discerning gentlemen.',
+      },
+      {
+        id: 'spa',
+        name: 'Spa',
+        image: 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=700&q=80',
+        heroImage: 'https://images.unsplash.com/photo-1600334129128-685c5582fd35?auto=format&fit=crop&w=1600&q=80',
+        description: 'Rejuvenate mind and body in serene sanctuaries offering thermal hydrotherapy, restorative facials, and holistic wellness therapies.',
+      },
+      {
+        id: 'beauty',
+        name: 'Beauty',
+        image: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=700&q=80',
+        heroImage: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=1600&q=80',
+        description: 'Boutique hair styling, aesthetic skin renewal, and luxury salon treatments provided by certified specialists.',
+      },
+      {
+        id: 'wellness',
+        name: 'Wellness',
+        image: 'https://images.unsplash.com/photo-1545205597-3d9d02c29597?auto=format&fit=crop&w=700&q=80',
+        heroImage: 'https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&w=1600&q=80',
+        description: 'Holistic lifestyle spaces, mindfulness sanctuaries, and functional physical recovery clinics.',
+      },
+      {
+        id: 'fitness',
+        name: 'Fitness',
+        image: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?auto=format&fit=crop&w=700&q=80',
+        heroImage: 'https://images.unsplash.com/photo-1540497077202-7c8a3999166f?auto=format&fit=crop&w=1600&q=80',
+        description: 'Private personal training suites, elite biomechanical performance labs, and high-intensity boutique fitness spaces.',
+      },
+      {
+        id: 'nails',
+        name: 'Nails',
+        image: 'https://images.unsplash.com/photo-1604654894610-df63bc536371?auto=format&fit=crop&w=700&q=80',
+        heroImage: 'https://images.unsplash.com/photo-1632345031435-8727f6897d53?auto=format&fit=crop&w=1600&q=80',
+        description: 'High-concept nail artistry, organic Japanese gel treatments, and meticulous manicure care designed for clean luxury.',
+      },
+      {
+        id: 'massage',
+        name: 'Massage',
+        image: 'https://images.unsplash.com/photo-1600334129128-685c5582fd35?auto=format&fit=crop&w=700&q=80',
+        heroImage: 'https://images.unsplash.com/photo-1519823551278-64ac92734fb1?auto=format&fit=crop&w=1600&q=80',
+        description: 'Therapeutic deep tissue, Swedish relaxation, prenatal massage, and basalt hot stone therapies by licensed bodyworkers.',
+      },
+      {
+        id: 'tailor',
+        name: 'Tailor',
+        image: 'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?auto=format&fit=crop&w=700&q=80',
+        heroImage: 'https://images.unsplash.com/photo-1598808503746-f34c53b9323e?auto=format&fit=crop&w=1600&q=80',
+        description: 'Handcrafted bespoke suiting, precision garment alteration, and custom wardrobe tailoring using English and Italian wools.',
+      },
+    ];
+
+    // Include custom categories from active businesses that are not in baseCategories
+    const extraCategories: { id: string; name: string; image: string; heroImage: string; description: string }[] = [];
+    displayBusinesses.forEach((b) => {
+      const bCat = b.coreDetails?.category?.trim();
+      if (!bCat) return;
+      const alreadyHas = [...baseCategories, ...extraCategories].some((cat) => {
+        const cName = cat.name.toLowerCase();
+        const bLower = bCat.toLowerCase();
+        return bLower.includes(cName) || cName.includes(bLower);
+      });
+      if (!alreadyHas) {
+        extraCategories.push({
+          id: bCat.toLowerCase().replace(/[^a-z0-9]/g, '-'),
+          name: bCat,
+          image:
+            b.imageGallery?.find((i) => i.isCover)?.url ||
+            b.imageGallery?.[0]?.url ||
+            'https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=700&q=80',
+          heroImage:
+            'https://images.unsplash.com/photo-1497366811353-6870744d04b2?auto=format&fit=crop&w=1600&q=80',
+          description: `Curated ${bCat} locations offering verified spaces and instant online booking on URSPOT.`,
+        });
+      }
+    });
+
+    return [...baseCategories, ...extraCategories].map((cat) => {
+      // Find matching businesses from actual vendor businesses
+      const matchingBusinesses = displayBusinesses.filter((b) => {
+        const bCat = (b.coreDetails?.category || '').toLowerCase();
+        const cName = cat.name.toLowerCase();
+        return bCat.includes(cName) || cName.includes(bCat);
+      });
+
+      const featuredSpots = matchingBusinesses.map((b) => {
+        const addrParts = [b.coreDetails?.streetAddress, b.coreDetails?.city, b.coreDetails?.state].filter(Boolean);
+        const address = addrParts.length > 0 ? addrParts.join(', ') : 'United States';
+        return {
+          id: `feat-${b.id}`,
+          businessId: b.id,
+          name: b.coreDetails?.businessName || 'Untitled Business',
+          tag: (b.coreDetails?.category || cat.name).toUpperCase(),
+          rating: (b as any).rating || 4.9,
+          reviews: (b as any).reviewCount || 18,
+          address,
+          image:
+            b.imageGallery?.find((i) => i.isCover)?.url ||
+            b.imageGallery?.[0]?.url ||
+            (b.coreDetails?.category?.toLowerCase().includes('cowork')
+              ? 'https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=700&q=80'
+              : cat.image),
+          description: b.coreDetails?.description || `Curated ${cat.name} location offering verified services and instant online booking on URSPOT.`,
+        };
+      });
+
+      return {
+        ...cat,
+        countText: `${matchingBusinesses.length} Location${matchingBusinesses.length === 1 ? '' : 's'}`,
+        featuredSpots,
+      };
+    });
+  }, [displayBusinesses]);
 
   const filteredCategories = allCategories.filter((cat) =>
     cat.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const globalLocations = [
-    'New York',
-    'London',
-    'Tokyo',
-    'Paris',
-    'Dubai',
-    'Milan',
-    'Singapore',
-    'Sydney',
-  ];
+  const globalLocations = useMemo(() => {
+    const set = new Set<string>();
+    displayBusinesses.forEach((b) => {
+      if (b.coreDetails?.city) set.add(b.coreDetails.city);
+    });
+    return set.size > 0 ? Array.from(set) : ['United States'];
+  }, [displayBusinesses]);
 
   const handleRequestSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -422,7 +284,7 @@ export const CustomerCategoriesView: React.FC<CustomerCategoriesViewProps> = ({
             <section>
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-bold uppercase tracking-wider text-slate-900">
-                  Available in 8 Global Locations
+                  Available in {globalLocations.length} Location{globalLocations.length === 1 ? '' : 's'}
                 </h3>
                 <span className="text-xs text-slate-400">Select city to filter</span>
               </div>
@@ -446,8 +308,14 @@ export const CustomerCategoriesView: React.FC<CustomerCategoriesViewProps> = ({
 
             {/* Two Side-by-Side Showcase Cards matching Screen 4 */}
             <section>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                {selectedCategory.featuredSpots.map((spot) => (
+              {selectedCategory.featuredSpots.length === 0 ? (
+                <div className="p-12 text-center bg-slate-50 rounded-2xl border border-slate-200">
+                  <p className="text-sm font-bold text-slate-800">No registered businesses in this category yet</p>
+                  <p className="text-xs text-slate-500 mt-1">Vendors have not yet added a business under {selectedCategory.name}.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  {selectedCategory.featuredSpots.map((spot) => (
                   <div
                     key={spot.id}
                     className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-xs hover:shadow-xl transition-all flex flex-col justify-between group"
@@ -505,7 +373,8 @@ export const CustomerCategoriesView: React.FC<CustomerCategoriesViewProps> = ({
                   </div>
                 ))}
               </div>
-            </section>
+            )}
+          </section>
           </div>
         </div>
       ) : (

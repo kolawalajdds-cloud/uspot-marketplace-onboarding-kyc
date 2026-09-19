@@ -15,9 +15,11 @@ import {
   Lock,
   MapPin,
   Plus,
+  Building2,
 } from 'lucide-react';
 import { useDemo } from '../../context/DemoContext';
 import { Business, BusinessService, Booking } from '../../types';
+import { getPresetServicesForBusiness } from '../../data/seedData';
 
 interface CustomerBookingFlowViewProps {
   businessId: string;
@@ -43,16 +45,24 @@ export const CustomerBookingFlowView: React.FC<CustomerBookingFlowViewProps> = (
     bookServiceWithNmi,
     customerSavedCards = [],
     addCustomerSavedCard,
+    loginAsUser,
+    setActiveBusinessId,
   } = useDemo();
 
   const business: Business = useMemo(() => {
     return state.businesses.find((b) => b.id === businessId) || state.businesses[0];
   }, [state.businesses, businessId]);
 
-  // All active services for this business
+  // All active services for this business with robust fallback to presets
   const businessServices = useMemo(() => {
-    return state.businessServices.filter((s) => s.business_id === business.id && s.status === 'active');
-  }, [state.businessServices, business.id]);
+    const fromState = state.businessServices.filter((s) => s.business_id === business.id && s.status === 'active');
+    if (fromState.length > 0) return fromState;
+    if (business.business_services && business.business_services.length > 0) {
+      const active = business.business_services.filter((s) => s.status === 'active');
+      if (active.length > 0) return active;
+    }
+    return getPresetServicesForBusiness(business.id, business.coreDetails?.category);
+  }, [state.businessServices, business.id, business.business_services, business.coreDetails?.category]);
 
   // Selected services state (multi-service support)
   const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>(() => {
@@ -61,6 +71,15 @@ export const CustomerBookingFlowView: React.FC<CustomerBookingFlowViewProps> = (
     }
     return businessServices.length > 0 ? [businessServices[0].id] : [];
   });
+
+  // Keep selectedServiceIds synced if empty and services become available
+  useEffect(() => {
+    if (selectedServiceIds.length === 0 && businessServices.length > 0) {
+      setSelectedServiceIds([businessServices[0].id]);
+    }
+  }, [businessServices, selectedServiceIds]);
+
+  const [bookingError, setBookingError] = useState<string | null>(null);
 
   // Current Step: 1 = DATE & TIME, 2 = DETAILS, 3 = PAYMENT, 4 = CONFIRMED
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
@@ -146,11 +165,11 @@ export const CustomerBookingFlowView: React.FC<CustomerBookingFlowViewProps> = (
     return selectedServices.reduce((sum, s) => sum + (s.base_price || 0), 0);
   }, [selectedServices]);
 
-  const serviceFee = 12.5;
-  const processingFee = 4.35;
-  const taxRate = 0.0825; // 8.25%
-  const taxAmount = +(subtotal * taxRate).toFixed(2);
-  const totalAmount = +(subtotal + serviceFee + processingFee + taxAmount).toFixed(2);
+  const serviceFee = 0.0;
+  const processingFee = 0.0;
+  const taxRate = 0.0;
+  const taxAmount = 0.0;
+  const totalAmount = +subtotal.toFixed(2);
 
   // Selected date object & formatted strings
   const formattedDateStr = useMemo(() => {
@@ -294,20 +313,27 @@ export const CustomerBookingFlowView: React.FC<CustomerBookingFlowViewProps> = (
       }
 
       setConfirmedPaymentDisplay(paymentDisplay);
+      setBookingError(null);
 
-      // 1. Process NMI credit card transaction
-      await bookServiceWithNmi({
-        businessId: business.id,
-        serviceName: selectedServices.map((s) => s.name).join(', ') || 'Premium Service Session',
-        amount: totalAmount,
-        customerName,
-        customerEmail,
-      });
+      let idsToBook = selectedServiceIds;
+      if (idsToBook.length === 0) {
+        if (businessServices.length > 0) {
+          idsToBook = [businessServices[0].id];
+          setSelectedServiceIds(idsToBook);
+        } else {
+          setBookingError('At least one service must be selected to proceed with your booking.');
+          setIsProcessingPayment(false);
+          return;
+        }
+      }
 
-      // 2. Persist appointment in DemoContext
+      const randomRef = `#UR-${Math.floor(10000 + Math.random() * 90000)}`;
+      setBookingRefNumber(randomRef);
+
+      // 2. Persist appointment in DemoContext (createBooking automatically processes NMI online payment)
       const res = await createBooking({
         businessId: business.id,
-        selectedServiceIds,
+        selectedServiceIds: idsToBook,
         dateStr: selectedDateYMD,
         startTime: selectedTimeSlot,
         paymentMethod: 'credit_card',
@@ -316,18 +342,19 @@ export const CustomerBookingFlowView: React.FC<CustomerBookingFlowViewProps> = (
         customerEmail,
         customerPhone,
         notes: specialRequests,
+        totalAmount,
+        taxAmount,
+        referenceNumber: randomRef,
       });
-
-      const randomRef = `#UR-${Math.floor(10000 + Math.random() * 90000)}`;
-      setBookingRefNumber(randomRef);
 
       if (res.success && res.booking) {
         setConfirmedBooking(res.booking);
       }
 
       setCurrentStep(4); // Move to Booking Confirmed screen
-    } catch (err) {
+    } catch (err: any) {
       console.error('Booking payment error:', err);
+      setBookingError(err?.message || 'Payment processing failed. Please check your details and try again.');
     } finally {
       setIsProcessingPayment(false);
     }
@@ -530,31 +557,66 @@ export const CustomerBookingFlowView: React.FC<CustomerBookingFlowViewProps> = (
                 </div>
               </div>
 
-              {/* Selected Services Section matching Image 3 */}
+              {/* Available & Selected Services Section */}
               <div className="space-y-4 pt-4 border-t border-slate-100">
-                <span className="text-xs font-bold text-slate-900 block">Selected Services</span>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-900 block">Available Services</span>
+                  <span className="text-[11px] text-slate-500 font-medium">
+                    {selectedServiceIds.length} of {businessServices.length} selected
+                  </span>
+                </div>
+
                 <div className="space-y-3">
-                  {selectedServices.map((service) => (
-                    <div
-                      key={service.id}
-                      className="p-4 rounded-2xl bg-[#F9FAFB] border border-slate-200/80 flex items-center justify-between gap-4"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-slate-700 shrink-0">
-                          <Sparkles className="w-4 h-4" />
+                  {businessServices.map((service) => {
+                    const isSelected = selectedServiceIds.includes(service.id);
+                    return (
+                      <div
+                        key={service.id}
+                        onClick={() => {
+                          if (isSelected) {
+                            if (selectedServiceIds.length > 1) {
+                              setSelectedServiceIds(selectedServiceIds.filter((id) => id !== service.id));
+                            }
+                          } else {
+                            setSelectedServiceIds([...selectedServiceIds, service.id]);
+                          }
+                        }}
+                        className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-4 ${
+                          isSelected
+                            ? 'bg-[#F9FAFB] border-slate-900 shadow-2xs'
+                            : 'bg-white border-slate-200 hover:border-slate-300'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`w-6 h-6 rounded-lg border flex items-center justify-center transition-colors shrink-0 ${
+                              isSelected
+                                ? 'bg-black border-black text-white'
+                                : 'border-slate-300 bg-white text-transparent'
+                            }`}
+                          >
+                            <Check className="w-3.5 h-3.5 stroke-[3]" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h4 className="text-xs font-bold text-slate-900">{service.name}</h4>
+                              {service.category_name && (
+                                <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600">
+                                  {service.category_name}
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[11px] text-slate-400">
+                              {service.duration_minutes} Minutes • {service.pricing_type === 'time_based' ? 'Hourly session' : 'Fixed session'}
+                            </span>
+                          </div>
                         </div>
-                        <div>
-                          <h4 className="text-xs font-bold text-slate-900">{service.name}</h4>
-                          <span className="text-[11px] text-slate-400">
-                            {service.duration_minutes} Minutes • Personal Suite
-                          </span>
-                        </div>
+                        <span className="text-xs font-black text-slate-900 shrink-0">
+                          ${(service.base_price || 0).toFixed(2)}
+                        </span>
                       </div>
-                      <span className="text-xs font-black text-slate-900">
-                        ${(service.base_price || 0).toFixed(2)}
-                      </span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -938,6 +1000,36 @@ export const CustomerBookingFlowView: React.FC<CustomerBookingFlowViewProps> = (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
             {/* Left Column (8 cols): Payment Form + Special Requests */}
             <div className="lg:col-span-8 space-y-6">
+              {/* Missing Requirements or Booking Error Banner */}
+              {bookingError && (
+                <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-3 animate-in fade-in">
+                  <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <p className="font-bold text-rose-900">Reservation Notice</p>
+                    <p className="text-rose-700 leading-relaxed">{bookingError}</p>
+                  </div>
+                </div>
+              )}
+
+              {selectedServices.length === 0 && (
+                <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-3 animate-in fade-in">
+                  <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <p className="font-bold">Missing Service Selection</p>
+                    <p className="text-amber-700 leading-relaxed">
+                      At least one service is required for this reservation. Please select a service to proceed.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setCurrentStep(1)}
+                      className="mt-2 px-3 py-1.5 rounded-lg bg-amber-200 hover:bg-amber-300 text-amber-900 font-bold transition cursor-pointer"
+                    >
+                      ← Return to Step 1 & Pick Service
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Payment Method Card with Saved Cards from Settings */}
               <div className="bg-white rounded-3xl border border-slate-200/90 p-6 sm:p-8 space-y-6 shadow-xs">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-5">
@@ -1286,7 +1378,7 @@ export const CustomerBookingFlowView: React.FC<CustomerBookingFlowViewProps> = (
                     <span>${processingFee.toFixed(2)}</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span>Tax (8.25%)</span>
+                    <span>Tax (8%)</span>
                     <span>${taxAmount.toFixed(2)}</span>
                   </div>
                 </div>
@@ -1489,17 +1581,31 @@ export const CustomerBookingFlowView: React.FC<CustomerBookingFlowViewProps> = (
               <button
                 type="button"
                 onClick={onNavigateMyBookings}
-                className="w-full sm:w-auto px-8 py-3 rounded-full bg-black hover:bg-neutral-800 text-white text-xs font-bold transition-all cursor-pointer shadow-xs"
+                className="w-full sm:w-auto px-7 py-3 rounded-full bg-black hover:bg-neutral-800 text-white text-xs font-bold transition-all cursor-pointer shadow-xs"
               >
                 View My Bookings
               </button>
 
               <button
                 type="button"
-                onClick={onNavigateMyBookings}
-                className="w-full sm:w-auto px-6 py-3 rounded-full border border-slate-200 hover:bg-slate-50 text-slate-800 text-xs font-bold transition-all cursor-pointer"
+                onClick={() => {
+                  try {
+                    localStorage.setItem('uspot_vendor_active_tab', 'bookings');
+                    localStorage.setItem('uspot_vendor_selected_business_id', business.id);
+                  } catch (e) {}
+                  setActiveBusinessId(business.id);
+                  const targetUserId =
+                    business.userId ||
+                    state.users.find(
+                      (u) => u.email && business.email && u.email.toLowerCase() === business.email.toLowerCase()
+                    )?.id ||
+                    business.id;
+                  loginAsUser(targetUserId);
+                }}
+                className="w-full sm:w-auto px-6 py-3 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all cursor-pointer shadow-xs flex items-center justify-center gap-1.5"
               >
-                Login to Track
+                <Building2 className="w-3.5 h-3.5" />
+                <span>Open in Vendor Portal ({business.coreDetails?.businessName || 'Provider'})</span>
               </button>
             </div>
           </div>

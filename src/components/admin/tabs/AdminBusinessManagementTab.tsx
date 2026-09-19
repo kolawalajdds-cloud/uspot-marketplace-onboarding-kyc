@@ -45,6 +45,7 @@ export const AdminBusinessManagementTab: React.FC<AdminBusinessManagementTabProp
     state: demoState,
     adminApproveBusiness,
     adminRejectBusiness,
+    adminToggleBusinessStatus,
     updateCoreDetails,
     saveVendorBusiness,
     deleteBusinessById,
@@ -62,10 +63,11 @@ export const AdminBusinessManagementTab: React.FC<AdminBusinessManagementTabProp
     const mappedDemo: ManagedBusinessRecord[] = demoState.businesses.map((b) => {
       const isApproved = b.status === 'KYC Approved' || b.status === 'Live';
       const isRejected = b.status === 'KYC Rejected';
-      const isPending = b.status === 'Pending KYC Review' || (!isApproved && !isRejected && Boolean(b.verification?.kycSubmitted));
+      const isPending = b.status === 'Pending KYC Review' || (!isApproved && !isRejected && Boolean(b.verification?.kycSubmitted) && b.verification?.status !== 'Approved');
+      const hasCompletedKyc = Boolean(b.verification?.status === 'Approved' || b.verification?.reviewedBy || b.payment?.paidAt);
 
       let subTab: BusinessSubTab = 'non-subscription';
-      if (isApproved) {
+      if (isApproved || (hasCompletedKyc && b.status === 'Draft')) {
         subTab = 'approved';
       } else if (isPending || isRejected) {
         subTab = 'kyc-requests';
@@ -80,6 +82,8 @@ export const AdminBusinessManagementTab: React.FC<AdminBusinessManagementTabProp
         statusDisplay = 'Pending Review';
       } else if (isApproved) {
         statusDisplay = 'Active';
+      } else if (hasCompletedKyc) {
+        statusDisplay = 'Inactive';
       } else if (b.status === 'Draft' || b.status === 'Pending Payment') {
         statusDisplay = 'Setup Pending';
       }
@@ -334,10 +338,9 @@ export const AdminBusinessManagementTab: React.FC<AdminBusinessManagementTabProp
 
   const handleToggleStatus = () => {
     if (!reviewBusiness) return;
-    const newStatus = reviewBusiness.status === 'Active' ? 'Inactive' : 'Active';
-    updateCoreDetails(reviewBusiness.id, {
-      description: reviewBusiness.description || '',
-    });
+    const isCurrentlyActive = reviewBusiness.status === 'Active';
+    adminToggleBusinessStatus(reviewBusiness.id, !isCurrentlyActive);
+    const newStatus = isCurrentlyActive ? 'Inactive' : 'Active';
     setReviewBusiness((prev) => (prev ? { ...prev, status: newStatus as any } : null));
     showToast(`Status updated to "${newStatus}" for ${reviewBusiness.name}.`);
   };
@@ -865,7 +868,34 @@ export const AdminBusinessManagementTab: React.FC<AdminBusinessManagementTabProp
                         {/* ACTION */}
                         <td className="py-4 px-4 whitespace-nowrap">
                           <div className="flex items-center gap-2">
-                            {biz.status !== 'Active' && (
+                            {/* Super Admin Active/Inactive Toggle */}
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={biz.status === 'Active'}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const isCurrentlyActive = biz.status === 'Active';
+                                adminToggleBusinessStatus(biz.id, !isCurrentlyActive);
+                                showToast(`${biz.name} is now ${!isCurrentlyActive ? 'Active' : 'Inactive'}.`);
+                              }}
+                              title={
+                                biz.status === 'Active'
+                                  ? 'Active - click to deactivate'
+                                  : 'Inactive - click to activate'
+                              }
+                              className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                biz.status === 'Active' ? 'bg-black' : 'bg-slate-300'
+                              }`}
+                            >
+                              <span
+                                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out ${
+                                  biz.status === 'Active' ? 'translate-x-4' : 'translate-x-0'
+                                }`}
+                              />
+                            </button>
+
+                            {biz.status !== 'Active' && biz.status !== 'Inactive' && (
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -1102,7 +1132,34 @@ export const AdminBusinessManagementTab: React.FC<AdminBusinessManagementTabProp
                       ID: {biz.id}
                     </span>
                     <div className="flex items-center gap-2">
-                      {biz.status !== 'Active' && (
+                      {/* Super Admin Active/Inactive Toggle */}
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={biz.status === 'Active'}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const isCurrentlyActive = biz.status === 'Active';
+                          adminToggleBusinessStatus(biz.id, !isCurrentlyActive);
+                          showToast(`${biz.name} is now ${!isCurrentlyActive ? 'Active' : 'Inactive'}.`);
+                        }}
+                        title={
+                          biz.status === 'Active'
+                            ? 'Active - click to deactivate'
+                            : 'Inactive - click to activate'
+                        }
+                        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                          biz.status === 'Active' ? 'bg-black' : 'bg-slate-300'
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out ${
+                            biz.status === 'Active' ? 'translate-x-4' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+
+                      {biz.status !== 'Active' && biz.status !== 'Inactive' && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();

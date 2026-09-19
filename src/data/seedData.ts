@@ -313,6 +313,12 @@ export function getSeedServiceCategories(): ServiceCategory[] {
       description: 'Exfoliating facials, scalp acupressure, and skin rejuvenation',
       status: 'active',
     },
+    {
+      id: 'scat-styling',
+      name: 'Styling & Blowout',
+      description: 'Signature blowouts, event styling, thermal pressing, and updos',
+      status: 'active',
+    },
   ];
 }
 
@@ -639,6 +645,212 @@ export function getSpaPresetServices(businessId: string): BusinessService[] {
         'https://images.unsplash.com/photo-1600334089648-b0d9d3028eb2?auto=format&fit=crop&w=800&q=80',
         'https://images.unsplash.com/photo-1515377905703-c4788e51af15?auto=format&fit=crop&w=800&q=80',
       ],
+    },
+  ];
+}
+
+// ----------------------------------------------------------------------------
+// UNIVERSAL PRESET SERVICES GENERATOR FOR ANY BUSINESS CATEGORY
+// ----------------------------------------------------------------------------
+
+export function getPresetServicesForBusiness(businessId: string, category?: string): BusinessService[] {
+  const cat = (category || '').toLowerCase();
+
+  // 1. Fitness & Sports / Gym / Athletics
+  if (
+    cat.includes('fit') ||
+    cat.includes('sport') ||
+    cat.includes('gym') ||
+    cat.includes('athlet') ||
+    cat.includes('train')
+  ) {
+    return [
+      {
+        id: `srv-${businessId}-fit-1`,
+        business_id: businessId,
+        service_category_id: 'scat-coaching',
+        category_name: 'Personal Training',
+        name: '1-on-1 Personal Training & Biomechanics',
+        description: 'Bespoke high-performance coaching, posture analysis, functional movement screening, and tailored training plan.',
+        pricing_type: 'time_based',
+        base_price: 85.0,
+        hourly_rate: 85.0,
+        min_billing_duration_minutes: 30,
+        rounding_rule: 'Round up to nearest 15 min',
+        duration_minutes: 60,
+        requires_approval: false,
+        status: 'active',
+        assigned_workers_count: 3,
+        photo_url: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?auto=format&fit=crop&w=800&q=80',
+        thumbnail_url: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?auto=format&fit=crop&w=800&q=80',
+        gallery_photos: [
+          'https://images.unsplash.com/photo-1517838277536-f5f99be501cd?auto=format&fit=crop&w=800&q=80',
+          'https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?auto=format&fit=crop&w=800&q=80',
+        ],
+      },
+      {
+        id: `srv-${businessId}-fit-2`,
+        business_id: businessId,
+        service_category_id: 'scat-classes',
+        category_name: 'Conditioning',
+        name: 'HIIT Strength & Conditioning Session',
+        description: 'Dynamic high-intensity metabolic conditioning, kettlebell circuits, and cardiovascular endurance training.',
+        pricing_type: 'fixed',
+        base_price: 45.0,
+        duration_minutes: 45,
+        requires_approval: false,
+        status: 'active',
+        assigned_workers_count: 4,
+        photo_url: 'https://images.unsplash.com/photo-1517838277536-f5f99be501cd?auto=format&fit=crop&w=800&q=80',
+        thumbnail_url: 'https://images.unsplash.com/photo-1517838277536-f5f99be501cd?auto=format&fit=crop&w=800&q=80',
+        gallery_photos: [
+          'https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=800&q=80',
+        ],
+      },
+      {
+        id: `srv-${businessId}-fit-3`,
+        business_id: businessId,
+        service_category_id: 'scat-recovery',
+        category_name: 'Recovery & Mobility',
+        name: 'Athletic Mobility & Deep Recovery Stretch',
+        description: 'Assisted hypermobility stretching, percussion myofascial therapy, and joint decompressive recovery.',
+        pricing_type: 'fixed',
+        base_price: 55.0,
+        duration_minutes: 45,
+        requires_approval: false,
+        status: 'active',
+        assigned_workers_count: 2,
+        photo_url: 'https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=800&q=80',
+        thumbnail_url: 'https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=800&q=80',
+        gallery_photos: [],
+      },
+      {
+        id: `srv-${businessId}-fit-4`,
+        business_id: businessId,
+        service_category_id: 'scat-facility',
+        category_name: 'Day Passes',
+        name: 'Private Athletic Suite & Gym Day Pass',
+        description: 'Full unreserved day access to Olympic lifting platforms, recovery plunge tubs, and locker amenities.',
+        pricing_type: 'fixed',
+        base_price: 35.0,
+        duration_minutes: 90,
+        requires_approval: false,
+        status: 'active',
+        assigned_workers_count: 5,
+        photo_url: 'https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?auto=format&fit=crop&w=800&q=80',
+        thumbnail_url: 'https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?auto=format&fit=crop&w=800&q=80',
+        gallery_photos: [],
+      },
+    ];
+  }
+
+  // 2. Salon & Beauty / Hair / Grooming
+  if (
+    cat.includes('salon') ||
+    cat.includes('beauty') ||
+    cat.includes('hair') ||
+    cat.includes('groom') ||
+    cat.includes('barber')
+  ) {
+    return getSalonPresetServices(businessId);
+  }
+
+  // 3. Spa / Wellness / Thermal
+  if (
+    cat.includes('spa') ||
+    cat.includes('wellness') ||
+    cat.includes('thermal') ||
+    cat.includes('bath') ||
+    cat.includes('massage')
+  ) {
+    return getSpaPresetServices(businessId);
+  }
+
+  // 4. Coworking & Office / Tech / Workspace
+  if (
+    cat.includes('cowork') ||
+    cat.includes('office') ||
+    cat.includes('desk') ||
+    cat.includes('work') ||
+    cat.includes('tech')
+  ) {
+    return [
+      {
+        id: `srv-${businessId}-cowork-1`,
+        business_id: businessId,
+        service_category_id: 'scat-desk',
+        category_name: 'Workspaces',
+        name: 'Dedicated Ergonomic Desk Pass',
+        description: 'All-day reserved standing desk, dual 4K monitors, ergonomic Herman Miller chair, and gigabit fiber.',
+        pricing_type: 'fixed',
+        base_price: 35.0,
+        duration_minutes: 480,
+        requires_approval: false,
+        status: 'active',
+        assigned_workers_count: 2,
+        photo_url: 'https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=800&q=80',
+        thumbnail_url: 'https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=800&q=80',
+        gallery_photos: [],
+      },
+      {
+        id: `srv-${businessId}-cowork-2`,
+        business_id: businessId,
+        service_category_id: 'scat-room',
+        category_name: 'Meeting Rooms',
+        name: 'Private Focus Pod & Conference Suite',
+        description: 'Sound-dampened 6-person conference room with 4K video conferencing bar, digital whiteboard, and espresso access.',
+        pricing_type: 'time_based',
+        base_price: 65.0,
+        hourly_rate: 65.0,
+        min_billing_duration_minutes: 30,
+        duration_minutes: 120,
+        requires_approval: false,
+        status: 'active',
+        assigned_workers_count: 2,
+        photo_url: 'https://images.unsplash.com/photo-1517502884422-41eaead166d4?auto=format&fit=crop&w=800&q=80',
+        thumbnail_url: 'https://images.unsplash.com/photo-1517502884422-41eaead166d4?auto=format&fit=crop&w=800&q=80',
+        gallery_photos: [],
+      },
+    ];
+  }
+
+  // 5. Default / General Services for any other category
+  return [
+    {
+      id: `srv-${businessId}-gen-1`,
+      business_id: businessId,
+      service_category_id: 'scat-general',
+      category_name: 'General Services',
+      name: 'Standard Experience Session',
+      description: 'Full reserved session access with dedicated host, standard venue amenities, and private suite.',
+      pricing_type: 'fixed',
+      base_price: 55.0,
+      duration_minutes: 60,
+      requires_approval: false,
+      status: 'active',
+      assigned_workers_count: 3,
+      photo_url: 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=800&q=80',
+      thumbnail_url: 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=800&q=80',
+      gallery_photos: [],
+    },
+    {
+      id: `srv-${businessId}-gen-2`,
+      business_id: businessId,
+      service_category_id: 'scat-premium',
+      category_name: 'VIP Services',
+      name: 'Executive VIP Experience & Consultation',
+      description: 'Comprehensive VIP reservation including expedited arrival, complimentary refreshments, and priority service.',
+      pricing_type: 'time_based',
+      base_price: 95.0,
+      hourly_rate: 95.0,
+      min_billing_duration_minutes: 30,
+      duration_minutes: 90,
+      requires_approval: false,
+      status: 'active',
+      assigned_workers_count: 4,
+      photo_url: 'https://images.unsplash.com/photo-1600334089648-b0d9d3028eb2?auto=format&fit=crop&w=800&q=80',
+      thumbnail_url: 'https://images.unsplash.com/photo-1600334089648-b0d9d3028eb2?auto=format&fit=crop&w=800&q=80',
+      gallery_photos: [],
     },
   ];
 }

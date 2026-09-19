@@ -20,7 +20,7 @@ interface CustomerNavbarProps {
 }
 
 export const CustomerNavbar: React.FC<CustomerNavbarProps> = ({ activePage, setActivePage }) => {
-  const { currentUser, loginAsUser, logout, setAuthModalOpen } = useDemo();
+  const { state, users, currentUser, loginAsUser, logout, setAuthModalOpen } = useDemo();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
 
@@ -171,43 +171,39 @@ export const CustomerNavbar: React.FC<CustomerNavbarProps> = ({ activePage, setA
                     <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
                       Switch Workspace
                     </div>
-                    <div className="space-y-1 mb-2">
-                      <button
-                        onClick={() => {
-                          loginAsUser('business');
-                          setIsProfileOpen(false);
-                        }}
-                        className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-50 flex items-center justify-between cursor-pointer"
-                      >
-                        <span className="flex items-center gap-2">
-                          <Building2 className="w-3.5 h-3.5 text-blue-600" />
-                          Business Portal
-                        </span>
-                      </button>
-                      <button
-                        onClick={() => {
-                          loginAsUser('staff');
-                          setIsProfileOpen(false);
-                        }}
-                        className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-50 flex items-center justify-between cursor-pointer"
-                      >
-                        <span className="flex items-center gap-2">
-                          <Users className="w-3.5 h-3.5 text-amber-600" />
-                          Staff / Specialist
-                        </span>
-                      </button>
-                      <button
-                        onClick={() => {
-                          loginAsUser('admin');
-                          setIsProfileOpen(false);
-                        }}
-                        className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-50 flex items-center justify-between cursor-pointer"
-                      >
-                        <span className="flex items-center gap-2">
-                          <Shield className="w-3.5 h-3.5 text-indigo-600" />
-                          Super Admin
-                        </span>
-                      </button>
+                    <div className="space-y-1 mb-2 max-h-56 overflow-y-auto pr-0.5">
+                      {users
+                        .filter((u) => u.id !== currentUser?.id)
+                        .map((u) => {
+                          const uBiz = state.businesses.find(
+                            (b) =>
+                              (b.userId && b.userId === u.id) ||
+                              (b.email && u.email && b.email.toLowerCase() === u.email.toLowerCase())
+                          );
+                          return (
+                            <button
+                              key={u.id}
+                              onClick={() => {
+                                loginAsUser(u.id);
+                                setIsProfileOpen(false);
+                              }}
+                              className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-50 flex items-center justify-between cursor-pointer"
+                            >
+                              <span className="flex items-center gap-2 truncate">
+                                {u.role === 'business' ? (
+                                  <Building2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                                ) : u.role === 'super_admin' ? (
+                                  <Shield className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                                ) : (
+                                  <Users className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                )}
+                                <span className="truncate">
+                                  {uBiz ? `${uBiz.coreDetails?.businessName || 'Business'} (${u.fullName})` : `${u.fullName} (${u.roleLabel || u.role})`}
+                                </span>
+                              </span>
+                            </button>
+                          );
+                        })}
                     </div>
 
                     {/* Logout button */}

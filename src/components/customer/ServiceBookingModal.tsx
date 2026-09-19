@@ -29,6 +29,7 @@ import {
   Booking,
   BookingPaymentMethod,
 } from '../../types';
+import { getPresetServicesForBusiness } from '../../data/seedData';
 import {
   calculateMultiServiceAvailability,
   getDayOfWeekFromDate,
@@ -59,6 +60,8 @@ export const ServiceBookingModal: React.FC<ServiceBookingModalProps> = ({
     bookings,
     customerSavedCards = [],
     addCustomerSavedCard,
+    loginAsUser,
+    setActiveBusinessId,
   } = useDemo();
 
   // Wizard Steps: 1 = Services, 2 = Date & Slot, 3 = Details & Payment, 4 = Confirmation
@@ -70,8 +73,10 @@ export const ServiceBookingModal: React.FC<ServiceBookingModalProps> = ({
       (s) => s.business_id === business.id && s.status === 'active'
     );
     if (list.length > 0) return list;
-    return (business.business_services || []).filter((s) => s.status === 'active');
-  }, [businessServices, business.id, business.business_services]);
+    const fromBiz = (business.business_services || []).filter((s) => s.status === 'active');
+    if (fromBiz.length > 0) return fromBiz;
+    return getPresetServicesForBusiness(business.id, business.coreDetails?.category);
+  }, [businessServices, business.id, business.business_services, business.coreDetails?.category]);
 
   // Step 1: Selected service IDs (Multiple services allowed!)
   const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
@@ -1110,6 +1115,29 @@ export const ServiceBookingModal: React.FC<ServiceBookingModalProps> = ({
                     View in My Bookings
                   </button>
                 )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    try {
+                      localStorage.setItem('uspot_vendor_active_tab', 'bookings');
+                      localStorage.setItem('uspot_vendor_selected_business_id', business.id);
+                    } catch (e) {}
+                    setActiveBusinessId(business.id);
+                    const targetUserId =
+                      business.userId ||
+                      state.users.find(
+                        (u) => u.email && business.email && u.email.toLowerCase() === business.email.toLowerCase()
+                      )?.id ||
+                      business.id;
+                    loginAsUser(targetUserId);
+                  }}
+                  className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-colors cursor-pointer shadow-xs flex items-center justify-center gap-1.5"
+                >
+                  <Building2 className="w-3.5 h-3.5" />
+                  <span>Open in Vendor Portal</span>
+                </button>
 
                 <button
                   type="button"

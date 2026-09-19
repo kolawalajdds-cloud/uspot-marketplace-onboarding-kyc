@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Search,
   MapPin,
@@ -99,49 +99,47 @@ export const CustomerHomeView: React.FC<CustomerHomeViewProps> = ({
     { label: 'TAILOR', icon: Shirt, query: 'Tailor' },
   ];
 
-  // 4 recommended spots matching Screen 1
-  const recommendedSpots = [
-    {
-      id: 'rec-1',
-      businessId: 'biz-001',
-      name: 'Glow Salon',
-      categoryBadge: 'HAIR & STYLING',
-      rating: 4.9,
-      reviewCount: 128,
-      address: '124 Grand St, SoHo, NY',
-      image: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=700&q=80',
-    },
-    {
-      id: 'rec-2',
-      businessId: 'biz-002',
-      name: 'Onyx Spa & Wellness',
-      categoryBadge: 'THERMAL & BODY',
-      rating: 4.8,
-      reviewCount: 94,
-      address: '88 Franklin St, Tribeca, NY',
-      image: 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=700&q=80',
-    },
-    {
-      id: 'rec-3',
-      businessId: 'biz-001',
-      name: 'The Groomer',
-      categoryBadge: 'BARBER & SHAVE',
-      rating: 5.0,
-      reviewCount: 210,
-      address: '45 Spring St, SoHo, NY',
-      image: 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=700&q=80',
-    },
-    {
-      id: 'rec-4',
-      businessId: 'biz-002',
-      name: 'Zenith Yoga Studio',
-      categoryBadge: 'MOVEMENT & MIND',
-      rating: 4.7,
-      reviewCount: 76,
-      address: '302 Bowery, East Village, NY',
-      image: 'https://images.unsplash.com/photo-1518611012118-696072aa579a?auto=format&fit=crop&w=700&q=80',
-    },
-  ];
+  // Only display verified & live businesses approved by Super Admin
+  // Only display verified & live businesses approved by Super Admin
+  const displayBusinesses = useMemo(() => {
+    return state.businesses.filter(
+      (b) =>
+        b.status === 'Live' ||
+        b.status === 'KYC Approved' ||
+        (b as any).status === 'Active'
+    );
+  }, [state.businesses]);
+
+  // Recommended spots derived directly from actual vendor businesses
+  const recommendedSpots = useMemo(() => {
+    return displayBusinesses.map((biz) => {
+      const coverImg =
+        biz.imageGallery?.find((img) => img.isCover)?.url ||
+        biz.imageGallery?.[0]?.url ||
+        (biz.coreDetails?.category?.toLowerCase().includes('cowork')
+          ? 'https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=700&q=80'
+          : 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=700&q=80');
+
+      const categoryBadge = (biz.coreDetails?.category || 'General').toUpperCase();
+      const addrParts = [
+        biz.coreDetails?.streetAddress,
+        biz.coreDetails?.city,
+        biz.coreDetails?.state,
+      ].filter(Boolean);
+      const address = addrParts.length > 0 ? addrParts.join(', ') : 'United States';
+
+      return {
+        id: `rec-${biz.id}`,
+        businessId: biz.id,
+        name: biz.coreDetails?.businessName || 'Untitled Business',
+        categoryBadge,
+        rating: (biz as any).rating || 4.9,
+        reviewCount: (biz as any).reviewCount || 12,
+        address,
+        image: coverImg,
+      };
+    });
+  }, [displayBusinesses]);
 
   const clientReviews = [
     {
@@ -170,23 +168,29 @@ export const CustomerHomeView: React.FC<CustomerHomeViewProps> = ({
     },
   ];
 
-  const destinations = [
-    {
-      city: 'New York City',
-      spots: '340+ Verified Spots',
-      image: 'https://images.unsplash.com/photo-1496442226666-8d4d0e62e6e9?auto=format&fit=crop&w=800&q=80',
-    },
-    {
-      city: 'London',
-      spots: '210+ Verified Spots',
-      image: 'https://images.unsplash.com/photo-1513635269975-59663e0ac1ad?auto=format&fit=crop&w=800&q=80',
-    },
-    {
-      city: 'Tokyo',
-      spots: '180+ Verified Spots',
-      image: 'https://images.unsplash.com/photo-1503899036084-c55cdd92da26?auto=format&fit=crop&w=800&q=80',
-    },
-  ];
+  const destinations = useMemo(() => {
+    const cityMap: Record<string, { count: number; image: string }> = {};
+    displayBusinesses.forEach((b) => {
+      const city = b.coreDetails?.city || 'Local Hub';
+      const img =
+        b.imageGallery?.find((i) => i.isCover)?.url ||
+        b.imageGallery?.[0]?.url ||
+        (city.toLowerCase().includes('francisco')
+          ? 'https://images.unsplash.com/photo-1501594907352-04cda38ebc29?auto=format&fit=crop&w=800&q=80'
+          : 'https://images.unsplash.com/photo-1496442226666-8d4d0e62e6e9?auto=format&fit=crop&w=800&q=80');
+      if (!cityMap[city]) {
+        cityMap[city] = { count: 1, image: img };
+      } else {
+        cityMap[city].count += 1;
+      }
+    });
+
+    return Object.entries(cityMap).map(([city, data]) => ({
+      city,
+      spots: `${data.count} Verified Spot${data.count > 1 ? 's' : ''}`,
+      image: data.image,
+    }));
+  }, [displayBusinesses]);
 
   // Quick-test helper preserved for platform validation
   const handleRunPrototypeTest = async (businessId: string) => {
@@ -365,8 +369,15 @@ export const CustomerHomeView: React.FC<CustomerHomeViewProps> = ({
             </button>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {recommendedSpots.map((spot) => (
+          {recommendedSpots.length === 0 ? (
+            <div className="p-12 text-center bg-slate-50 rounded-2xl border border-slate-200">
+              <Sparkles className="w-8 h-8 text-slate-400 mx-auto mb-2" />
+              <p className="text-sm font-bold text-slate-800">No active businesses available yet</p>
+              <p className="text-xs text-slate-500 mt-1">When vendors register their businesses, they will be displayed here.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              {recommendedSpots.map((spot) => (
               <div
                 key={spot.id}
                 onClick={() => onSelectSpotDetail ? onSelectSpotDetail(spot.businessId) : handleOpenBooking(spot.businessId)}
@@ -430,7 +441,8 @@ export const CustomerHomeView: React.FC<CustomerHomeViewProps> = ({
               </div>
             ))}
           </div>
-        </section>
+        )}
+      </section>
 
         {/* 5. Three Value Propositions matching Screen 1 */}
         <section className="py-12 border-t border-b border-slate-100">
