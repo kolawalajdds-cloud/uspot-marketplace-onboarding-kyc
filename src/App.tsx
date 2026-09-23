@@ -21,11 +21,19 @@ const MainLayout: React.FC = () => {
     return () => window.removeEventListener('popstate', handleLocationChange);
   }, []);
 
-  // Worker public auth routes: /worker/login and /worker/onboarding can be visited by unauthenticated users
-  const isWorkerAuthRoute =
-    currentPath.startsWith('/worker/login') || currentPath.startsWith('/worker/onboarding');
+  // Handle all worker routes under dedicated domain: /worker, /worker/login, /worker/onboarding, /worker/dashboard, etc.
+  if (currentPath.startsWith('/worker')) {
+    // If not logged in and not already on /worker/login or /worker/onboarding, redirect to /worker/login
+    if (
+      !currentUser &&
+      !currentPath.startsWith('/worker/login') &&
+      !currentPath.startsWith('/worker/onboarding')
+    ) {
+      if (typeof window !== 'undefined') {
+        window.history.replaceState({ page: 'login' }, '', '/worker/login');
+      }
+    }
 
-  if (isWorkerAuthRoute) {
     return (
       <div className="h-full w-full bg-[#F8FAFC] text-slate-900 font-sans selection:bg-blue-600 selection:text-white overflow-hidden">
         <WorkerPortal />
@@ -33,19 +41,11 @@ const MainLayout: React.FC = () => {
     );
   }
 
-  // If no user is logged in, show the login view
-  if (!currentUser) {
-    return (
-      <div className="h-full w-full bg-[#F8FAFC] text-slate-900 flex flex-col font-sans overflow-y-auto">
-        <div className="flex-1 flex items-center justify-center">
-          <LoginView />
-        </div>
-      </div>
-    );
-  }
-
-  // When logged in as worker, render WorkerPortal
-  if (currentUser.role === 'worker' || currentUser.role === 'specialist' || currentPath.startsWith('/worker')) {
+  // When logged in as worker, redirect to /worker/dashboard
+  if (currentUser && (currentUser.role === 'worker' || currentUser.role === 'specialist')) {
+    if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/worker')) {
+      window.history.replaceState({ page: 'dashboard' }, '', '/worker/dashboard');
+    }
     return (
       <div className="h-full w-full bg-[#F8FAFC] text-slate-900 font-sans selection:bg-blue-600 selection:text-white overflow-hidden">
         <WorkerPortal />
@@ -53,6 +53,7 @@ const MainLayout: React.FC = () => {
     );
   }
 
+  // If no user is logged in, show the marketplace login view
   if (!currentUser) {
     return (
       <div className="h-full w-full bg-[#F8FAFC] text-slate-900 flex flex-col font-sans overflow-y-auto">

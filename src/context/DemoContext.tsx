@@ -156,7 +156,7 @@ interface DemoContextType {
   updateUserProfile: (updates: Partial<UserProfile>) => void;
   createUser: (newUser: UserProfile) => void;
   registerUser: (payload: {
-    accountType: 'personal' | 'business';
+    accountType: 'personal' | 'business' | 'worker' | 'specialist';
     email: string;
     password?: string;
     firstName: string;
@@ -165,6 +165,9 @@ interface DemoContextType {
     jobTitle?: string;
     nickname?: string;
     username?: string;
+    primaryServiceCategory?: string;
+    yearsOfExperience?: number | string;
+    hourlyRate?: number | string;
     marketingOptIn?: boolean;
   }) => Promise<{ user: UserProfile; business?: any }>;
   updateUserById: (userId: string, updates: Partial<UserProfile>) => void;
@@ -814,7 +817,7 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const registerUser = async (payload: {
-    accountType: 'personal' | 'business';
+    accountType: 'personal' | 'business' | 'worker' | 'specialist';
     email: string;
     password?: string;
     firstName: string;
@@ -823,6 +826,9 @@ export const DemoProvider: React.FC<{ children: React.ReactNode }> = ({ children
     jobTitle?: string;
     nickname?: string;
     username?: string;
+    primaryServiceCategory?: string;
+    yearsOfExperience?: number | string;
+    hourlyRate?: number | string;
     marketingOptIn?: boolean;
   }): Promise<{ user: UserProfile; business?: any }> => {
     try {

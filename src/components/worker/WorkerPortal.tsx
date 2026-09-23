@@ -63,6 +63,12 @@ export const WorkerPortal: React.FC = () => {
     const path = window.location.pathname.toLowerCase();
     if (path.includes('/worker/login')) return 'login';
     if (path.includes('/worker/onboarding')) return 'onboarding';
+
+    // If user is not authenticated as a worker, all other subpages default to dedicated /worker/login
+    if (!currentUser || (currentUser.role !== 'worker' && currentUser.role !== 'specialist')) {
+      return 'login';
+    }
+
     if (path.includes('/worker/jobs/')) return 'job-details';
     if (path.includes('/worker/jobs')) return 'jobs';
     if (path.includes('/worker/schedule')) return 'schedule';
@@ -107,11 +113,12 @@ export const WorkerPortal: React.FC = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Logout handler
+  // Logout handler - redirects to dedicated /worker/login URL
   const handleLogout = () => {
     logout();
-    if (typeof window !== 'undefined' && window.location.pathname !== '/') {
-      window.history.pushState(null, '', '/');
+    setActivePage('login');
+    if (typeof window !== 'undefined') {
+      window.history.pushState({ page: 'login' }, '', '/worker/login');
       window.dispatchEvent(new PopStateEvent('popstate'));
     }
   };
@@ -145,15 +152,23 @@ export const WorkerPortal: React.FC = () => {
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
+  }, [currentUser]);
 
-  // Sync URL on initial mount if on root worker route
+  // Sync URL on initial mount and auth state changes
   useEffect(() => {
-    const path = window.location.pathname;
-    if (path === '/worker' || path === '/worker/') {
-      window.history.replaceState(null, '', '/worker/dashboard');
+    const path = window.location.pathname.toLowerCase();
+    const isWorker = currentUser && (currentUser.role === 'worker' || currentUser.role === 'specialist');
+
+    if (!isWorker) {
+      if (path !== '/worker/login' && path !== '/worker/onboarding') {
+        window.history.replaceState({ page: 'login' }, '', '/worker/login');
+        setActivePage('login');
+      }
+    } else if (path === '/worker' || path === '/worker/') {
+      window.history.replaceState({ page: 'dashboard' }, '', '/worker/dashboard');
+      setActivePage('dashboard');
     }
-  }, []);
+  }, [currentUser]);
 
   // Worker user fallback matching reference image (John Doe, JD)
   const worker: UserProfile =

@@ -10,7 +10,7 @@ import cors from "cors";
 import dotenv2 from "dotenv";
 
 // server/routes/users.ts
-import { Router as Router2 } from "express";
+import { Router as Router3 } from "express";
 
 // server/db/index.ts
 import { Pool } from "pg";
@@ -466,7 +466,7 @@ var pool = new Pool({
 var db = drizzle(pool, { schema: schema_exports });
 
 // server/routes/users.ts
-import { eq as eq2 } from "drizzle-orm";
+import { eq as eq3 } from "drizzle-orm";
 
 // server/routes/businesses.ts
 import { Router } from "express";
@@ -711,1109 +711,10 @@ router.patch("/:id", async (req, res) => {
 });
 var businesses_default = router;
 
-// server/routes/users.ts
-var router2 = Router2();
-router2.get("/", async (req, res) => {
-  try {
-    const allUsers = await db.select().from(users);
-    res.json(allUsers);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-router2.get("/:id", async (req, res) => {
-  try {
-    const [user] = await db.select().from(users).where(eq2(users.id, req.params.id));
-    if (!user) {
-      return res.status(404).json({ error: "User not found" });
-    }
-    res.json(user);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-router2.post("/login", async (req, res) => {
-  try {
-    const { email, username, identifier, role, password } = req.body;
-    const term = (identifier || email || username || "").trim().toLowerCase();
-    if (!term && !role) {
-      return res.status(400).json({ error: "Please enter your email or username." });
-    }
-    const allUsers = await db.select().from(users);
-    let user = term ? allUsers.find(
-      (u) => u.email?.toLowerCase() === term || u.username?.toLowerCase() === term || u.id.toLowerCase() === term
-    ) : null;
-    if (!user && role) {
-      user = allUsers.find((u) => u.role.toLowerCase() === role.toLowerCase());
-    }
-    if (!user) {
-      return res.status(404).json({ error: "No user found with the provided credentials. Please check your email or register." });
-    }
-    const allBusinesses = await db.select().from(businesses);
-    const userBiz = allBusinesses.find(
-      (b) => b.userId && b.userId === user.id || b.email && b.email.toLowerCase() === user.email.toLowerCase()
-    );
-    const completeBiz = userBiz ? await getCompleteBusiness(userBiz.id) : null;
-    res.json({
-      success: true,
-      user,
-      business: completeBiz
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-router2.patch("/:id", async (req, res) => {
-  try {
-    const [updated] = await db.update(users).set({ ...req.body, updatedAt: /* @__PURE__ */ new Date() }).where(eq2(users.id, req.params.id)).returning();
-    res.json(updated);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-router2.post("/register", async (req, res) => {
-  try {
-    const {
-      accountType,
-      // 'personal' | 'business'
-      email,
-      password,
-      firstName,
-      lastName,
-      phone,
-      jobTitle,
-      nickname,
-      username: providedUsername,
-      marketingOptIn
-    } = req.body;
-    if (!email || !firstName || !lastName) {
-      return res.status(400).json({ error: "Email, First Name, and Last Name are required." });
-    }
-    const trimmedEmail = email.trim().toLowerCase();
-    const [existingUser] = await db.select().from(users).where(eq2(users.email, trimmedEmail));
-    if (existingUser) {
-      return res.status(400).json({ error: "An account with this email already exists. Please login instead." });
-    }
-    const isBusiness = accountType === "business";
-    const role = isBusiness ? "business" : "customer";
-    const roleLabel = isBusiness ? "Business Entity" : "Customer";
-    const newUserId = `user-${role}-${Date.now()}`;
-    const cleanFirstName = firstName.trim();
-    const cleanLastName = lastName.trim();
-    const fullName = `${cleanFirstName} ${cleanLastName}`;
-    const initials = ((cleanFirstName[0] || "U") + (cleanLastName[0] || "")).toUpperCase();
-    const username = providedUsername?.trim() || trimmedEmail.split("@")[0] + "_" + Math.floor(100 + Math.random() * 900);
-    const finalNickname = nickname?.trim() || cleanFirstName;
-    const [newUser] = await db.insert(users).values({
-      id: newUserId,
-      role,
-      roleLabel,
-      status: "active",
-      email: trimmedEmail,
-      username,
-      phone: phone?.trim() || null,
-      nickname: finalNickname,
-      fullName,
-      referralCode: `REF-${Math.floor(1e3 + Math.random() * 9e3)}`,
-      emailVerified: true,
-      phoneVerified: Boolean(phone),
-      timezone: "America/New_York",
-      avatarInitials: initials,
-      department: jobTitle?.trim() || (isBusiness ? "Business Operations" : "Marketplace Customer"),
-      memberSince: (/* @__PURE__ */ new Date()).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-    }).returning();
-    let createdBusiness = null;
-    if (isBusiness) {
-      const businessId = `biz-${Date.now()}`;
-      let domainName = trimmedEmail.split("@")[1]?.split(".")[0] || "";
-      if (["gmail", "yahoo", "outlook", "hotmail", "icloud", "proton"].includes(domainName.toLowerCase())) {
-        domainName = "";
-      }
-      const businessName = domainName ? domainName.charAt(0).toUpperCase() + domainName.slice(1) + " Services" : `${fullName}'s Business`;
-      const [newBiz] = await db.insert(businesses).values({
-        id: businessId,
-        userId: newUser.id,
-        businessName,
-        legalEntityName: `${businessName} LLC`,
-        category: "Coworking & Creative Hub",
-        description: `Professional spaces, reservations, and merchant operations by ${fullName}.`,
-        streetAddress: "100 Market St, Suite 400",
-        city: "San Francisco",
-        state: "CA",
-        zipCode: "94105",
-        phone: phone?.trim() || "+1 (555) 019-2834",
-        email: trimmedEmail,
-        status: "Draft",
-        subscriptionPlan: "Starter",
-        salesTaxRate: "8.87",
-        currency: "USD",
-        automaticInvoicing: true,
-        avatarChar: businessName[0]?.toUpperCase() || "B"
-      }).returning();
-      for (let day = 0; day <= 6; day++) {
-        await db.insert(businessHours).values({
-          businessId,
-          dayOfWeek: day,
-          openTime: "08:00",
-          closeTime: "19:00",
-          isClosed: day === 0
-          // Closed Sunday
-        });
-      }
-      await db.insert(businessAmenities).values([
-        {
-          businessId,
-          category: "General & Comfort",
-          name: "High-Speed Wi-Fi",
-          description: "1Gbps enterprise connection",
-          checked: true
-        },
-        {
-          businessId,
-          category: "General & Comfort",
-          name: "Restrooms",
-          description: "Clean restrooms on premises",
-          checked: true
-        },
-        {
-          businessId,
-          category: "Tech & Workspace",
-          name: "Power Outlets",
-          description: "Power outlets readily available at all spots",
-          checked: true
-        }
-      ]);
-      await db.insert(kycVerifications).values({
-        businessId,
-        legalEntityType: "Limited Liability Company (LLC)",
-        status: "Draft",
-        riskTier: "Low",
-        sanctionsStatus: "Not Started",
-        tinMatchStatus: "Not Started"
-      });
-      createdBusiness = newBiz;
-    }
-    res.status(201).json({
-      success: true,
-      user: newUser,
-      business: createdBusiness
-    });
-  } catch (error) {
-    console.error("Registration Error:", error);
-    res.status(500).json({ error: error.message || "Failed to register account" });
-  }
-});
-router2.post("/", async (req, res) => {
-  try {
-    const {
-      id,
-      role,
-      roleLabel,
-      status,
-      email,
-      username,
-      phone,
-      nickname,
-      fullName,
-      referralCode,
-      emailVerified,
-      phoneVerified,
-      timezone,
-      avatarInitials,
-      department,
-      primaryServiceCategory,
-      yearsOfExperience,
-      memberSince
-    } = req.body;
-    const trimmedEmail = (email || "").trim().toLowerCase();
-    const newId = id || `user-${role || "customer"}-${Date.now()}`;
-    const [created] = await db.insert(users).values({
-      id: newId,
-      role: role || "customer",
-      roleLabel: roleLabel || (role === "business" ? "Business" : "Customer"),
-      status: status || "active",
-      email: trimmedEmail,
-      username: username || trimmedEmail.split("@")[0] + "_" + Math.floor(100 + Math.random() * 900),
-      phone: phone || null,
-      nickname: nickname || fullName?.split(" ")[0] || null,
-      fullName: fullName || trimmedEmail.split("@")[0],
-      referralCode: referralCode || `REF-${Math.floor(1e3 + Math.random() * 9e3)}`,
-      emailVerified: emailVerified ?? true,
-      phoneVerified: phoneVerified ?? true,
-      timezone: timezone || "America/New_York",
-      avatarInitials: avatarInitials || (fullName ? fullName.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase() : "U"),
-      department: department || (role === "business" ? "Vendor Merchant" : "Customer"),
-      primaryServiceCategory: primaryServiceCategory || null,
-      yearsOfExperience: yearsOfExperience ? String(yearsOfExperience) : null,
-      memberSince: memberSince || (/* @__PURE__ */ new Date()).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-    }).returning();
-    res.status(201).json(created);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-var users_default = router2;
-
-// server/routes/compliance.ts
-import { Router as Router3 } from "express";
-import { eq as eq3 } from "drizzle-orm";
-var router3 = Router3();
-router3.get("/:businessId", async (req, res) => {
-  try {
-    const { businessId } = req.params;
-    const [kyc] = await db.select().from(kycVerifications).where(eq3(kycVerifications.businessId, businessId));
-    const [w9] = await db.select().from(w9Records).where(eq3(w9Records.businessId, businessId));
-    const [nmi] = await db.select().from(nmiPaymentAccounts).where(eq3(nmiPaymentAccounts.businessId, businessId));
-    res.json({
-      kyc: kyc || null,
-      w9: w9 || null,
-      nmi: nmi || null
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-router3.post("/kyc/submit", async (req, res) => {
-  try {
-    const { businessId, verificationData, signature, signatureDate } = req.body;
-    if (!businessId || !verificationData) {
-      return res.status(400).json({ error: "businessId and verificationData are required" });
-    }
-    const payload = {
-      businessId,
-      legalEntityType: verificationData.legalEntityType,
-      status: "Pending Review",
-      riskTier: verificationData.riskTier || "Low",
-      einRaw: verificationData.tinRaw || verificationData.einVerification?.tinRaw,
-      einMasked: verificationData.tinMasked || verificationData.einVerification?.tinMasked,
-      tinMatchStatus: verificationData.einVerification?.tinMatchStatus || "Matched",
-      beneficialOwnerName: verificationData.beneficialOwner?.fullName,
-      beneficialOwnerDob: verificationData.beneficialOwner?.dateOfBirth,
-      beneficialOwnerSsnLast4: verificationData.beneficialOwner?.ssnLast4,
-      bankAccountHolder: verificationData.bankAccount?.accountHolderName,
-      bankRoutingNumber: verificationData.bankAccount?.routingNumber,
-      bankAccountNumberMasked: verificationData.bankAccount?.accountNumberMasked,
-      bankVerified: verificationData.bankAccount?.verified || false,
-      sanctionsStatus: verificationData.sanctionsScreening?.status || "Clear",
-      submittedAt: /* @__PURE__ */ new Date(),
-      signature,
-      signatureDate
-    };
-    const [existing] = await db.select().from(kycVerifications).where(eq3(kycVerifications.businessId, businessId));
-    let saved;
-    if (existing) {
-      [saved] = await db.update(kycVerifications).set(payload).where(eq3(kycVerifications.businessId, businessId)).returning();
-    } else {
-      [saved] = await db.insert(kycVerifications).values(payload).returning();
-    }
-    await db.update(businesses).set({ status: "Pending KYC Review", updatedAt: /* @__PURE__ */ new Date() }).where(eq3(businesses.id, businessId));
-    res.json({ success: true, kyc: saved });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-router3.post("/kyc/review", async (req, res) => {
-  try {
-    const { businessId, action, reviewerName, rejectionReason } = req.body;
-    if (!businessId || !action) {
-      return res.status(400).json({ error: "businessId and action are required" });
-    }
-    const isApproved = action === "approve";
-    const newStatus = isApproved ? "Approved" : "Rejected";
-    const businessStatus = isApproved ? "Live" : "KYC Rejected";
-    const [existing] = await db.select().from(kycVerifications).where(eq3(kycVerifications.businessId, businessId));
-    let history = Array.isArray(existing?.rejectionHistory) ? existing.rejectionHistory : [];
-    let count = existing?.rejectionCount || 0;
-    if (!isApproved && rejectionReason) {
-      count += 1;
-      history = [
-        ...history,
-        {
-          date: (/* @__PURE__ */ new Date()).toISOString(),
-          reason: rejectionReason,
-          rejectedBy: reviewerName || "Super Admin"
-        }
-      ];
-    }
-    const [updatedKyc] = await db.update(kycVerifications).set({
-      status: newStatus,
-      reviewedAt: /* @__PURE__ */ new Date(),
-      reviewedBy: reviewerName || "Super Admin",
-      rejectionReason: !isApproved ? rejectionReason : null,
-      rejectionCount: count,
-      rejectionHistory: history
-    }).where(eq3(kycVerifications.businessId, businessId)).returning();
-    await db.update(businesses).set({ status: businessStatus, updatedAt: /* @__PURE__ */ new Date() }).where(eq3(businesses.id, businessId));
-    res.json({ success: true, kyc: updatedKyc, businessStatus });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-router3.post("/w9/sign", async (req, res) => {
-  try {
-    const { businessId, w9Data } = req.body;
-    if (!businessId || !w9Data) {
-      return res.status(400).json({ error: "businessId and w9Data are required" });
-    }
-    const payload = {
-      businessId,
-      legalName: w9Data.legalName,
-      businessNameOrDisregarded: w9Data.businessNameOrDisregarded,
-      federalTaxClassification: w9Data.federalTaxClassification,
-      llcTaxClassification: w9Data.llcTaxClassification,
-      streetAddress: w9Data.streetAddress,
-      city: w9Data.city,
-      state: w9Data.state,
-      zipCode: w9Data.zipCode,
-      tinType: w9Data.tinType,
-      tinMasked: w9Data.tinMasked,
-      tinVerified: w9Data.tinVerified ?? true,
-      certCorrectTin: w9Data.certifications?.correctTin ?? true,
-      certNoBackupWithholding: w9Data.certifications?.noBackupWithholding ?? true,
-      certUsPerson: w9Data.certifications?.usPerson ?? true,
-      certFatcaCorrect: w9Data.certifications?.fatcaCorrect ?? false,
-      signatureName: w9Data.signatureName,
-      agreedPerjury: w9Data.agreedPerjury ?? true,
-      status: "submitted",
-      signedAt: /* @__PURE__ */ new Date(),
-      signerIp: req.ip || "127.0.0.1",
-      pdfGeneratedUrl: w9Data.pdfGeneratedUrl || null
-    };
-    const [existing] = await db.select().from(w9Records).where(eq3(w9Records.businessId, businessId));
-    let saved;
-    if (existing) {
-      [saved] = await db.update(w9Records).set(payload).where(eq3(w9Records.businessId, businessId)).returning();
-    } else {
-      [saved] = await db.insert(w9Records).values(payload).returning();
-    }
-    res.json({ success: true, w9: saved });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-router3.post("/nmi/onboard", async (req, res) => {
-  try {
-    const { businessId, nmiAccount } = req.body;
-    if (!businessId || !nmiAccount) {
-      return res.status(400).json({ error: "businessId and nmiAccount are required" });
-    }
-    const payload = {
-      businessId,
-      nmiGatewayId: nmiAccount.nmiGatewayId || `nmi-gw-${Date.now()}`,
-      onboardingStatus: nmiAccount.nmiOnboardingStatus || "ACTIVE",
-      companyName: nmiAccount.companyName,
-      federalTaxId: nmiAccount.federalTaxId,
-      firstName: nmiAccount.firstName,
-      lastName: nmiAccount.lastName,
-      email: nmiAccount.email,
-      bankRoutingNumber: nmiAccount.bankRoutingNumber,
-      bankAccountNumber: nmiAccount.bankAccountNumber,
-      accountType: nmiAccount.accountType || "checking",
-      accountHolderType: nmiAccount.accountHolderType || "business",
-      activatedAt: /* @__PURE__ */ new Date()
-    };
-    const [existing] = await db.select().from(nmiPaymentAccounts).where(eq3(nmiPaymentAccounts.businessId, businessId));
-    let saved;
-    if (existing) {
-      [saved] = await db.update(nmiPaymentAccounts).set(payload).where(eq3(nmiPaymentAccounts.businessId, businessId)).returning();
-    } else {
-      [saved] = await db.insert(nmiPaymentAccounts).values(payload).returning();
-    }
-    res.json({ success: true, nmi: saved });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-var compliance_default = router3;
-
-// server/routes/services.ts
-import { Router as Router4 } from "express";
-import { eq as eq4 } from "drizzle-orm";
-var router4 = Router4();
-function mapDbService(s) {
-  return {
-    ...s,
-    business_id: s.businessId,
-    service_id: s.id,
-    service_category_id: s.serviceCategoryId,
-    category_name: s.categoryName,
-    base_price: Number(s.basePrice),
-    hourly_rate: s.hourlyRate ? Number(s.hourlyRate) : void 0,
-    duration_minutes: s.durationMinutes,
-    requires_approval: s.requiresApproval,
-    photo_url: s.photoUrl,
-    thumbnail_url: s.thumbnailUrl,
-    gallery_photos: s.galleryPhotos || [],
-    assigned_workers_count: s.assignedWorkersCount || 1,
-    created_at: s.createdAt ? new Date(s.createdAt).toISOString() : void 0,
-    updated_at: s.updatedAt ? new Date(s.updatedAt).toISOString() : void 0
-  };
-}
-router4.get("/", async (req, res) => {
-  try {
-    const services = await db.select().from(businessServices);
-    res.json(services.map(mapDbService));
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-router4.get("/categories", async (req, res) => {
-  try {
-    const categories = await db.select().from(serviceCategories);
-    res.json(categories);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-router4.get("/business/:businessId", async (req, res) => {
-  try {
-    const services = await db.select().from(businessServices).where(eq4(businessServices.businessId, req.params.businessId));
-    const mapped = services.map(mapDbService);
-    res.json(mapped);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-router4.post("/", async (req, res) => {
-  try {
-    const s = req.body;
-    const [inserted] = await db.insert(businessServices).values({
-      id: s.id || `srv-${Date.now()}`,
-      businessId: s.business_id || s.businessId,
-      serviceCategoryId: s.service_category_id || s.serviceCategoryId,
-      categoryName: s.category_name || s.categoryName,
-      name: s.name,
-      photoUrl: s.photo_url || s.photoUrl,
-      thumbnailUrl: s.thumbnail_url || s.thumbnailUrl,
-      galleryPhotos: s.gallery_photos || s.galleryPhotos || [],
-      basePrice: String(s.base_price || s.basePrice),
-      hourlyRate: s.hourly_rate ? String(s.hourly_rate) : void 0,
-      durationMinutes: s.duration_minutes || s.durationMinutes || 45,
-      requiresApproval: s.requires_approval ?? s.requiresApproval ?? false,
-      status: s.status || "active",
-      assignedWorkersCount: s.assigned_workers_count || 1
-    }).returning();
-    res.status(201).json({
-      ...inserted,
-      base_price: Number(inserted.basePrice),
-      hourly_rate: inserted.hourlyRate ? Number(inserted.hourlyRate) : void 0,
-      duration_minutes: inserted.durationMinutes,
-      requires_approval: inserted.requiresApproval,
-      photo_url: inserted.photoUrl,
-      thumbnail_url: inserted.thumbnailUrl,
-      gallery_photos: inserted.galleryPhotos || []
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-router4.patch("/:id", async (req, res) => {
-  try {
-    const s = req.body;
-    const updateData = { updatedAt: /* @__PURE__ */ new Date() };
-    if (s.name) updateData.name = s.name;
-    if (s.categoryName || s.category_name) updateData.categoryName = s.categoryName || s.category_name;
-    if (s.basePrice || s.base_price) updateData.basePrice = String(s.basePrice || s.base_price);
-    if (s.durationMinutes || s.duration_minutes) updateData.durationMinutes = s.durationMinutes || s.duration_minutes;
-    if (s.photoUrl || s.photo_url) updateData.photoUrl = s.photoUrl || s.photo_url;
-    if (s.thumbnailUrl || s.thumbnail_url) updateData.thumbnailUrl = s.thumbnailUrl || s.thumbnail_url;
-    if (s.galleryPhotos || s.gallery_photos) updateData.galleryPhotos = s.galleryPhotos || s.gallery_photos;
-    if (s.status) updateData.status = s.status;
-    const [updated] = await db.update(businessServices).set(updateData).where(eq4(businessServices.id, req.params.id)).returning();
-    res.json({
-      ...updated,
-      base_price: Number(updated.basePrice),
-      duration_minutes: updated.durationMinutes,
-      requires_approval: updated.requiresApproval,
-      photo_url: updated.photoUrl,
-      thumbnail_url: updated.thumbnailUrl,
-      gallery_photos: updated.galleryPhotos || []
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-router4.delete("/:id", async (req, res) => {
-  try {
-    await db.delete(businessServices).where(eq4(businessServices.id, req.params.id));
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-var services_default = router4;
-
-// server/routes/cards.ts
-import { Router as Router5 } from "express";
-import { eq as eq5 } from "drizzle-orm";
-var router5 = Router5();
-function mapCard(c) {
-  return {
-    id: c.id,
-    customer_id: c.customerId,
-    cardholder_name: c.cardholderName,
-    brand: c.brand,
-    last4: c.last4,
-    exp_month: c.expMonth,
-    exp_year: c.expYear,
-    is_default: c.isDefault,
-    billing_address: c.billingAddress,
-    created_at: c.createdAt ? new Date(c.createdAt).toISOString() : (/* @__PURE__ */ new Date()).toISOString()
-  };
-}
-router5.get("/", async (req, res) => {
-  try {
-    const { customerId } = req.query;
-    let query;
-    if (customerId) {
-      query = db.select().from(customerSavedCards).where(eq5(customerSavedCards.customerId, String(customerId)));
-    } else {
-      query = db.select().from(customerSavedCards);
-    }
-    const cards = await query;
-    res.json(cards.map(mapCard));
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-router5.get("/customer/:customerId", async (req, res) => {
-  try {
-    const cards = await db.select().from(customerSavedCards).where(eq5(customerSavedCards.customerId, req.params.customerId));
-    res.json(cards.map(mapCard));
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-router5.post("/", async (req, res) => {
-  try {
-    const {
-      customerId,
-      customer_id,
-      cardholderName,
-      cardholder_name,
-      brand,
-      last4,
-      expMonth,
-      exp_month,
-      expYear,
-      exp_year,
-      isDefault,
-      is_default,
-      billingAddress,
-      billing_address
-    } = req.body;
-    const targetCustomerId = customerId || customer_id || "user-customer";
-    const makeDefault = isDefault ?? is_default ?? false;
-    if (makeDefault) {
-      await db.update(customerSavedCards).set({ isDefault: false }).where(eq5(customerSavedCards.customerId, targetCustomerId));
-    }
-    const [created] = await db.insert(customerSavedCards).values({
-      id: `card-${Date.now()}`,
-      customerId: targetCustomerId,
-      cardholderName: cardholderName || cardholder_name,
-      brand: brand || "visa",
-      last4: last4 || "4242",
-      expMonth: expMonth || exp_month || "12",
-      expYear: expYear || exp_year || "28",
-      isDefault: makeDefault,
-      billingAddress: billingAddress || billing_address || null,
-      gatewayToken: `tok_neon_${Date.now()}`
-    }).returning();
-    res.status(201).json({
-      id: created.id,
-      customer_id: created.customerId,
-      cardholder_name: created.cardholderName,
-      brand: created.brand,
-      last4: created.last4,
-      exp_month: created.expMonth,
-      exp_year: created.expYear,
-      is_default: created.isDefault,
-      billing_address: created.billingAddress,
-      created_at: created.createdAt.toISOString()
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-router5.patch("/:id/default", async (req, res) => {
-  try {
-    const { customerId } = req.body;
-    if (customerId) {
-      await db.update(customerSavedCards).set({ isDefault: false }).where(eq5(customerSavedCards.customerId, customerId));
-    }
-    const [updated] = await db.update(customerSavedCards).set({ isDefault: true }).where(eq5(customerSavedCards.id, req.params.id)).returning();
-    res.json(updated);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-router5.delete("/:id", async (req, res) => {
-  try {
-    await db.delete(customerSavedCards).where(eq5(customerSavedCards.id, req.params.id));
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-var cards_default = router5;
-
-// server/routes/bookings.ts
-import { Router as Router6 } from "express";
-import { eq as eq6, desc } from "drizzle-orm";
-var router6 = Router6();
-async function getCompleteBooking(bookingId) {
-  const [b] = await db.select().from(bookings).where(eq6(bookings.id, bookingId));
-  if (!b) return null;
-  const items = await db.select().from(bookingItems).where(eq6(bookingItems.bookingId, bookingId));
-  return {
-    id: b.id,
-    reference_number: b.referenceNumber,
-    customer_id: b.customerId,
-    customer_name: b.customerName,
-    customer_email: b.customerEmail,
-    customer_phone: b.customerPhone || void 0,
-    business_id: b.businessId,
-    business_name: b.businessName,
-    business_logo: b.businessLogo || void 0,
-    business_category: b.businessCategory || void 0,
-    status: b.status,
-    payment_status: b.paymentStatus,
-    payment_method: b.paymentMethod,
-    payment_method_display: b.paymentMethodDisplay || void 0,
-    total_amount: Number(b.totalAmount),
-    total_price: Number(b.totalAmount),
-    discount_amount: Number(b.discountAmount || 0),
-    tax_amount: Number(b.taxAmount || 0),
-    net_amount: Number(b.netAmount),
-    booking_date: b.scheduledDate,
-    scheduled_date: b.scheduledDate,
-    scheduled_start_time: b.scheduledStartTime,
-    scheduled_end_time: b.scheduledEndTime,
-    total_duration_minutes: b.totalDurationMinutes,
-    special_instructions: b.specialInstructions || void 0,
-    notes: b.notes || void 0,
-    refund_status: b.refundStatus || void 0,
-    refund_estimated_date: b.refundEstimatedDate || void 0,
-    refund_id: b.refundId || void 0,
-    items: items.map((it) => ({
-      id: String(it.id),
-      booking_id: it.bookingId,
-      business_service_id: it.businessServiceId,
-      service_name: it.serviceName,
-      price_charged: Number(it.priceCharged),
-      price: Number(it.priceCharged),
-      duration_minutes: it.durationMinutes,
-      worker_id: it.workerId || void 0,
-      worker_name: it.workerName || void 0,
-      scheduled_start: it.scheduledStart || void 0,
-      scheduled_end: it.scheduledEnd || void 0
-    })),
-    created_at: b.createdAt.toISOString(),
-    updated_at: b.updatedAt.toISOString()
-  };
-}
-router6.get("/", async (req, res) => {
-  try {
-    const { customerId, businessId } = req.query;
-    let query = db.select().from(bookings).orderBy(desc(bookings.createdAt));
-    let allBookings;
-    if (customerId) {
-      allBookings = await db.select().from(bookings).where(eq6(bookings.customerId, String(customerId))).orderBy(desc(bookings.createdAt));
-    } else if (businessId) {
-      allBookings = await db.select().from(bookings).where(eq6(bookings.businessId, String(businessId))).orderBy(desc(bookings.createdAt));
-    } else {
-      allBookings = await db.select().from(bookings).orderBy(desc(bookings.createdAt));
-    }
-    const populated = await Promise.all(allBookings.map((b) => getCompleteBooking(b.id)));
-    res.json(populated.filter(Boolean));
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-router6.get("/:id", async (req, res) => {
-  try {
-    const booking = await getCompleteBooking(req.params.id);
-    if (!booking) {
-      return res.status(404).json({ error: "Booking not found" });
-    }
-    res.json(booking);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-router6.post("/create", async (req, res) => {
-  try {
-    const {
-      customerId,
-      businessId,
-      items,
-      dateStr,
-      startTime,
-      paymentMethod,
-      paymentMethodDisplay,
-      notes
-    } = req.body;
-    const [biz] = await db.select().from(businesses).where(eq6(businesses.id, businessId));
-    const randomDigits = Math.floor(1e5 + Math.random() * 9e5);
-    const bookingId = `BK-${randomDigits}`;
-    const referenceNumber = `#BK-${randomDigits}`;
-    const totalDuration = (items || []).reduce((acc, it) => acc + (it.duration_minutes || it.durationMinutes || 45), 0);
-    const grossTotal = (items || []).reduce((acc, it) => acc + (it.price_charged || it.price || it.base_price || 0), 0);
-    const clientTotal = req.body.totalAmount !== void 0 ? Number(req.body.totalAmount) : void 0;
-    const clientTax = req.body.taxAmount !== void 0 ? Number(req.body.taxAmount) : void 0;
-    const clientRef = req.body.referenceNumber ? String(req.body.referenceNumber) : void 0;
-    const netTotal = clientTotal !== void 0 ? clientTotal : Number(grossTotal.toFixed(2));
-    const taxAmount = clientTax !== void 0 ? clientTax : 0;
-    const finalRef = clientRef || referenceNumber;
-    const isPaidOnline = paymentMethod === "credit_card";
-    await db.insert(bookings).values({
-      id: bookingId,
-      referenceNumber: finalRef,
-      customerId: customerId || "user-customer",
-      customerName: req.body.customerName || "Alex Taylor",
-      customerEmail: req.body.customerEmail || "alex_shopper@uspot.com",
-      customerPhone: req.body.customerPhone || "+1 (555) 234-5678",
-      businessId,
-      businessName: biz?.businessName || "Business Partner",
-      businessCategory: biz?.category || "Salon & Spa",
-      status: "confirmed",
-      paymentStatus: isPaidOnline ? "paid" : "unpaid",
-      paymentMethod: paymentMethod || "credit_card",
-      paymentMethodDisplay: paymentMethodDisplay || (isPaidOnline ? "Mastercard \u2022\u2022\u2022\u2022 4242" : "Cash on Arrival"),
-      totalAmount: String(netTotal),
-      discountAmount: "0.00",
-      taxAmount: String(taxAmount),
-      netAmount: String(netTotal),
-      scheduledDate: dateStr,
-      scheduledStartTime: startTime,
-      scheduledEndTime: "11:30 AM",
-      totalDurationMinutes: totalDuration || 60,
-      specialInstructions: notes || null,
-      notes: notes || null
-    });
-    for (const it of items || []) {
-      await db.insert(bookingItems).values({
-        bookingId,
-        businessServiceId: it.business_service_id || it.id,
-        serviceName: it.service_name || it.name,
-        priceCharged: String(it.price_charged || it.base_price || 0),
-        durationMinutes: it.duration_minutes || 45,
-        workerId: it.worker_id || null,
-        workerName: it.worker_name || "Assigned Specialist"
-      });
-    }
-    if (isPaidOnline) {
-      const commissionRate = 10;
-      const commissionAmount = Number((netTotal * commissionRate / 100).toFixed(2));
-      const businessAmount = Number((netTotal - commissionAmount).toFixed(2));
-      await db.insert(marketplaceTransactions).values({
-        id: `TX-${Date.now()}`,
-        bookingId,
-        businessId,
-        businessName: biz?.businessName || "Business Partner",
-        customerName: req.body.customerName || "Alex Taylor",
-        customerEmail: req.body.customerEmail || "alex_shopper@uspot.com",
-        serviceName: items?.[0]?.name || items?.[0]?.service_name || "Booked Service",
-        type: "BOOKING_PAYMENT",
-        grossAmount: String(netTotal),
-        commissionRate: String(commissionRate),
-        platformCommission: String(commissionAmount),
-        businessAmount: String(businessAmount),
-        paymentStatus: "paid",
-        withdrawalStatus: "none",
-        paymentGateway: "NMI Gateway"
-      });
-    }
-    const complete = await getCompleteBooking(bookingId);
-    res.status(201).json({ success: true, booking: complete, message: "Appointment confirmed successfully!" });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-router6.patch("/:id/status", async (req, res) => {
-  try {
-    const { status, cancellationReason } = req.body;
-    const updateData = { status, updatedAt: /* @__PURE__ */ new Date() };
-    if (status === "cancelled") {
-      updateData.refundStatus = "initiated";
-      updateData.refundEstimatedDate = "3 - 5 business days";
-      updateData.refundId = `REF-${Math.floor(1e5 + Math.random() * 9e5)}`;
-      if (cancellationReason) {
-        updateData.notes = cancellationReason;
-      }
-    }
-    await db.update(bookings).set(updateData).where(eq6(bookings.id, req.params.id));
-    const updated = await getCompleteBooking(req.params.id);
-    res.json(updated);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-router6.patch("/:id/reschedule", async (req, res) => {
-  try {
-    const { newDate, newStartTime } = req.body;
-    await db.update(bookings).set({
-      scheduledDate: newDate,
-      scheduledStartTime: newStartTime,
-      status: "confirmed",
-      updatedAt: /* @__PURE__ */ new Date()
-    }).where(eq6(bookings.id, req.params.id));
-    const updated = await getCompleteBooking(req.params.id);
-    res.json(updated);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-var bookings_default = router6;
-
-// server/routes/reviews.ts
-import { Router as Router7 } from "express";
-import { eq as eq7, desc as desc2 } from "drizzle-orm";
-var router7 = Router7();
-async function populateReviews(reviews) {
-  return Promise.all(
-    reviews.map(async (r) => {
-      const [resp] = await db.select().from(reviewResponses).where(eq7(reviewResponses.reviewId, r.id));
-      return {
-        id: r.id,
-        business_id: r.businessId,
-        business_name: r.businessName,
-        booking_id: r.bookingId || void 0,
-        service_id: r.serviceId || void 0,
-        service_name: r.serviceName || void 0,
-        customer_id: r.customerId || void 0,
-        customer_name: r.customerName,
-        customer_avatar: r.customerAvatar || void 0,
-        rating: r.rating,
-        review_text: r.reviewText,
-        media: r.media || [],
-        created_at: r.createdAt ? new Date(r.createdAt).toISOString() : (/* @__PURE__ */ new Date()).toISOString(),
-        time_ago: r.timeAgo || "Recently",
-        response_deadline: r.responseDeadline || void 0,
-        response: resp ? {
-          text: resp.responseText,
-          responded_at: resp.respondedAt ? new Date(resp.respondedAt).toISOString() : (/* @__PURE__ */ new Date()).toISOString(),
-          responded_time_ago: resp.respondedTimeAgo || "Responded recently",
-          author_name: resp.authorName
-        } : void 0
-      };
-    })
-  );
-}
-router7.get("/", async (req, res) => {
-  try {
-    const reviews = await db.select().from(businessReviews).orderBy(desc2(businessReviews.createdAt));
-    const populated = await populateReviews(reviews);
-    res.json(populated);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-router7.get("/business/:businessId", async (req, res) => {
-  try {
-    const reviews = await db.select().from(businessReviews).where(eq7(businessReviews.businessId, req.params.businessId)).orderBy(desc2(businessReviews.createdAt));
-    const populated = await populateReviews(reviews);
-    res.json(populated);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-router7.post("/", async (req, res) => {
-  try {
-    const {
-      businessId,
-      bookingId,
-      serviceId,
-      serviceName,
-      customerId,
-      customerName,
-      rating,
-      reviewText,
-      media
-    } = req.body;
-    const [biz] = await db.select().from(businesses).where(eq7(businesses.id, businessId));
-    const reviewId = `rev-${Date.now()}`;
-    const [created] = await db.insert(businessReviews).values({
-      id: reviewId,
-      businessId,
-      businessName: biz?.businessName || "Business",
-      bookingId,
-      serviceId,
-      serviceName,
-      customerId: customerId || "user-customer",
-      customerName: customerName || "Alex Taylor",
-      customerAvatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80",
-      rating: Number(rating),
-      reviewText,
-      media: media || [],
-      timeAgo: "Just now",
-      responseDeadline: 'Response needed within 24 hours to maintain "Fast Responder" badge.'
-    }).returning();
-    res.status(201).json({
-      id: created.id,
-      business_id: created.businessId,
-      business_name: created.businessName,
-      booking_id: created.bookingId || void 0,
-      service_id: created.serviceId || void 0,
-      service_name: created.serviceName || void 0,
-      customer_id: created.customerId || void 0,
-      customer_name: created.customerName,
-      customer_avatar: created.customerAvatar || void 0,
-      rating: created.rating,
-      review_text: created.reviewText,
-      media: created.media || [],
-      created_at: created.createdAt.toISOString(),
-      time_ago: created.timeAgo || "Just now"
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-router7.post("/:id/reply", async (req, res) => {
-  try {
-    const { replyText, authorName } = req.body;
-    const reviewId = req.params.id;
-    const [existing] = await db.select().from(reviewResponses).where(eq7(reviewResponses.reviewId, reviewId));
-    let saved;
-    if (existing) {
-      [saved] = await db.update(reviewResponses).set({
-        responseText: replyText,
-        authorName: authorName || "Management",
-        respondedAt: /* @__PURE__ */ new Date(),
-        respondedTimeAgo: "Just now"
-      }).where(eq7(reviewResponses.reviewId, reviewId)).returning();
-    } else {
-      [saved] = await db.insert(reviewResponses).values({
-        reviewId,
-        authorName: authorName || "Management",
-        responseText: replyText,
-        respondedTimeAgo: "Just now"
-      }).returning();
-    }
-    res.json({
-      success: true,
-      response: {
-        text: saved.responseText,
-        responded_at: saved.respondedAt.toISOString(),
-        responded_time_ago: saved.respondedTimeAgo || "Just now",
-        author_name: saved.authorName
-      }
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-var reviews_default = router7;
-
-// server/routes/ledger.ts
-import { Router as Router8 } from "express";
-import { eq as eq8, desc as desc3 } from "drizzle-orm";
-var router8 = Router8();
-router8.get("/transactions", async (req, res) => {
-  try {
-    const { businessId } = req.query;
-    let query;
-    if (businessId) {
-      query = db.select().from(marketplaceTransactions).where(eq8(marketplaceTransactions.businessId, String(businessId))).orderBy(desc3(marketplaceTransactions.createdAt));
-    } else {
-      query = db.select().from(marketplaceTransactions).orderBy(desc3(marketplaceTransactions.createdAt));
-    }
-    const txs = await query;
-    res.json(
-      txs.map((t) => ({
-        id: t.id,
-        bookingId: t.bookingId,
-        businessId: t.businessId,
-        businessName: t.businessName,
-        customerName: t.customerName || "",
-        customerEmail: t.customerEmail || void 0,
-        serviceName: t.serviceName || "",
-        type: t.type,
-        grossAmount: Number(t.grossAmount),
-        commissionRate: Number(t.commissionRate),
-        platformCommission: Number(t.platformCommission),
-        w9WithholdingRate: Number(t.w9WithholdingRate || 0),
-        w9WithholdingAmount: Number(t.w9WithholdingAmount || 0),
-        businessAmount: Number(t.businessAmount),
-        currency: t.currency || "USD",
-        paymentStatus: t.paymentStatus || "paid",
-        withdrawalStatus: t.withdrawalStatus || "none",
-        paymentGateway: t.paymentGateway || "NMI Gateway",
-        notes: t.notes || void 0,
-        createdAt: t.createdAt.toISOString(),
-        updatedAt: t.updatedAt.toISOString()
-      }))
-    );
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-router8.get("/balance/:businessId", async (req, res) => {
-  try {
-    const { businessId } = req.params;
-    const txs = await db.select().from(marketplaceTransactions).where(eq8(marketplaceTransactions.businessId, businessId));
-    const withdrawals = await db.select().from(withdrawalRequests).where(eq8(withdrawalRequests.businessId, businessId));
-    let grossEarned = 0;
-    let totalEarned = 0;
-    let totalWithheldTax = 0;
-    txs.forEach((t) => {
-      if (t.type === "BOOKING_PAYMENT") {
-        grossEarned += Number(t.grossAmount);
-        totalEarned += Number(t.businessAmount);
-        totalWithheldTax += Number(t.w9WithholdingAmount || 0);
-      }
-    });
-    let totalWithdrawn = 0;
-    let pendingWithdrawal = 0;
-    withdrawals.forEach((w) => {
-      if (w.status === "Completed") {
-        totalWithdrawn += Number(w.amount);
-      } else if (w.status === "Pending" || w.status === "Processing") {
-        pendingWithdrawal += Number(w.amount);
-      }
-    });
-    const availableBalance = Math.max(0, Number((totalEarned - totalWithdrawn - pendingWithdrawal).toFixed(2)));
-    res.json({
-      availableBalance,
-      pendingWithdrawal,
-      totalEarned,
-      totalWithdrawn,
-      totalWithheldTax,
-      grossEarned
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-router8.post("/withdraw", async (req, res) => {
-  try {
-    const { businessId, amount, requestedByUserId, requestedByUserName, maskedBankAccount, bankAccountHolder } = req.body;
-    const [biz] = await db.select().from(businesses).where(eq8(businesses.id, businessId));
-    const requestId = `WTH-${Date.now()}`;
-    const [created] = await db.insert(withdrawalRequests).values({
-      id: requestId,
-      type: "business",
-      businessId,
-      businessName: biz?.businessName || "Business Partner",
-      requestedByUserId: requestedByUserId || "user-biz",
-      requestedByUserName: requestedByUserName || "Business Owner",
-      amount: String(amount),
-      maskedBankAccount: maskedBankAccount || "\u2022\u2022\u2022\u2022 4242",
-      bankAccountHolder: bankAccountHolder || "Authorized Signer",
-      status: "Pending",
-      requestDate: (/* @__PURE__ */ new Date()).toISOString()
-    }).returning();
-    res.status(201).json(created);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-var ledger_default = router8;
-
 // server/routes/worker.ts
-import { Router as Router9 } from "express";
-import { eq as eq9, and as and2, desc as desc4 } from "drizzle-orm";
-var router9 = Router9();
+import { Router as Router2 } from "express";
+import { eq as eq2, and, desc } from "drizzle-orm";
+var router2 = Router2();
 function parseTimeToMinutes(tStr) {
   if (!tStr) return 0;
   const cleaned = tStr.trim().toUpperCase();
@@ -1829,7 +730,7 @@ function parseTimeToMinutes(tStr) {
 }
 async function ensureWorkerDemoSchedule(workerId) {
   try {
-    const existing = await db.select().from(workerBusinessSchedules).where(eq9(workerBusinessSchedules.workerId, workerId));
+    const existing = await db.select().from(workerBusinessSchedules).where(eq2(workerBusinessSchedules.workerId, workerId));
     if (existing.length === 0) {
       const demoSlots = [
         // Monday (1)
@@ -1991,7 +892,7 @@ async function ensureWorkerDemoSchedule(workerId) {
 async function ensureWorkerDemoData(workerId) {
   try {
     await ensureWorkerDemoSchedule(workerId);
-    const existingJobs = await db.select().from(workerJobs).where(eq9(workerJobs.workerId, workerId));
+    const existingJobs = await db.select().from(workerJobs).where(eq2(workerJobs.workerId, workerId));
     if (existingJobs.length === 0) {
       const todayStr = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
       const tomorrow = new Date(Date.now() + 864e5).toISOString().split("T")[0];
@@ -2206,7 +1107,43 @@ async function ensureWorkerDemoData(workerId) {
     console.error("ensureWorkerDemoData error:", err);
   }
 }
-router9.post("/login", async (req, res) => {
+async function ensureDefaultWorkerUser() {
+  try {
+    const allUsers = await db.select().from(users);
+    const hasWorker = allUsers.some((u) => u.role === "worker" || u.role === "specialist");
+    if (!hasWorker) {
+      const defaultWorker = {
+        id: "user-specialist",
+        role: "worker",
+        roleLabel: "Worker",
+        status: "active",
+        email: "morgan.blake@uspot.com",
+        username: "morgan_worker",
+        phone: "+1 (555) 876-5432",
+        nickname: "Morgan",
+        fullName: "Morgan Blake",
+        referralCode: "USPOT-WRK42",
+        emailVerified: true,
+        phoneVerified: true,
+        timezone: "America/New_York",
+        avatarInitials: "MB",
+        department: "On-site Specialist & Field Operations",
+        primaryServiceCategory: "hvac, electrical, carpentry, cleaning, painting, landscaping, moving, plumbing",
+        yearsOfExperience: "10",
+        memberSince: "Aug 18, 2026"
+      };
+      await db.insert(users).values(defaultWorker).onConflictDoNothing();
+      await ensureWorkerDemoData("user-specialist");
+      await ensureWorkerDemoSchedule("user-specialist");
+      return true;
+    }
+    return false;
+  } catch (err) {
+    console.error("ensureDefaultWorkerUser error:", err);
+    return false;
+  }
+}
+router2.post("/login", async (req, res) => {
   try {
     const { identifier, email, username, password } = req.body;
     const term = (identifier || email || username || "").trim().toLowerCase();
@@ -2216,6 +1153,13 @@ router9.post("/login", async (req, res) => {
     );
     if (!worker) {
       worker = allUsers.find((u) => u.role === "worker" || u.role === "specialist");
+    }
+    if (!worker) {
+      await ensureDefaultWorkerUser();
+      const reloadedUsers = await db.select().from(users);
+      worker = reloadedUsers.find(
+        (u) => (u.role === "worker" || u.role === "specialist") && (!term || u.email?.toLowerCase() === term || u.username?.toLowerCase() === term || u.id.toLowerCase() === term)
+      ) || reloadedUsers.find((u) => u.role === "worker" || u.role === "specialist");
     }
     if (!worker) {
       return res.status(404).json({ error: "Worker account not found." });
@@ -2233,7 +1177,7 @@ router9.post("/login", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-router9.post("/onboarding", async (req, res) => {
+router2.post("/onboarding", async (req, res) => {
   try {
     const {
       fullName,
@@ -2251,7 +1195,7 @@ router9.post("/onboarding", async (req, res) => {
       return res.status(400).json({ error: "Email and Full Name are required." });
     }
     const trimmedEmail = email.trim().toLowerCase();
-    const existing = await db.select().from(users).where(eq9(users.email, trimmedEmail));
+    const existing = await db.select().from(users).where(eq2(users.email, trimmedEmail));
     const maskedAccount = payoutAccountNumber ? `\u2022\u2022\u2022\u2022 ${payoutAccountNumber.slice(-4)}` : "\u2022\u2022\u2022\u2022 7712";
     let workerId = `user-worker-${Date.now()}`;
     let savedWorker;
@@ -2265,7 +1209,7 @@ router9.post("/onboarding", async (req, res) => {
         primaryServiceCategory: primaryServiceCategory || existing[0].primaryServiceCategory,
         yearsOfExperience: yearsOfExperience ? String(yearsOfExperience) : existing[0].yearsOfExperience,
         updatedAt: /* @__PURE__ */ new Date()
-      }).where(eq9(users.id, workerId)).returning();
+      }).where(eq2(users.id, workerId)).returning();
       savedWorker = updated;
     } else {
       const initials = fullName.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
@@ -2306,7 +1250,7 @@ router9.post("/onboarding", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-router9.get("/businesses/:businessId/available-workers", async (req, res) => {
+router2.get("/businesses/:businessId/available-workers", async (req, res) => {
   try {
     const { businessId } = req.params;
     const { date: date2, time: time2, startTime, endTime, timeSlot } = req.query;
@@ -2334,8 +1278,13 @@ router9.get("/businesses/:businessId/available-workers", async (req, res) => {
       reqStartMinutes = parseTimeToMinutes(String(time2));
       reqEndMinutes = reqStartMinutes + 60;
     }
-    const allUsers = await db.select().from(users);
-    const workerUsers = allUsers.filter((u) => u.role === "worker" || u.role === "specialist");
+    let allUsers = await db.select().from(users);
+    let workerUsers = allUsers.filter((u) => u.role === "worker" || u.role === "specialist");
+    if (workerUsers.length === 0) {
+      await ensureDefaultWorkerUser();
+      allUsers = await db.select().from(users);
+      workerUsers = allUsers.filter((u) => u.role === "worker" || u.role === "specialist");
+    }
     const allContracts = await db.select().from(workerContracts);
     const results = [];
     for (const worker of workerUsers) {
@@ -2354,16 +1303,16 @@ router9.get("/businesses/:businessId/available-workers", async (req, res) => {
         contractType: "independent_contractor"
       };
       const daySchedules = await db.select().from(workerBusinessSchedules).where(
-        and2(
-          eq9(workerBusinessSchedules.workerId, worker.id),
-          eq9(workerBusinessSchedules.dayOfWeek, dayOfWeek),
-          eq9(workerBusinessSchedules.isAvailable, true)
+        and(
+          eq2(workerBusinessSchedules.workerId, worker.id),
+          eq2(workerBusinessSchedules.dayOfWeek, dayOfWeek),
+          eq2(workerBusinessSchedules.isAvailable, true)
         )
       );
       const dayJobs = await db.select().from(workerJobs).where(
-        and2(
-          eq9(workerJobs.workerId, worker.id),
-          eq9(workerJobs.scheduledDate, targetDateStr)
+        and(
+          eq2(workerJobs.workerId, worker.id),
+          eq2(workerJobs.scheduledDate, targetDateStr)
         )
       );
       const thisBizSlot = daySchedules.find((slot) => {
@@ -2442,7 +1391,7 @@ router9.get("/businesses/:businessId/available-workers", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-router9.post("/businesses/:businessId/assign-job", async (req, res) => {
+router2.post("/businesses/:businessId/assign-job", async (req, res) => {
   try {
     const { businessId } = req.params;
     const {
@@ -2501,12 +1450,149 @@ router9.post("/businesses/:businessId/assign-job", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-router9.get("/:workerId/dashboard", async (req, res) => {
+router2.post("/businesses/:businessId/staff", async (req, res) => {
+  try {
+    const { businessId } = req.params;
+    const {
+      fullName,
+      email,
+      phone,
+      title,
+      department,
+      hourlyRate,
+      commissionPercentage,
+      contractType,
+      workDays,
+      // array of numbers e.g. [1, 2, 3, 4, 5]
+      startTime,
+      endTime
+    } = req.body;
+    if (!fullName || !email) {
+      return res.status(400).json({ error: "Staff member full name and email are required." });
+    }
+    const trimmedEmail = email.trim().toLowerCase();
+    const cleanName = fullName.trim();
+    const initials = cleanName.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase() || "ST";
+    const allBusinesses = await db.select().from(businesses);
+    const matchedBiz = allBusinesses.find(
+      (b) => b.id === businessId || b.businessName.toLowerCase() === businessId.toLowerCase()
+    );
+    const resolvedBizId = matchedBiz?.id || businessId;
+    const bizName = matchedBiz?.businessName || (businessId.includes("spa") ? "Onyx Luxury Spa & Wellness" : "Glow Salon & Hair Studio");
+    const [existingUser] = await db.select().from(users).where(eq2(users.email, trimmedEmail));
+    let workerUser = existingUser;
+    if (!workerUser) {
+      const workerId = `user-wrk-${Date.now()}`;
+      const username = trimmedEmail.split("@")[0] + "_" + Math.floor(100 + Math.random() * 900);
+      const [newUser] = await db.insert(users).values({
+        id: workerId,
+        role: "worker",
+        roleLabel: "Worker",
+        status: "active",
+        email: trimmedEmail,
+        username,
+        phone: phone || null,
+        nickname: cleanName.split(" ")[0],
+        fullName: cleanName,
+        referralCode: `WRK-${Math.floor(1e3 + Math.random() * 9e3)}`,
+        emailVerified: true,
+        phoneVerified: Boolean(phone),
+        timezone: "America/New_York",
+        avatarInitials: initials,
+        department: department || title || "On-site Specialist & Staff",
+        primaryServiceCategory: matchedBiz?.category || "Specialist Services",
+        yearsOfExperience: "5",
+        memberSince: (/* @__PURE__ */ new Date()).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric"
+        })
+      }).returning();
+      workerUser = newUser;
+    } else if (workerUser.role !== "worker" && workerUser.role !== "specialist") {
+      const [updated] = await db.update(users).set({
+        role: "worker",
+        roleLabel: "Worker",
+        department: department || title || workerUser.department || "Specialist Services",
+        updatedAt: /* @__PURE__ */ new Date()
+      }).where(eq2(users.id, workerUser.id)).returning();
+      workerUser = updated;
+    }
+    const allContracts = await db.select().from(workerContracts);
+    let contract = allContracts.find(
+      (c) => c.workerId === workerUser.id && (c.businessId === resolvedBizId || c.businessId === businessId)
+    );
+    if (!contract) {
+      const contractId = `ctr-${workerUser.id}-${Date.now().toString().slice(-4)}`;
+      const [newContract] = await db.insert(workerContracts).values({
+        id: contractId,
+        workerId: workerUser.id,
+        businessId: resolvedBizId,
+        businessName: bizName,
+        title: title || "Certified Specialist & Operator",
+        contractType: contractType || "independent_contractor",
+        status: "active",
+        hourlyRate: hourlyRate ? String(hourlyRate) : "85.00",
+        commissionPercentage: commissionPercentage ? String(commissionPercentage) : "75.00",
+        startDate: (/* @__PURE__ */ new Date()).toISOString().split("T")[0],
+        terms: `Authorized certified specialist and team member agreement for ${bizName}.`,
+        signedAt: /* @__PURE__ */ new Date(),
+        signature: `${cleanName} (Authorized Staff Member)`
+      }).returning();
+      contract = newContract;
+    }
+    const selectedDays = Array.isArray(workDays) && workDays.length > 0 ? workDays : [1, 2, 3, 4, 5];
+    const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    for (const day of selectedDays) {
+      const existingSlot = await db.select().from(workerBusinessSchedules).where(
+        and(
+          eq2(workerBusinessSchedules.workerId, workerUser.id),
+          eq2(workerBusinessSchedules.businessId, resolvedBizId),
+          eq2(workerBusinessSchedules.dayOfWeek, Number(day))
+        )
+      );
+      if (existingSlot.length === 0) {
+        await db.insert(workerBusinessSchedules).values({
+          id: `sch-${workerUser.id}-${resolvedBizId}-d${day}-${Date.now()}`,
+          workerId: workerUser.id,
+          businessId: resolvedBizId,
+          businessName: bizName,
+          dayOfWeek: Number(day),
+          dayName: DAY_NAMES[Number(day)] || "Weekday",
+          startTime: startTime || "09:00 AM",
+          endTime: endTime || "05:00 PM",
+          isAvailable: true,
+          hourlyRate: hourlyRate ? String(hourlyRate) : "85.00",
+          notes: `Regular shift for ${bizName}`
+        });
+      }
+    }
+    await ensureWorkerDemoData(workerUser.id);
+    res.status(201).json({
+      success: true,
+      worker: workerUser,
+      contract,
+      message: `Staff member ${cleanName} added to ${bizName} successfully!`
+    });
+  } catch (err) {
+    console.error("add-staff error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+router2.post("/seed-demo", async (req, res) => {
+  try {
+    await ensureDefaultWorkerUser();
+    res.json({ success: true, message: "Default worker and schedule successfully seeded." });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+router2.get("/:workerId/dashboard", async (req, res) => {
   try {
     const { workerId } = req.params;
     await ensureWorkerDemoData(workerId);
-    const jobs = await db.select().from(workerJobs).where(eq9(workerJobs.workerId, workerId));
-    const transactions = await db.select().from(workerTransactions).where(eq9(workerTransactions.workerId, workerId));
+    const jobs = await db.select().from(workerJobs).where(eq2(workerJobs.workerId, workerId));
+    const transactions = await db.select().from(workerTransactions).where(eq2(workerTransactions.workerId, workerId));
     const todayStr = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
     const todayJobs = jobs.filter((j) => j.scheduledDate === todayStr);
     const activeJobs = jobs.filter((j) => j.status === "in_progress");
@@ -2569,12 +1655,12 @@ router9.get("/:workerId/dashboard", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-router9.get("/:workerId/jobs", async (req, res) => {
+router2.get("/:workerId/jobs", async (req, res) => {
   try {
     const { workerId } = req.params;
     const { status, search } = req.query;
     await ensureWorkerDemoData(workerId);
-    let allJobs = await db.select().from(workerJobs).where(eq9(workerJobs.workerId, workerId)).orderBy(desc4(workerJobs.scheduledDate));
+    let allJobs = await db.select().from(workerJobs).where(eq2(workerJobs.workerId, workerId)).orderBy(desc(workerJobs.scheduledDate));
     if (status && status !== "all") {
       allJobs = allJobs.filter((j) => j.status === status);
     }
@@ -2589,10 +1675,10 @@ router9.get("/:workerId/jobs", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-router9.get("/:workerId/jobs/:jobId", async (req, res) => {
+router2.get("/:workerId/jobs/:jobId", async (req, res) => {
   try {
     const { workerId, jobId } = req.params;
-    const [job] = await db.select().from(workerJobs).where(and2(eq9(workerJobs.workerId, workerId), eq9(workerJobs.id, jobId)));
+    const [job] = await db.select().from(workerJobs).where(and(eq2(workerJobs.workerId, workerId), eq2(workerJobs.id, jobId)));
     if (!job) {
       return res.status(404).json({ error: "Job not found" });
     }
@@ -2601,7 +1687,7 @@ router9.get("/:workerId/jobs/:jobId", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-router9.patch("/:workerId/jobs/:jobId/check-in", async (req, res) => {
+router2.patch("/:workerId/jobs/:jobId/check-in", async (req, res) => {
   try {
     const { workerId, jobId } = req.params;
     const { checkInNotes, checkInPhotos } = req.body;
@@ -2611,7 +1697,7 @@ router9.patch("/:workerId/jobs/:jobId/check-in", async (req, res) => {
       checkInNotes: checkInNotes || "Worker arrived on site and verified arrival.",
       checkInPhotos: checkInPhotos || [],
       updatedAt: /* @__PURE__ */ new Date()
-    }).where(and2(eq9(workerJobs.workerId, workerId), eq9(workerJobs.id, jobId))).returning();
+    }).where(and(eq2(workerJobs.workerId, workerId), eq2(workerJobs.id, jobId))).returning();
     if (!updated) {
       return res.status(404).json({ error: "Job not found" });
     }
@@ -2620,7 +1706,7 @@ router9.patch("/:workerId/jobs/:jobId/check-in", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-router9.patch("/:workerId/jobs/:jobId/check-out", async (req, res) => {
+router2.patch("/:workerId/jobs/:jobId/check-out", async (req, res) => {
   try {
     const { workerId, jobId } = req.params;
     const {
@@ -2631,7 +1717,7 @@ router9.patch("/:workerId/jobs/:jobId/check-out", async (req, res) => {
       rating = 5,
       feedback
     } = req.body;
-    const [existing] = await db.select().from(workerJobs).where(and2(eq9(workerJobs.workerId, workerId), eq9(workerJobs.id, jobId)));
+    const [existing] = await db.select().from(workerJobs).where(and(eq2(workerJobs.workerId, workerId), eq2(workerJobs.id, jobId)));
     if (!existing) {
       return res.status(404).json({ error: "Job not found" });
     }
@@ -2649,7 +1735,7 @@ router9.patch("/:workerId/jobs/:jobId/check-out", async (req, res) => {
       rating: rating || 5,
       feedback: feedback || "Great service and prompt arrival.",
       updatedAt: /* @__PURE__ */ new Date()
-    }).where(and2(eq9(workerJobs.workerId, workerId), eq9(workerJobs.id, jobId))).returning();
+    }).where(and(eq2(workerJobs.workerId, workerId), eq2(workerJobs.id, jobId))).returning();
     const txId = `tx-wrk-${Date.now()}`;
     await db.insert(workerTransactions).values({
       id: txId,
@@ -2668,30 +1754,30 @@ router9.patch("/:workerId/jobs/:jobId/check-out", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-router9.get("/:workerId/calendar", async (req, res) => {
+router2.get("/:workerId/calendar", async (req, res) => {
   try {
     const { workerId } = req.params;
     await ensureWorkerDemoData(workerId);
-    const jobs = await db.select().from(workerJobs).where(eq9(workerJobs.workerId, workerId));
+    const jobs = await db.select().from(workerJobs).where(eq2(workerJobs.workerId, workerId));
     res.json(jobs);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-router9.get("/:workerId/contracts", async (req, res) => {
+router2.get("/:workerId/contracts", async (req, res) => {
   try {
     const { workerId } = req.params;
     await ensureWorkerDemoData(workerId);
-    const contracts = await db.select().from(workerContracts).where(eq9(workerContracts.workerId, workerId));
+    const contracts = await db.select().from(workerContracts).where(eq2(workerContracts.workerId, workerId));
     res.json(contracts);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-router9.get("/:workerId/contracts/:contractId", async (req, res) => {
+router2.get("/:workerId/contracts/:contractId", async (req, res) => {
   try {
     const { workerId, contractId } = req.params;
-    const [contract] = await db.select().from(workerContracts).where(and2(eq9(workerContracts.workerId, workerId), eq9(workerContracts.id, contractId)));
+    const [contract] = await db.select().from(workerContracts).where(and(eq2(workerContracts.workerId, workerId), eq2(workerContracts.id, contractId)));
     if (!contract) {
       return res.status(404).json({ error: "Contract not found" });
     }
@@ -2700,7 +1786,7 @@ router9.get("/:workerId/contracts/:contractId", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-router9.post("/:workerId/contracts/:contractId/sign", async (req, res) => {
+router2.post("/:workerId/contracts/:contractId/sign", async (req, res) => {
   try {
     const { workerId, contractId } = req.params;
     const { signature } = req.body;
@@ -2709,18 +1795,18 @@ router9.post("/:workerId/contracts/:contractId/sign", async (req, res) => {
       signedAt: /* @__PURE__ */ new Date(),
       signature: signature || "Signed Digitally",
       updatedAt: /* @__PURE__ */ new Date()
-    }).where(and2(eq9(workerContracts.workerId, workerId), eq9(workerContracts.id, contractId))).returning();
+    }).where(and(eq2(workerContracts.workerId, workerId), eq2(workerContracts.id, contractId))).returning();
     res.json({ success: true, contract: updated });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-router9.get("/:workerId/earnings", async (req, res) => {
+router2.get("/:workerId/earnings", async (req, res) => {
   try {
     const { workerId } = req.params;
     await ensureWorkerDemoData(workerId);
-    const jobs = await db.select().from(workerJobs).where(eq9(workerJobs.workerId, workerId));
-    const transactions = await db.select().from(workerTransactions).where(eq9(workerTransactions.workerId, workerId)).orderBy(desc4(workerTransactions.createdAt));
+    const jobs = await db.select().from(workerJobs).where(eq2(workerJobs.workerId, workerId));
+    const transactions = await db.select().from(workerTransactions).where(eq2(workerTransactions.workerId, workerId)).orderBy(desc(workerTransactions.createdAt));
     let gross = 0;
     let tips = 0;
     for (const tx of transactions) {
@@ -2751,17 +1837,17 @@ router9.get("/:workerId/earnings", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-router9.get("/:workerId/transactions", async (req, res) => {
+router2.get("/:workerId/transactions", async (req, res) => {
   try {
     const { workerId } = req.params;
     await ensureWorkerDemoData(workerId);
-    const transactions = await db.select().from(workerTransactions).where(eq9(workerTransactions.workerId, workerId)).orderBy(desc4(workerTransactions.createdAt));
+    const transactions = await db.select().from(workerTransactions).where(eq2(workerTransactions.workerId, workerId)).orderBy(desc(workerTransactions.createdAt));
     res.json(transactions);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-router9.post("/:workerId/payout", async (req, res) => {
+router2.post("/:workerId/payout", async (req, res) => {
   try {
     const { workerId } = req.params;
     const { amount, bankName, accountMasked } = req.body;
@@ -2782,25 +1868,25 @@ router9.post("/:workerId/payout", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-router9.get("/:workerId/schedule", async (req, res) => {
+router2.get("/:workerId/schedule", async (req, res) => {
   try {
     const { workerId } = req.params;
     await ensureWorkerDemoSchedule(workerId);
-    const schedules = await db.select().from(workerBusinessSchedules).where(eq9(workerBusinessSchedules.workerId, workerId)).orderBy(workerBusinessSchedules.dayOfWeek, workerBusinessSchedules.startTime);
+    const schedules = await db.select().from(workerBusinessSchedules).where(eq2(workerBusinessSchedules.workerId, workerId)).orderBy(workerBusinessSchedules.dayOfWeek, workerBusinessSchedules.startTime);
     res.json(schedules);
   } catch (err) {
     console.error("get schedule error:", err);
     res.status(500).json({ error: err.message });
   }
 });
-router9.put("/:workerId/schedule", async (req, res) => {
+router2.put("/:workerId/schedule", async (req, res) => {
   try {
     const { workerId } = req.params;
     const { slots } = req.body;
     if (!Array.isArray(slots)) {
       return res.status(400).json({ error: "Slots array is required" });
     }
-    await db.delete(workerBusinessSchedules).where(eq9(workerBusinessSchedules.workerId, workerId));
+    await db.delete(workerBusinessSchedules).where(eq2(workerBusinessSchedules.workerId, workerId));
     if (slots.length > 0) {
       const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
       const valuesToInsert = slots.map((s, idx) => ({
@@ -2819,14 +1905,1130 @@ router9.put("/:workerId/schedule", async (req, res) => {
       }));
       await db.insert(workerBusinessSchedules).values(valuesToInsert);
     }
-    const updated = await db.select().from(workerBusinessSchedules).where(eq9(workerBusinessSchedules.workerId, workerId)).orderBy(workerBusinessSchedules.dayOfWeek, workerBusinessSchedules.startTime);
+    const updated = await db.select().from(workerBusinessSchedules).where(eq2(workerBusinessSchedules.workerId, workerId)).orderBy(workerBusinessSchedules.dayOfWeek, workerBusinessSchedules.startTime);
     res.json({ success: true, count: updated.length, schedule: updated });
   } catch (err) {
     console.error("update schedule error:", err);
     res.status(500).json({ error: err.message });
   }
 });
-var worker_default = router9;
+var worker_default = router2;
+
+// server/routes/users.ts
+var router3 = Router3();
+router3.get("/", async (req, res) => {
+  try {
+    let allUsers = await db.select().from(users);
+    const hasWorker = allUsers.some((u) => u.role === "worker" || u.role === "specialist");
+    if (!hasWorker) {
+      await ensureDefaultWorkerUser();
+      allUsers = await db.select().from(users);
+    }
+    res.json(allUsers);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router3.get("/:id", async (req, res) => {
+  try {
+    const [user] = await db.select().from(users).where(eq3(users.id, req.params.id));
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router3.post("/login", async (req, res) => {
+  try {
+    const { email, username, identifier, role, password } = req.body;
+    const term = (identifier || email || username || "").trim().toLowerCase();
+    if (!term && !role) {
+      return res.status(400).json({ error: "Please enter your email or username." });
+    }
+    if (term === "morgan.blake@uspot.com" || term === "morgan_worker" || role === "worker" || role === "specialist") {
+      await ensureDefaultWorkerUser();
+    }
+    const allUsers = await db.select().from(users);
+    let user = term ? allUsers.find(
+      (u) => u.email?.toLowerCase() === term || u.username?.toLowerCase() === term || u.id.toLowerCase() === term
+    ) : null;
+    if (!user && role) {
+      user = allUsers.find((u) => u.role.toLowerCase() === role.toLowerCase());
+    }
+    if (!user) {
+      return res.status(404).json({ error: "No user found with the provided credentials. Please check your email or register." });
+    }
+    const allBusinesses = await db.select().from(businesses);
+    const userBiz = allBusinesses.find(
+      (b) => b.userId && b.userId === user.id || b.email && b.email.toLowerCase() === user.email.toLowerCase()
+    );
+    const completeBiz = userBiz ? await getCompleteBusiness(userBiz.id) : null;
+    res.json({
+      success: true,
+      user,
+      business: completeBiz
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router3.patch("/:id", async (req, res) => {
+  try {
+    const [updated] = await db.update(users).set({ ...req.body, updatedAt: /* @__PURE__ */ new Date() }).where(eq3(users.id, req.params.id)).returning();
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router3.post("/register", async (req, res) => {
+  try {
+    const {
+      accountType,
+      // 'personal' | 'business' | 'worker'
+      email,
+      password,
+      firstName,
+      lastName,
+      phone,
+      jobTitle,
+      nickname,
+      username: providedUsername,
+      primaryServiceCategory,
+      yearsOfExperience,
+      marketingOptIn
+    } = req.body;
+    if (!email || !firstName || !lastName) {
+      return res.status(400).json({ error: "Email, First Name, and Last Name are required." });
+    }
+    const trimmedEmail = email.trim().toLowerCase();
+    const [existingUser] = await db.select().from(users).where(eq3(users.email, trimmedEmail));
+    if (existingUser) {
+      return res.status(400).json({ error: "An account with this email already exists. Please login instead." });
+    }
+    const isBusiness = accountType === "business";
+    const isWorker = accountType === "worker" || accountType === "specialist";
+    const role = isWorker ? "worker" : isBusiness ? "business" : "customer";
+    const roleLabel = isWorker ? "Worker" : isBusiness ? "Business Entity" : "Customer";
+    const newUserId = `user-${role}-${Date.now()}`;
+    const cleanFirstName = firstName.trim();
+    const cleanLastName = lastName.trim();
+    const fullName = `${cleanFirstName} ${cleanLastName}`;
+    const initials = ((cleanFirstName[0] || "U") + (cleanLastName[0] || "")).toUpperCase();
+    const username = providedUsername?.trim() || trimmedEmail.split("@")[0] + "_" + Math.floor(100 + Math.random() * 900);
+    const finalNickname = nickname?.trim() || cleanFirstName;
+    const [newUser] = await db.insert(users).values({
+      id: newUserId,
+      role,
+      roleLabel,
+      status: "active",
+      email: trimmedEmail,
+      username,
+      phone: phone?.trim() || null,
+      nickname: finalNickname,
+      fullName,
+      referralCode: `REF-${Math.floor(1e3 + Math.random() * 9e3)}`,
+      emailVerified: true,
+      phoneVerified: Boolean(phone),
+      timezone: "America/New_York",
+      avatarInitials: initials,
+      department: jobTitle?.trim() || (isWorker ? "On-site Specialist & Field Operations" : isBusiness ? "Business Operations" : "Marketplace Customer"),
+      primaryServiceCategory: primaryServiceCategory?.trim() || null,
+      yearsOfExperience: yearsOfExperience ? String(yearsOfExperience) : null,
+      memberSince: (/* @__PURE__ */ new Date()).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+    }).returning();
+    let createdBusiness = null;
+    if (isWorker) {
+      await ensureWorkerDemoData(newUser.id);
+      await ensureWorkerDemoSchedule(newUser.id);
+    }
+    if (isBusiness) {
+      const businessId = `biz-${Date.now()}`;
+      let domainName = trimmedEmail.split("@")[1]?.split(".")[0] || "";
+      if (["gmail", "yahoo", "outlook", "hotmail", "icloud", "proton"].includes(domainName.toLowerCase())) {
+        domainName = "";
+      }
+      const businessName = domainName ? domainName.charAt(0).toUpperCase() + domainName.slice(1) + " Services" : `${fullName}'s Business`;
+      const [newBiz] = await db.insert(businesses).values({
+        id: businessId,
+        userId: newUser.id,
+        businessName,
+        legalEntityName: `${businessName} LLC`,
+        category: "Coworking & Creative Hub",
+        description: `Professional spaces, reservations, and merchant operations by ${fullName}.`,
+        streetAddress: "100 Market St, Suite 400",
+        city: "San Francisco",
+        state: "CA",
+        zipCode: "94105",
+        phone: phone?.trim() || "+1 (555) 019-2834",
+        email: trimmedEmail,
+        status: "Draft",
+        subscriptionPlan: "Starter",
+        salesTaxRate: "8.87",
+        currency: "USD",
+        automaticInvoicing: true,
+        avatarChar: businessName[0]?.toUpperCase() || "B"
+      }).returning();
+      for (let day = 0; day <= 6; day++) {
+        await db.insert(businessHours).values({
+          businessId,
+          dayOfWeek: day,
+          openTime: "08:00",
+          closeTime: "19:00",
+          isClosed: day === 0
+          // Closed Sunday
+        });
+      }
+      await db.insert(businessAmenities).values([
+        {
+          businessId,
+          category: "General & Comfort",
+          name: "High-Speed Wi-Fi",
+          description: "1Gbps enterprise connection",
+          checked: true
+        },
+        {
+          businessId,
+          category: "General & Comfort",
+          name: "Restrooms",
+          description: "Clean restrooms on premises",
+          checked: true
+        },
+        {
+          businessId,
+          category: "Tech & Workspace",
+          name: "Power Outlets",
+          description: "Power outlets readily available at all spots",
+          checked: true
+        }
+      ]);
+      await db.insert(kycVerifications).values({
+        businessId,
+        legalEntityType: "Limited Liability Company (LLC)",
+        status: "Draft",
+        riskTier: "Low",
+        sanctionsStatus: "Not Started",
+        tinMatchStatus: "Not Started"
+      });
+      createdBusiness = newBiz;
+    }
+    res.status(201).json({
+      success: true,
+      user: newUser,
+      business: createdBusiness
+    });
+  } catch (error) {
+    console.error("Registration Error:", error);
+    res.status(500).json({ error: error.message || "Failed to register account" });
+  }
+});
+router3.post("/", async (req, res) => {
+  try {
+    const {
+      id,
+      role,
+      roleLabel,
+      status,
+      email,
+      username,
+      phone,
+      nickname,
+      fullName,
+      referralCode,
+      emailVerified,
+      phoneVerified,
+      timezone,
+      avatarInitials,
+      department,
+      primaryServiceCategory,
+      yearsOfExperience,
+      memberSince
+    } = req.body;
+    const trimmedEmail = (email || "").trim().toLowerCase();
+    const newId = id || `user-${role || "customer"}-${Date.now()}`;
+    const [created] = await db.insert(users).values({
+      id: newId,
+      role: role || "customer",
+      roleLabel: roleLabel || (role === "business" ? "Business" : "Customer"),
+      status: status || "active",
+      email: trimmedEmail,
+      username: username || trimmedEmail.split("@")[0] + "_" + Math.floor(100 + Math.random() * 900),
+      phone: phone || null,
+      nickname: nickname || fullName?.split(" ")[0] || null,
+      fullName: fullName || trimmedEmail.split("@")[0],
+      referralCode: referralCode || `REF-${Math.floor(1e3 + Math.random() * 9e3)}`,
+      emailVerified: emailVerified ?? true,
+      phoneVerified: phoneVerified ?? true,
+      timezone: timezone || "America/New_York",
+      avatarInitials: avatarInitials || (fullName ? fullName.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase() : "U"),
+      department: department || (role === "business" ? "Vendor Merchant" : "Customer"),
+      primaryServiceCategory: primaryServiceCategory || null,
+      yearsOfExperience: yearsOfExperience ? String(yearsOfExperience) : null,
+      memberSince: memberSince || (/* @__PURE__ */ new Date()).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+    }).returning();
+    res.status(201).json(created);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+var users_default = router3;
+
+// server/routes/compliance.ts
+import { Router as Router4 } from "express";
+import { eq as eq4 } from "drizzle-orm";
+var router4 = Router4();
+router4.get("/:businessId", async (req, res) => {
+  try {
+    const { businessId } = req.params;
+    const [kyc] = await db.select().from(kycVerifications).where(eq4(kycVerifications.businessId, businessId));
+    const [w9] = await db.select().from(w9Records).where(eq4(w9Records.businessId, businessId));
+    const [nmi] = await db.select().from(nmiPaymentAccounts).where(eq4(nmiPaymentAccounts.businessId, businessId));
+    res.json({
+      kyc: kyc || null,
+      w9: w9 || null,
+      nmi: nmi || null
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router4.post("/kyc/submit", async (req, res) => {
+  try {
+    const { businessId, verificationData, signature, signatureDate } = req.body;
+    if (!businessId || !verificationData) {
+      return res.status(400).json({ error: "businessId and verificationData are required" });
+    }
+    const payload = {
+      businessId,
+      legalEntityType: verificationData.legalEntityType,
+      status: "Pending Review",
+      riskTier: verificationData.riskTier || "Low",
+      einRaw: verificationData.tinRaw || verificationData.einVerification?.tinRaw,
+      einMasked: verificationData.tinMasked || verificationData.einVerification?.tinMasked,
+      tinMatchStatus: verificationData.einVerification?.tinMatchStatus || "Matched",
+      beneficialOwnerName: verificationData.beneficialOwner?.fullName,
+      beneficialOwnerDob: verificationData.beneficialOwner?.dateOfBirth,
+      beneficialOwnerSsnLast4: verificationData.beneficialOwner?.ssnLast4,
+      bankAccountHolder: verificationData.bankAccount?.accountHolderName,
+      bankRoutingNumber: verificationData.bankAccount?.routingNumber,
+      bankAccountNumberMasked: verificationData.bankAccount?.accountNumberMasked,
+      bankVerified: verificationData.bankAccount?.verified || false,
+      sanctionsStatus: verificationData.sanctionsScreening?.status || "Clear",
+      submittedAt: /* @__PURE__ */ new Date(),
+      signature,
+      signatureDate
+    };
+    const [existing] = await db.select().from(kycVerifications).where(eq4(kycVerifications.businessId, businessId));
+    let saved;
+    if (existing) {
+      [saved] = await db.update(kycVerifications).set(payload).where(eq4(kycVerifications.businessId, businessId)).returning();
+    } else {
+      [saved] = await db.insert(kycVerifications).values(payload).returning();
+    }
+    await db.update(businesses).set({ status: "Pending KYC Review", updatedAt: /* @__PURE__ */ new Date() }).where(eq4(businesses.id, businessId));
+    res.json({ success: true, kyc: saved });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router4.post("/kyc/review", async (req, res) => {
+  try {
+    const { businessId, action, reviewerName, rejectionReason } = req.body;
+    if (!businessId || !action) {
+      return res.status(400).json({ error: "businessId and action are required" });
+    }
+    const isApproved = action === "approve";
+    const newStatus = isApproved ? "Approved" : "Rejected";
+    const businessStatus = isApproved ? "Live" : "KYC Rejected";
+    const [existing] = await db.select().from(kycVerifications).where(eq4(kycVerifications.businessId, businessId));
+    let history = Array.isArray(existing?.rejectionHistory) ? existing.rejectionHistory : [];
+    let count = existing?.rejectionCount || 0;
+    if (!isApproved && rejectionReason) {
+      count += 1;
+      history = [
+        ...history,
+        {
+          date: (/* @__PURE__ */ new Date()).toISOString(),
+          reason: rejectionReason,
+          rejectedBy: reviewerName || "Super Admin"
+        }
+      ];
+    }
+    const [updatedKyc] = await db.update(kycVerifications).set({
+      status: newStatus,
+      reviewedAt: /* @__PURE__ */ new Date(),
+      reviewedBy: reviewerName || "Super Admin",
+      rejectionReason: !isApproved ? rejectionReason : null,
+      rejectionCount: count,
+      rejectionHistory: history
+    }).where(eq4(kycVerifications.businessId, businessId)).returning();
+    await db.update(businesses).set({ status: businessStatus, updatedAt: /* @__PURE__ */ new Date() }).where(eq4(businesses.id, businessId));
+    res.json({ success: true, kyc: updatedKyc, businessStatus });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router4.post("/w9/sign", async (req, res) => {
+  try {
+    const { businessId, w9Data } = req.body;
+    if (!businessId || !w9Data) {
+      return res.status(400).json({ error: "businessId and w9Data are required" });
+    }
+    const payload = {
+      businessId,
+      legalName: w9Data.legalName,
+      businessNameOrDisregarded: w9Data.businessNameOrDisregarded,
+      federalTaxClassification: w9Data.federalTaxClassification,
+      llcTaxClassification: w9Data.llcTaxClassification,
+      streetAddress: w9Data.streetAddress,
+      city: w9Data.city,
+      state: w9Data.state,
+      zipCode: w9Data.zipCode,
+      tinType: w9Data.tinType,
+      tinMasked: w9Data.tinMasked,
+      tinVerified: w9Data.tinVerified ?? true,
+      certCorrectTin: w9Data.certifications?.correctTin ?? true,
+      certNoBackupWithholding: w9Data.certifications?.noBackupWithholding ?? true,
+      certUsPerson: w9Data.certifications?.usPerson ?? true,
+      certFatcaCorrect: w9Data.certifications?.fatcaCorrect ?? false,
+      signatureName: w9Data.signatureName,
+      agreedPerjury: w9Data.agreedPerjury ?? true,
+      status: "submitted",
+      signedAt: /* @__PURE__ */ new Date(),
+      signerIp: req.ip || "127.0.0.1",
+      pdfGeneratedUrl: w9Data.pdfGeneratedUrl || null
+    };
+    const [existing] = await db.select().from(w9Records).where(eq4(w9Records.businessId, businessId));
+    let saved;
+    if (existing) {
+      [saved] = await db.update(w9Records).set(payload).where(eq4(w9Records.businessId, businessId)).returning();
+    } else {
+      [saved] = await db.insert(w9Records).values(payload).returning();
+    }
+    res.json({ success: true, w9: saved });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router4.post("/nmi/onboard", async (req, res) => {
+  try {
+    const { businessId, nmiAccount } = req.body;
+    if (!businessId || !nmiAccount) {
+      return res.status(400).json({ error: "businessId and nmiAccount are required" });
+    }
+    const payload = {
+      businessId,
+      nmiGatewayId: nmiAccount.nmiGatewayId || `nmi-gw-${Date.now()}`,
+      onboardingStatus: nmiAccount.nmiOnboardingStatus || "ACTIVE",
+      companyName: nmiAccount.companyName,
+      federalTaxId: nmiAccount.federalTaxId,
+      firstName: nmiAccount.firstName,
+      lastName: nmiAccount.lastName,
+      email: nmiAccount.email,
+      bankRoutingNumber: nmiAccount.bankRoutingNumber,
+      bankAccountNumber: nmiAccount.bankAccountNumber,
+      accountType: nmiAccount.accountType || "checking",
+      accountHolderType: nmiAccount.accountHolderType || "business",
+      activatedAt: /* @__PURE__ */ new Date()
+    };
+    const [existing] = await db.select().from(nmiPaymentAccounts).where(eq4(nmiPaymentAccounts.businessId, businessId));
+    let saved;
+    if (existing) {
+      [saved] = await db.update(nmiPaymentAccounts).set(payload).where(eq4(nmiPaymentAccounts.businessId, businessId)).returning();
+    } else {
+      [saved] = await db.insert(nmiPaymentAccounts).values(payload).returning();
+    }
+    res.json({ success: true, nmi: saved });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+var compliance_default = router4;
+
+// server/routes/services.ts
+import { Router as Router5 } from "express";
+import { eq as eq5 } from "drizzle-orm";
+var router5 = Router5();
+function mapDbService(s) {
+  return {
+    ...s,
+    business_id: s.businessId,
+    service_id: s.id,
+    service_category_id: s.serviceCategoryId,
+    category_name: s.categoryName,
+    base_price: Number(s.basePrice),
+    hourly_rate: s.hourlyRate ? Number(s.hourlyRate) : void 0,
+    duration_minutes: s.durationMinutes,
+    requires_approval: s.requiresApproval,
+    photo_url: s.photoUrl,
+    thumbnail_url: s.thumbnailUrl,
+    gallery_photos: s.galleryPhotos || [],
+    assigned_workers_count: s.assignedWorkersCount || 1,
+    created_at: s.createdAt ? new Date(s.createdAt).toISOString() : void 0,
+    updated_at: s.updatedAt ? new Date(s.updatedAt).toISOString() : void 0
+  };
+}
+router5.get("/", async (req, res) => {
+  try {
+    const services = await db.select().from(businessServices);
+    res.json(services.map(mapDbService));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router5.get("/categories", async (req, res) => {
+  try {
+    const categories = await db.select().from(serviceCategories);
+    res.json(categories);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router5.get("/business/:businessId", async (req, res) => {
+  try {
+    const services = await db.select().from(businessServices).where(eq5(businessServices.businessId, req.params.businessId));
+    const mapped = services.map(mapDbService);
+    res.json(mapped);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router5.post("/", async (req, res) => {
+  try {
+    const s = req.body;
+    const [inserted] = await db.insert(businessServices).values({
+      id: s.id || `srv-${Date.now()}`,
+      businessId: s.business_id || s.businessId,
+      serviceCategoryId: s.service_category_id || s.serviceCategoryId,
+      categoryName: s.category_name || s.categoryName,
+      name: s.name,
+      photoUrl: s.photo_url || s.photoUrl,
+      thumbnailUrl: s.thumbnail_url || s.thumbnailUrl,
+      galleryPhotos: s.gallery_photos || s.galleryPhotos || [],
+      basePrice: String(s.base_price || s.basePrice),
+      hourlyRate: s.hourly_rate ? String(s.hourly_rate) : void 0,
+      durationMinutes: s.duration_minutes || s.durationMinutes || 45,
+      requiresApproval: s.requires_approval ?? s.requiresApproval ?? false,
+      status: s.status || "active",
+      assignedWorkersCount: s.assigned_workers_count || 1
+    }).returning();
+    res.status(201).json({
+      ...inserted,
+      base_price: Number(inserted.basePrice),
+      hourly_rate: inserted.hourlyRate ? Number(inserted.hourlyRate) : void 0,
+      duration_minutes: inserted.durationMinutes,
+      requires_approval: inserted.requiresApproval,
+      photo_url: inserted.photoUrl,
+      thumbnail_url: inserted.thumbnailUrl,
+      gallery_photos: inserted.galleryPhotos || []
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router5.patch("/:id", async (req, res) => {
+  try {
+    const s = req.body;
+    const updateData = { updatedAt: /* @__PURE__ */ new Date() };
+    if (s.name) updateData.name = s.name;
+    if (s.categoryName || s.category_name) updateData.categoryName = s.categoryName || s.category_name;
+    if (s.basePrice || s.base_price) updateData.basePrice = String(s.basePrice || s.base_price);
+    if (s.durationMinutes || s.duration_minutes) updateData.durationMinutes = s.durationMinutes || s.duration_minutes;
+    if (s.photoUrl || s.photo_url) updateData.photoUrl = s.photoUrl || s.photo_url;
+    if (s.thumbnailUrl || s.thumbnail_url) updateData.thumbnailUrl = s.thumbnailUrl || s.thumbnail_url;
+    if (s.galleryPhotos || s.gallery_photos) updateData.galleryPhotos = s.galleryPhotos || s.gallery_photos;
+    if (s.status) updateData.status = s.status;
+    const [updated] = await db.update(businessServices).set(updateData).where(eq5(businessServices.id, req.params.id)).returning();
+    res.json({
+      ...updated,
+      base_price: Number(updated.basePrice),
+      duration_minutes: updated.durationMinutes,
+      requires_approval: updated.requiresApproval,
+      photo_url: updated.photoUrl,
+      thumbnail_url: updated.thumbnailUrl,
+      gallery_photos: updated.galleryPhotos || []
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router5.delete("/:id", async (req, res) => {
+  try {
+    await db.delete(businessServices).where(eq5(businessServices.id, req.params.id));
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+var services_default = router5;
+
+// server/routes/cards.ts
+import { Router as Router6 } from "express";
+import { eq as eq6 } from "drizzle-orm";
+var router6 = Router6();
+function mapCard(c) {
+  return {
+    id: c.id,
+    customer_id: c.customerId,
+    cardholder_name: c.cardholderName,
+    brand: c.brand,
+    last4: c.last4,
+    exp_month: c.expMonth,
+    exp_year: c.expYear,
+    is_default: c.isDefault,
+    billing_address: c.billingAddress,
+    created_at: c.createdAt ? new Date(c.createdAt).toISOString() : (/* @__PURE__ */ new Date()).toISOString()
+  };
+}
+router6.get("/", async (req, res) => {
+  try {
+    const { customerId } = req.query;
+    let query;
+    if (customerId) {
+      query = db.select().from(customerSavedCards).where(eq6(customerSavedCards.customerId, String(customerId)));
+    } else {
+      query = db.select().from(customerSavedCards);
+    }
+    const cards = await query;
+    res.json(cards.map(mapCard));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router6.get("/customer/:customerId", async (req, res) => {
+  try {
+    const cards = await db.select().from(customerSavedCards).where(eq6(customerSavedCards.customerId, req.params.customerId));
+    res.json(cards.map(mapCard));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router6.post("/", async (req, res) => {
+  try {
+    const {
+      customerId,
+      customer_id,
+      cardholderName,
+      cardholder_name,
+      brand,
+      last4,
+      expMonth,
+      exp_month,
+      expYear,
+      exp_year,
+      isDefault,
+      is_default,
+      billingAddress,
+      billing_address
+    } = req.body;
+    const targetCustomerId = customerId || customer_id || "user-customer";
+    const makeDefault = isDefault ?? is_default ?? false;
+    if (makeDefault) {
+      await db.update(customerSavedCards).set({ isDefault: false }).where(eq6(customerSavedCards.customerId, targetCustomerId));
+    }
+    const [created] = await db.insert(customerSavedCards).values({
+      id: `card-${Date.now()}`,
+      customerId: targetCustomerId,
+      cardholderName: cardholderName || cardholder_name,
+      brand: brand || "visa",
+      last4: last4 || "4242",
+      expMonth: expMonth || exp_month || "12",
+      expYear: expYear || exp_year || "28",
+      isDefault: makeDefault,
+      billingAddress: billingAddress || billing_address || null,
+      gatewayToken: `tok_neon_${Date.now()}`
+    }).returning();
+    res.status(201).json({
+      id: created.id,
+      customer_id: created.customerId,
+      cardholder_name: created.cardholderName,
+      brand: created.brand,
+      last4: created.last4,
+      exp_month: created.expMonth,
+      exp_year: created.expYear,
+      is_default: created.isDefault,
+      billing_address: created.billingAddress,
+      created_at: created.createdAt.toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router6.patch("/:id/default", async (req, res) => {
+  try {
+    const { customerId } = req.body;
+    if (customerId) {
+      await db.update(customerSavedCards).set({ isDefault: false }).where(eq6(customerSavedCards.customerId, customerId));
+    }
+    const [updated] = await db.update(customerSavedCards).set({ isDefault: true }).where(eq6(customerSavedCards.id, req.params.id)).returning();
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router6.delete("/:id", async (req, res) => {
+  try {
+    await db.delete(customerSavedCards).where(eq6(customerSavedCards.id, req.params.id));
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+var cards_default = router6;
+
+// server/routes/bookings.ts
+import { Router as Router7 } from "express";
+import { eq as eq7, desc as desc2 } from "drizzle-orm";
+var router7 = Router7();
+async function getCompleteBooking(bookingId) {
+  const [b] = await db.select().from(bookings).where(eq7(bookings.id, bookingId));
+  if (!b) return null;
+  const items = await db.select().from(bookingItems).where(eq7(bookingItems.bookingId, bookingId));
+  return {
+    id: b.id,
+    reference_number: b.referenceNumber,
+    customer_id: b.customerId,
+    customer_name: b.customerName,
+    customer_email: b.customerEmail,
+    customer_phone: b.customerPhone || void 0,
+    business_id: b.businessId,
+    business_name: b.businessName,
+    business_logo: b.businessLogo || void 0,
+    business_category: b.businessCategory || void 0,
+    status: b.status,
+    payment_status: b.paymentStatus,
+    payment_method: b.paymentMethod,
+    payment_method_display: b.paymentMethodDisplay || void 0,
+    total_amount: Number(b.totalAmount),
+    total_price: Number(b.totalAmount),
+    discount_amount: Number(b.discountAmount || 0),
+    tax_amount: Number(b.taxAmount || 0),
+    net_amount: Number(b.netAmount),
+    booking_date: b.scheduledDate,
+    scheduled_date: b.scheduledDate,
+    scheduled_start_time: b.scheduledStartTime,
+    scheduled_end_time: b.scheduledEndTime,
+    total_duration_minutes: b.totalDurationMinutes,
+    special_instructions: b.specialInstructions || void 0,
+    notes: b.notes || void 0,
+    refund_status: b.refundStatus || void 0,
+    refund_estimated_date: b.refundEstimatedDate || void 0,
+    refund_id: b.refundId || void 0,
+    items: items.map((it) => ({
+      id: String(it.id),
+      booking_id: it.bookingId,
+      business_service_id: it.businessServiceId,
+      service_name: it.serviceName,
+      price_charged: Number(it.priceCharged),
+      price: Number(it.priceCharged),
+      duration_minutes: it.durationMinutes,
+      worker_id: it.workerId || void 0,
+      worker_name: it.workerName || void 0,
+      scheduled_start: it.scheduledStart || void 0,
+      scheduled_end: it.scheduledEnd || void 0
+    })),
+    created_at: b.createdAt.toISOString(),
+    updated_at: b.updatedAt.toISOString()
+  };
+}
+router7.get("/", async (req, res) => {
+  try {
+    const { customerId, businessId } = req.query;
+    let query = db.select().from(bookings).orderBy(desc2(bookings.createdAt));
+    let allBookings;
+    if (customerId) {
+      allBookings = await db.select().from(bookings).where(eq7(bookings.customerId, String(customerId))).orderBy(desc2(bookings.createdAt));
+    } else if (businessId) {
+      allBookings = await db.select().from(bookings).where(eq7(bookings.businessId, String(businessId))).orderBy(desc2(bookings.createdAt));
+    } else {
+      allBookings = await db.select().from(bookings).orderBy(desc2(bookings.createdAt));
+    }
+    const populated = await Promise.all(allBookings.map((b) => getCompleteBooking(b.id)));
+    res.json(populated.filter(Boolean));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router7.get("/:id", async (req, res) => {
+  try {
+    const booking = await getCompleteBooking(req.params.id);
+    if (!booking) {
+      return res.status(404).json({ error: "Booking not found" });
+    }
+    res.json(booking);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router7.post("/create", async (req, res) => {
+  try {
+    const {
+      customerId,
+      businessId,
+      items,
+      dateStr,
+      startTime,
+      paymentMethod,
+      paymentMethodDisplay,
+      notes
+    } = req.body;
+    const [biz] = await db.select().from(businesses).where(eq7(businesses.id, businessId));
+    const randomDigits = Math.floor(1e5 + Math.random() * 9e5);
+    const bookingId = `BK-${randomDigits}`;
+    const referenceNumber = `#BK-${randomDigits}`;
+    const totalDuration = (items || []).reduce((acc, it) => acc + (it.duration_minutes || it.durationMinutes || 45), 0);
+    const grossTotal = (items || []).reduce((acc, it) => acc + (it.price_charged || it.price || it.base_price || 0), 0);
+    const clientTotal = req.body.totalAmount !== void 0 ? Number(req.body.totalAmount) : void 0;
+    const clientTax = req.body.taxAmount !== void 0 ? Number(req.body.taxAmount) : void 0;
+    const clientRef = req.body.referenceNumber ? String(req.body.referenceNumber) : void 0;
+    const netTotal = clientTotal !== void 0 ? clientTotal : Number(grossTotal.toFixed(2));
+    const taxAmount = clientTax !== void 0 ? clientTax : 0;
+    const finalRef = clientRef || referenceNumber;
+    const isPaidOnline = paymentMethod === "credit_card";
+    await db.insert(bookings).values({
+      id: bookingId,
+      referenceNumber: finalRef,
+      customerId: customerId || "user-customer",
+      customerName: req.body.customerName || "Alex Taylor",
+      customerEmail: req.body.customerEmail || "alex_shopper@uspot.com",
+      customerPhone: req.body.customerPhone || "+1 (555) 234-5678",
+      businessId,
+      businessName: biz?.businessName || "Business Partner",
+      businessCategory: biz?.category || "Salon & Spa",
+      status: "confirmed",
+      paymentStatus: isPaidOnline ? "paid" : "unpaid",
+      paymentMethod: paymentMethod || "credit_card",
+      paymentMethodDisplay: paymentMethodDisplay || (isPaidOnline ? "Mastercard \u2022\u2022\u2022\u2022 4242" : "Cash on Arrival"),
+      totalAmount: String(netTotal),
+      discountAmount: "0.00",
+      taxAmount: String(taxAmount),
+      netAmount: String(netTotal),
+      scheduledDate: dateStr,
+      scheduledStartTime: startTime,
+      scheduledEndTime: "11:30 AM",
+      totalDurationMinutes: totalDuration || 60,
+      specialInstructions: notes || null,
+      notes: notes || null
+    });
+    for (const it of items || []) {
+      await db.insert(bookingItems).values({
+        bookingId,
+        businessServiceId: it.business_service_id || it.id,
+        serviceName: it.service_name || it.name,
+        priceCharged: String(it.price_charged || it.base_price || 0),
+        durationMinutes: it.duration_minutes || 45,
+        workerId: it.worker_id || null,
+        workerName: it.worker_name || "Assigned Specialist"
+      });
+    }
+    if (isPaidOnline) {
+      const commissionRate = 10;
+      const commissionAmount = Number((netTotal * commissionRate / 100).toFixed(2));
+      const businessAmount = Number((netTotal - commissionAmount).toFixed(2));
+      await db.insert(marketplaceTransactions).values({
+        id: `TX-${Date.now()}`,
+        bookingId,
+        businessId,
+        businessName: biz?.businessName || "Business Partner",
+        customerName: req.body.customerName || "Alex Taylor",
+        customerEmail: req.body.customerEmail || "alex_shopper@uspot.com",
+        serviceName: items?.[0]?.name || items?.[0]?.service_name || "Booked Service",
+        type: "BOOKING_PAYMENT",
+        grossAmount: String(netTotal),
+        commissionRate: String(commissionRate),
+        platformCommission: String(commissionAmount),
+        businessAmount: String(businessAmount),
+        paymentStatus: "paid",
+        withdrawalStatus: "none",
+        paymentGateway: "NMI Gateway"
+      });
+    }
+    const complete = await getCompleteBooking(bookingId);
+    res.status(201).json({ success: true, booking: complete, message: "Appointment confirmed successfully!" });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router7.patch("/:id/status", async (req, res) => {
+  try {
+    const { status, cancellationReason } = req.body;
+    const updateData = { status, updatedAt: /* @__PURE__ */ new Date() };
+    if (status === "cancelled") {
+      updateData.refundStatus = "initiated";
+      updateData.refundEstimatedDate = "3 - 5 business days";
+      updateData.refundId = `REF-${Math.floor(1e5 + Math.random() * 9e5)}`;
+      if (cancellationReason) {
+        updateData.notes = cancellationReason;
+      }
+    }
+    await db.update(bookings).set(updateData).where(eq7(bookings.id, req.params.id));
+    const updated = await getCompleteBooking(req.params.id);
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router7.patch("/:id/reschedule", async (req, res) => {
+  try {
+    const { newDate, newStartTime } = req.body;
+    await db.update(bookings).set({
+      scheduledDate: newDate,
+      scheduledStartTime: newStartTime,
+      status: "confirmed",
+      updatedAt: /* @__PURE__ */ new Date()
+    }).where(eq7(bookings.id, req.params.id));
+    const updated = await getCompleteBooking(req.params.id);
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+var bookings_default = router7;
+
+// server/routes/reviews.ts
+import { Router as Router8 } from "express";
+import { eq as eq8, desc as desc3 } from "drizzle-orm";
+var router8 = Router8();
+async function populateReviews(reviews) {
+  return Promise.all(
+    reviews.map(async (r) => {
+      const [resp] = await db.select().from(reviewResponses).where(eq8(reviewResponses.reviewId, r.id));
+      return {
+        id: r.id,
+        business_id: r.businessId,
+        business_name: r.businessName,
+        booking_id: r.bookingId || void 0,
+        service_id: r.serviceId || void 0,
+        service_name: r.serviceName || void 0,
+        customer_id: r.customerId || void 0,
+        customer_name: r.customerName,
+        customer_avatar: r.customerAvatar || void 0,
+        rating: r.rating,
+        review_text: r.reviewText,
+        media: r.media || [],
+        created_at: r.createdAt ? new Date(r.createdAt).toISOString() : (/* @__PURE__ */ new Date()).toISOString(),
+        time_ago: r.timeAgo || "Recently",
+        response_deadline: r.responseDeadline || void 0,
+        response: resp ? {
+          text: resp.responseText,
+          responded_at: resp.respondedAt ? new Date(resp.respondedAt).toISOString() : (/* @__PURE__ */ new Date()).toISOString(),
+          responded_time_ago: resp.respondedTimeAgo || "Responded recently",
+          author_name: resp.authorName
+        } : void 0
+      };
+    })
+  );
+}
+router8.get("/", async (req, res) => {
+  try {
+    const reviews = await db.select().from(businessReviews).orderBy(desc3(businessReviews.createdAt));
+    const populated = await populateReviews(reviews);
+    res.json(populated);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router8.get("/business/:businessId", async (req, res) => {
+  try {
+    const reviews = await db.select().from(businessReviews).where(eq8(businessReviews.businessId, req.params.businessId)).orderBy(desc3(businessReviews.createdAt));
+    const populated = await populateReviews(reviews);
+    res.json(populated);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router8.post("/", async (req, res) => {
+  try {
+    const {
+      businessId,
+      bookingId,
+      serviceId,
+      serviceName,
+      customerId,
+      customerName,
+      rating,
+      reviewText,
+      media
+    } = req.body;
+    const [biz] = await db.select().from(businesses).where(eq8(businesses.id, businessId));
+    const reviewId = `rev-${Date.now()}`;
+    const [created] = await db.insert(businessReviews).values({
+      id: reviewId,
+      businessId,
+      businessName: biz?.businessName || "Business",
+      bookingId,
+      serviceId,
+      serviceName,
+      customerId: customerId || "user-customer",
+      customerName: customerName || "Alex Taylor",
+      customerAvatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120&auto=format&fit=crop&q=80",
+      rating: Number(rating),
+      reviewText,
+      media: media || [],
+      timeAgo: "Just now",
+      responseDeadline: 'Response needed within 24 hours to maintain "Fast Responder" badge.'
+    }).returning();
+    res.status(201).json({
+      id: created.id,
+      business_id: created.businessId,
+      business_name: created.businessName,
+      booking_id: created.bookingId || void 0,
+      service_id: created.serviceId || void 0,
+      service_name: created.serviceName || void 0,
+      customer_id: created.customerId || void 0,
+      customer_name: created.customerName,
+      customer_avatar: created.customerAvatar || void 0,
+      rating: created.rating,
+      review_text: created.reviewText,
+      media: created.media || [],
+      created_at: created.createdAt.toISOString(),
+      time_ago: created.timeAgo || "Just now"
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router8.post("/:id/reply", async (req, res) => {
+  try {
+    const { replyText, authorName } = req.body;
+    const reviewId = req.params.id;
+    const [existing] = await db.select().from(reviewResponses).where(eq8(reviewResponses.reviewId, reviewId));
+    let saved;
+    if (existing) {
+      [saved] = await db.update(reviewResponses).set({
+        responseText: replyText,
+        authorName: authorName || "Management",
+        respondedAt: /* @__PURE__ */ new Date(),
+        respondedTimeAgo: "Just now"
+      }).where(eq8(reviewResponses.reviewId, reviewId)).returning();
+    } else {
+      [saved] = await db.insert(reviewResponses).values({
+        reviewId,
+        authorName: authorName || "Management",
+        responseText: replyText,
+        respondedTimeAgo: "Just now"
+      }).returning();
+    }
+    res.json({
+      success: true,
+      response: {
+        text: saved.responseText,
+        responded_at: saved.respondedAt.toISOString(),
+        responded_time_ago: saved.respondedTimeAgo || "Just now",
+        author_name: saved.authorName
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+var reviews_default = router8;
+
+// server/routes/ledger.ts
+import { Router as Router9 } from "express";
+import { eq as eq9, desc as desc4 } from "drizzle-orm";
+var router9 = Router9();
+router9.get("/transactions", async (req, res) => {
+  try {
+    const { businessId } = req.query;
+    let query;
+    if (businessId) {
+      query = db.select().from(marketplaceTransactions).where(eq9(marketplaceTransactions.businessId, String(businessId))).orderBy(desc4(marketplaceTransactions.createdAt));
+    } else {
+      query = db.select().from(marketplaceTransactions).orderBy(desc4(marketplaceTransactions.createdAt));
+    }
+    const txs = await query;
+    res.json(
+      txs.map((t) => ({
+        id: t.id,
+        bookingId: t.bookingId,
+        businessId: t.businessId,
+        businessName: t.businessName,
+        customerName: t.customerName || "",
+        customerEmail: t.customerEmail || void 0,
+        serviceName: t.serviceName || "",
+        type: t.type,
+        grossAmount: Number(t.grossAmount),
+        commissionRate: Number(t.commissionRate),
+        platformCommission: Number(t.platformCommission),
+        w9WithholdingRate: Number(t.w9WithholdingRate || 0),
+        w9WithholdingAmount: Number(t.w9WithholdingAmount || 0),
+        businessAmount: Number(t.businessAmount),
+        currency: t.currency || "USD",
+        paymentStatus: t.paymentStatus || "paid",
+        withdrawalStatus: t.withdrawalStatus || "none",
+        paymentGateway: t.paymentGateway || "NMI Gateway",
+        notes: t.notes || void 0,
+        createdAt: t.createdAt.toISOString(),
+        updatedAt: t.updatedAt.toISOString()
+      }))
+    );
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router9.get("/balance/:businessId", async (req, res) => {
+  try {
+    const { businessId } = req.params;
+    const txs = await db.select().from(marketplaceTransactions).where(eq9(marketplaceTransactions.businessId, businessId));
+    const withdrawals = await db.select().from(withdrawalRequests).where(eq9(withdrawalRequests.businessId, businessId));
+    let grossEarned = 0;
+    let totalEarned = 0;
+    let totalWithheldTax = 0;
+    txs.forEach((t) => {
+      if (t.type === "BOOKING_PAYMENT") {
+        grossEarned += Number(t.grossAmount);
+        totalEarned += Number(t.businessAmount);
+        totalWithheldTax += Number(t.w9WithholdingAmount || 0);
+      }
+    });
+    let totalWithdrawn = 0;
+    let pendingWithdrawal = 0;
+    withdrawals.forEach((w) => {
+      if (w.status === "Completed") {
+        totalWithdrawn += Number(w.amount);
+      } else if (w.status === "Pending" || w.status === "Processing") {
+        pendingWithdrawal += Number(w.amount);
+      }
+    });
+    const availableBalance = Math.max(0, Number((totalEarned - totalWithdrawn - pendingWithdrawal).toFixed(2)));
+    res.json({
+      availableBalance,
+      pendingWithdrawal,
+      totalEarned,
+      totalWithdrawn,
+      totalWithheldTax,
+      grossEarned
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router9.post("/withdraw", async (req, res) => {
+  try {
+    const { businessId, amount, requestedByUserId, requestedByUserName, maskedBankAccount, bankAccountHolder } = req.body;
+    const [biz] = await db.select().from(businesses).where(eq9(businesses.id, businessId));
+    const requestId = `WTH-${Date.now()}`;
+    const [created] = await db.insert(withdrawalRequests).values({
+      id: requestId,
+      type: "business",
+      businessId,
+      businessName: biz?.businessName || "Business Partner",
+      requestedByUserId: requestedByUserId || "user-biz",
+      requestedByUserName: requestedByUserName || "Business Owner",
+      amount: String(amount),
+      maskedBankAccount: maskedBankAccount || "\u2022\u2022\u2022\u2022 4242",
+      bankAccountHolder: bankAccountHolder || "Authorized Signer",
+      status: "Pending",
+      requestDate: (/* @__PURE__ */ new Date()).toISOString()
+    }).returning();
+    res.status(201).json(created);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+var ledger_default = router9;
 
 // server/app.ts
 dotenv2.config();

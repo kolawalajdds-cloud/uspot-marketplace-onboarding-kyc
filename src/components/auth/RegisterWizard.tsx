@@ -14,6 +14,8 @@ import {
   ArrowLeft,
   Loader2,
   AlertCircle,
+  Briefcase,
+  Sparkles,
 } from 'lucide-react';
 
 interface RegisterWizardProps {
@@ -314,40 +316,48 @@ export const RegisterWizard: React.FC<RegisterWizardProps> = ({
               <div
                 id="account-type-personal-card"
                 onClick={() => setAccountType('personal')}
-                className={`group rounded-2xl p-6 text-left transition-all cursor-pointer ${
+                className={`group rounded-2xl p-5 text-left transition-all cursor-pointer flex flex-col justify-between ${
                   accountType === 'personal'
                     ? 'border-2 border-slate-900 bg-white shadow-xs ring-1 ring-slate-900/5'
                     : 'border border-slate-200 bg-white hover:border-slate-300'
                 }`}
               >
-                <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-700 mb-4 transition-colors group-hover:bg-slate-200/70">
-                  <User className="w-5 h-5" />
+                <div>
+                  <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-700 mb-3.5 transition-colors group-hover:bg-slate-200/70">
+                    <User className="w-5 h-5" />
+                  </div>
+                  <h3 className="font-bold text-sm text-slate-900 mb-1">Personal Account</h3>
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    Browse marketplace spots, request appointments, and manage reservations.
+                  </p>
                 </div>
-                <h3 className="font-bold text-base text-slate-900 mb-1.5">Personal Account</h3>
-                <p className="text-xs text-slate-500 leading-relaxed">
-                  Ideal for individuals looking to find spots, manage their own bookings, and save
-                  favorites.
-                </p>
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mt-3 pt-2 border-t border-slate-100">
+                  Customer
+                </span>
               </div>
 
               {/* Option 2: Business Entity */}
               <div
                 id="account-type-business-card"
                 onClick={() => setAccountType('business')}
-                className={`group rounded-2xl p-6 text-left transition-all cursor-pointer ${
+                className={`group rounded-2xl p-5 text-left transition-all cursor-pointer flex flex-col justify-between ${
                   accountType === 'business'
                     ? 'border-2 border-slate-900 bg-white shadow-xs ring-1 ring-slate-900/5'
                     : 'border border-slate-200 bg-white hover:border-slate-300'
                 }`}
               >
-                <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-700 mb-4 transition-colors group-hover:bg-slate-200/70">
-                  <Building2 className="w-5 h-5" />
+                <div>
+                  <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center mb-3.5 transition-colors group-hover:bg-blue-100/70">
+                    <Building2 className="w-5 h-5" />
+                  </div>
+                  <h3 className="font-bold text-sm text-slate-900 mb-1">Business Merchant</h3>
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    Salons, spas, wellness venues, and coworking spaces hosting customers.
+                  </p>
                 </div>
-                <h3 className="font-bold text-base text-slate-900 mb-1.5">Business Entity</h3>
-                <p className="text-xs text-slate-500 leading-relaxed">
-                  Designed for professionals, agencies, and companies needing team access and
-                  invoicing.
-                </p>
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-blue-600 mt-3 pt-2 border-t border-slate-100">
+                  Venue Host
+                </span>
               </div>
             </div>
 

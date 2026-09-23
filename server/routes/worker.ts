@@ -28,7 +28,7 @@ function parseTimeToMinutes(tStr: string): number {
 }
 
 // Helper to seed worker demo schedules if empty
-async function ensureWorkerDemoSchedule(workerId: string) {
+export async function ensureWorkerDemoSchedule(workerId: string) {
   try {
     const existing = await db
       .select()
@@ -203,7 +203,7 @@ async function ensureWorkerDemoSchedule(workerId: string) {
 }
 
 // Helper to seed worker demo jobs if empty
-async function ensureWorkerDemoData(workerId: string) {
+export async function ensureWorkerDemoData(workerId: string) {
   try {
     await ensureWorkerDemoSchedule(workerId);
 
@@ -434,6 +434,44 @@ async function ensureWorkerDemoData(workerId: string) {
   }
 }
 
+// Helper to ensure at least one default certified specialist/worker exists in DB
+export async function ensureDefaultWorkerUser() {
+  try {
+    const allUsers = await db.select().from(users);
+    const hasWorker = allUsers.some((u) => u.role === 'worker' || u.role === 'specialist');
+    if (!hasWorker) {
+      const defaultWorker = {
+        id: 'user-specialist',
+        role: 'worker',
+        roleLabel: 'Worker',
+        status: 'active',
+        email: 'morgan.blake@uspot.com',
+        username: 'morgan_worker',
+        phone: '+1 (555) 876-5432',
+        nickname: 'Morgan',
+        fullName: 'Morgan Blake',
+        referralCode: 'USPOT-WRK42',
+        emailVerified: true,
+        phoneVerified: true,
+        timezone: 'America/New_York',
+        avatarInitials: 'MB',
+        department: 'On-site Specialist & Field Operations',
+        primaryServiceCategory: 'hvac, electrical, carpentry, cleaning, painting, landscaping, moving, plumbing',
+        yearsOfExperience: '10',
+        memberSince: 'Aug 18, 2026',
+      };
+      await db.insert(users).values(defaultWorker).onConflictDoNothing();
+      await ensureWorkerDemoData('user-specialist');
+      await ensureWorkerDemoSchedule('user-specialist');
+      return true;
+    }
+    return false;
+  } catch (err) {
+    console.error('ensureDefaultWorkerUser error:', err);
+    return false;
+  }
+}
+
 // 0. Worker Auth: Login
 router.post('/login', async (req, res) => {
   try {
@@ -452,6 +490,20 @@ router.post('/login', async (req, res) => {
     // Fallback: If no term provided or matching first worker
     if (!worker) {
       worker = allUsers.find((u) => u.role === 'worker' || u.role === 'specialist');
+    }
+
+    if (!worker) {
+      // Auto-provision Morgan Blake if DB has zero workers
+      await ensureDefaultWorkerUser();
+      const reloadedUsers = await db.select().from(users);
+      worker = reloadedUsers.find(
+        (u) =>
+          (u.role === 'worker' || u.role === 'specialist') &&
+          (!term ||
+            u.email?.toLowerCase() === term ||
+            u.username?.toLowerCase() === term ||
+            u.id.toLowerCase() === term)
+      ) || reloadedUsers.find((u) => u.role === 'worker' || u.role === 'specialist');
     }
 
     if (!worker) {
@@ -628,8 +680,13 @@ router.get('/businesses/:businessId/available-workers', async (req, res) => {
     }
 
     // 4. Find all workers
-    const allUsers = await db.select().from(users);
-    const workerUsers = allUsers.filter((u) => u.role === 'worker' || u.role === 'specialist');
+    let allUsers = await db.select().from(users);
+    let workerUsers = allUsers.filter((u) => u.role === 'worker' || u.role === 'specialist');
+    if (workerUsers.length === 0) {
+      await ensureDefaultWorkerUser();
+      allUsers = await db.select().from(users);
+      workerUsers = allUsers.filter((u) => u.role === 'worker' || u.role === 'specialist');
+    }
     const allContracts = await db.select().from(workerContracts);
 
     const results = [];
@@ -850,6 +907,189 @@ router.post('/businesses/:businessId/assign-job', async (req, res) => {
     });
   } catch (err: any) {
     console.error('assign-job error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// BUSINESS-SIDE DISPATCH: ADD / INVITE NEW STAFF TO BUSINESS
+router.post('/businesses/:businessId/staff', async (req, res) => {
+  try {
+    const { businessId } = req.params;
+    const {
+      fullName,
+      email,
+      phone,
+      title,
+      department,
+      hourlyRate,
+      commissionPercentage,
+      contractType,
+      workDays, // array of numbers e.g. [1, 2, 3, 4, 5]
+      startTime,
+      endTime,
+    } = req.body;
+
+    if (!fullName || !email) {
+      return res.status(400).json({ error: 'Staff member full name and email are required.' });
+    }
+
+    const trimmedEmail = email.trim().toLowerCase();
+    const cleanName = fullName.trim();
+    const initials =
+      cleanName
+        .split(' ')
+        .map((n: string) => n[0])
+        .join('')
+        .slice(0, 2)
+        .toUpperCase() || 'ST';
+
+    // Resolve business
+    const allBusinesses = await db.select().from(businesses);
+    const matchedBiz = allBusinesses.find(
+      (b) =>
+        b.id === businessId ||
+        b.businessName.toLowerCase() === businessId.toLowerCase()
+    );
+    const resolvedBizId = matchedBiz?.id || businessId;
+    const bizName =
+      matchedBiz?.businessName ||
+      (businessId.includes('spa') ? 'Onyx Luxury Spa & Wellness' : 'Glow Salon & Hair Studio');
+
+    // 1. Check if user already exists
+    const [existingUser] = await db.select().from(users).where(eq(users.email, trimmedEmail));
+    let workerUser = existingUser;
+
+    if (!workerUser) {
+      const workerId = `user-wrk-${Date.now()}`;
+      const username =
+        trimmedEmail.split('@')[0] + '_' + Math.floor(100 + Math.random() * 900);
+      const [newUser] = await db
+        .insert(users)
+        .values({
+          id: workerId,
+          role: 'worker',
+          roleLabel: 'Worker',
+          status: 'active',
+          email: trimmedEmail,
+          username,
+          phone: phone || null,
+          nickname: cleanName.split(' ')[0],
+          fullName: cleanName,
+          referralCode: `WRK-${Math.floor(1000 + Math.random() * 9000)}`,
+          emailVerified: true,
+          phoneVerified: Boolean(phone),
+          timezone: 'America/New_York',
+          avatarInitials: initials,
+          department: department || title || 'On-site Specialist & Staff',
+          primaryServiceCategory: matchedBiz?.category || 'Specialist Services',
+          yearsOfExperience: '5',
+          memberSince: new Date().toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+          }),
+        })
+        .returning();
+      workerUser = newUser;
+    } else if (workerUser.role !== 'worker' && workerUser.role !== 'specialist') {
+      // Elevate or update user role if needed
+      const [updated] = await db
+        .update(users)
+        .set({
+          role: 'worker',
+          roleLabel: 'Worker',
+          department: department || title || workerUser.department || 'Specialist Services',
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, workerUser.id))
+        .returning();
+      workerUser = updated;
+    }
+
+    // 2. Check if contract already exists for this worker + business
+    const allContracts = await db.select().from(workerContracts);
+    let contract = allContracts.find(
+      (c) => c.workerId === workerUser.id && (c.businessId === resolvedBizId || c.businessId === businessId)
+    );
+
+    if (!contract) {
+      const contractId = `ctr-${workerUser.id}-${Date.now().toString().slice(-4)}`;
+      const [newContract] = await db
+        .insert(workerContracts)
+        .values({
+          id: contractId,
+          workerId: workerUser.id,
+          businessId: resolvedBizId,
+          businessName: bizName,
+          title: title || 'Certified Specialist & Operator',
+          contractType: contractType || 'independent_contractor',
+          status: 'active',
+          hourlyRate: hourlyRate ? String(hourlyRate) : '85.00',
+          commissionPercentage: commissionPercentage ? String(commissionPercentage) : '75.00',
+          startDate: new Date().toISOString().split('T')[0],
+          terms: `Authorized certified specialist and team member agreement for ${bizName}.`,
+          signedAt: new Date(),
+          signature: `${cleanName} (Authorized Staff Member)`,
+        })
+        .returning();
+      contract = newContract;
+    }
+
+    // 3. Create recurring weekly schedule for this business
+    const selectedDays =
+      Array.isArray(workDays) && workDays.length > 0 ? workDays : [1, 2, 3, 4, 5];
+    const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+    for (const day of selectedDays) {
+      const existingSlot = await db
+        .select()
+        .from(workerBusinessSchedules)
+        .where(
+          and(
+            eq(workerBusinessSchedules.workerId, workerUser.id),
+            eq(workerBusinessSchedules.businessId, resolvedBizId),
+            eq(workerBusinessSchedules.dayOfWeek, Number(day))
+          )
+        );
+
+      if (existingSlot.length === 0) {
+        await db.insert(workerBusinessSchedules).values({
+          id: `sch-${workerUser.id}-${resolvedBizId}-d${day}-${Date.now()}`,
+          workerId: workerUser.id,
+          businessId: resolvedBizId,
+          businessName: bizName,
+          dayOfWeek: Number(day),
+          dayName: DAY_NAMES[Number(day)] || 'Weekday',
+          startTime: startTime || '09:00 AM',
+          endTime: endTime || '05:00 PM',
+          isAvailable: true,
+          hourlyRate: hourlyRate ? String(hourlyRate) : '85.00',
+          notes: `Regular shift for ${bizName}`,
+        });
+      }
+    }
+
+    // 4. Ensure demo jobs and transactions so worker portal is active
+    await ensureWorkerDemoData(workerUser.id);
+
+    res.status(201).json({
+      success: true,
+      worker: workerUser,
+      contract,
+      message: `Staff member ${cleanName} added to ${bizName} successfully!`,
+    });
+  } catch (err: any) {
+    console.error('add-staff error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// SEED DEMO WORKER (ON-DEMAND)
+router.post('/seed-demo', async (req, res) => {
+  try {
+    await ensureDefaultWorkerUser();
+    res.json({ success: true, message: 'Default worker and schedule successfully seeded.' });
+  } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });

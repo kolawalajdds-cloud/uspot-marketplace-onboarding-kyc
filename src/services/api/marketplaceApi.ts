@@ -31,7 +31,7 @@ export const userService = {
       body: JSON.stringify({ identifier, email: identifier, password, role }),
     }),
   register: (payload: {
-    accountType: 'personal' | 'business';
+    accountType: 'personal' | 'business' | 'worker' | 'specialist';
     email: string;
     password?: string;
     firstName: string;
@@ -40,6 +40,9 @@ export const userService = {
     jobTitle?: string;
     nickname?: string;
     username?: string;
+    primaryServiceCategory?: string;
+    yearsOfExperience?: number | string;
+    hourlyRate?: number | string;
     marketingOptIn?: boolean;
   }) =>
     apiRequest<{
@@ -383,6 +386,35 @@ export const workerService = {
     apiRequest<{ success: boolean; job: WorkerJob; message: string }>(`/worker/businesses/${businessId}/assign-job`, {
       method: 'POST',
       body: JSON.stringify(data),
+    }),
+  addStaffToBusiness: (
+    businessId: string,
+    data: {
+      fullName: string;
+      email: string;
+      phone?: string;
+      title?: string;
+      department?: string;
+      hourlyRate?: number | string;
+      commissionPercentage?: number | string;
+      contractType?: string;
+      workDays?: number[];
+      startTime?: string;
+      endTime?: string;
+    }
+  ) =>
+    apiRequest<{
+      success: boolean;
+      worker: UserProfile;
+      contract: WorkerContract;
+      message: string;
+    }>(`/worker/businesses/${businessId}/staff`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  seedDefaultWorkers: () =>
+    apiRequest<{ success: boolean; message: string }>('/worker/seed-demo', {
+      method: 'POST',
     }),
 };
 

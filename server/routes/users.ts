@@ -9,13 +9,23 @@ import {
 } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { getCompleteBusiness } from './businesses';
+import {
+  ensureDefaultWorkerUser,
+  ensureWorkerDemoData,
+  ensureWorkerDemoSchedule,
+} from './worker';
 
 const router = Router();
 
 // GET all users
 router.get('/', async (req, res) => {
   try {
-    const allUsers = await db.select().from(users);
+    let allUsers = await db.select().from(users);
+    const hasWorker = allUsers.some((u) => u.role === 'worker' || u.role === 'specialist');
+    if (!hasWorker) {
+      await ensureDefaultWorkerUser();
+      allUsers = await db.select().from(users);
+    }
     res.json(allUsers);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -43,6 +53,15 @@ router.post('/login', async (req, res) => {
 
     if (!term && !role) {
       return res.status(400).json({ error: 'Please enter your email or username.' });
+    }
+
+    if (
+      term === 'morgan.blake@uspot.com' ||
+      term === 'morgan_worker' ||
+      role === 'worker' ||
+      role === 'specialist'
+    ) {
+      await ensureDefaultWorkerUser();
     }
 
     const allUsers = await db.select().from(users);
@@ -101,7 +120,7 @@ router.patch('/:id', async (req, res) => {
 router.post('/register', async (req, res) => {
   try {
     const {
-      accountType, // 'personal' | 'business'
+      accountType, // 'personal' | 'business' | 'worker'
       email,
       password,
       firstName,
@@ -110,6 +129,8 @@ router.post('/register', async (req, res) => {
       jobTitle,
       nickname,
       username: providedUsername,
+      primaryServiceCategory,
+      yearsOfExperience,
       marketingOptIn,
     } = req.body;
 
@@ -124,8 +145,9 @@ router.post('/register', async (req, res) => {
     }
 
     const isBusiness = accountType === 'business';
-    const role = isBusiness ? 'business' : 'customer';
-    const roleLabel = isBusiness ? 'Business Entity' : 'Customer';
+    const isWorker = accountType === 'worker' || accountType === 'specialist';
+    const role = isWorker ? 'worker' : isBusiness ? 'business' : 'customer';
+    const roleLabel = isWorker ? 'Worker' : isBusiness ? 'Business Entity' : 'Customer';
     const newUserId = `user-${role}-${Date.now()}`;
     const cleanFirstName = firstName.trim();
     const cleanLastName = lastName.trim();
@@ -153,12 +175,25 @@ router.post('/register', async (req, res) => {
         phoneVerified: Boolean(phone),
         timezone: 'America/New_York',
         avatarInitials: initials,
-        department: jobTitle?.trim() || (isBusiness ? 'Business Operations' : 'Marketplace Customer'),
+        department:
+          jobTitle?.trim() ||
+          (isWorker
+            ? 'On-site Specialist & Field Operations'
+            : isBusiness
+            ? 'Business Operations'
+            : 'Marketplace Customer'),
+        primaryServiceCategory: primaryServiceCategory?.trim() || null,
+        yearsOfExperience: yearsOfExperience ? String(yearsOfExperience) : null,
         memberSince: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
       })
       .returning();
 
     let createdBusiness = null;
+
+    if (isWorker) {
+      await ensureWorkerDemoData(newUser.id);
+      await ensureWorkerDemoSchedule(newUser.id);
+    }
 
     if (isBusiness) {
       const businessId = `biz-${Date.now()}`;

@@ -16,7 +16,6 @@ import {
   UserPlus,
   LogIn,
   AlertCircle,
-  Wrench,
 } from 'lucide-react';
 import { RegisterWizard } from './RegisterWizard';
 
@@ -35,7 +34,13 @@ export const LoginView: React.FC<LoginViewProps> = ({ isModal = false, onClose }
 
   // Use static preset accounts for quick access tiles (zero DB queries on page load)
   const demoAccounts = React.useMemo(() => getSeedUsers(), []);
-  const accountsToDisplay = users.length > 0 ? users : demoAccounts;
+  const accountsToDisplay = React.useMemo(() => {
+    // Only customer, business, and super_admin accounts belong on the main platform
+    const customerAndVendorOnly = (users.length > 0 ? users : demoAccounts).filter(
+      (u) => u.role !== 'worker' && u.role !== 'specialist'
+    );
+    return customerAndVendorOnly;
+  }, [users, demoAccounts]);
   const initialUser = accountsToDisplay[0];
 
   const [authMode, setAuthMode] = useState<'signin' | 'register'>('signin');
@@ -57,18 +62,6 @@ export const LoginView: React.FC<LoginViewProps> = ({ isModal = false, onClose }
       desc: 'Merchant owner portal for managing venues, configuring pricing, and viewing bookings.',
       icon: Building2,
       color: 'from-blue-900 to-slate-900 border-blue-500/30 text-blue-400',
-      badgeColor: 'bg-blue-900/80 text-blue-200 border-blue-700/50',
-    },
-    worker: {
-      desc: 'Field worker & certified technician for assigned shifts, check-ins, earnings, and contracts.',
-      icon: Wrench,
-      color: 'from-blue-950 to-slate-900 border-blue-500/30 text-blue-400',
-      badgeColor: 'bg-blue-900/80 text-blue-200 border-blue-700/50',
-    },
-    specialist: {
-      desc: 'Field worker & certified technician for assigned shifts, check-ins, earnings, and contracts.',
-      icon: Wrench,
-      color: 'from-blue-950 to-slate-900 border-blue-500/30 text-blue-400',
       badgeColor: 'bg-blue-900/80 text-blue-200 border-blue-700/50',
     },
     super_admin: {
@@ -95,9 +88,6 @@ export const LoginView: React.FC<LoginViewProps> = ({ isModal = false, onClose }
       if (result && !result.success) {
         setErrorMessage(result.error || 'Failed to authenticate user.');
       } else {
-        if (user.role === 'worker' || user.role === 'specialist') {
-          window.history.pushState(null, '', '/worker/dashboard');
-        }
         if (onClose) onClose();
       }
     } catch (err: any) {
