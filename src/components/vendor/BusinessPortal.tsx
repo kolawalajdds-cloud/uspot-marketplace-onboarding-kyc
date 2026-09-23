@@ -88,6 +88,7 @@ import { W9TaxCertification } from './W9TaxCertification';
 import { BusinessDetailsView } from './BusinessDetailsView';
 import { NmiPaymentAccountSetup } from './NmiPaymentAccountSetup';
 import { BusinessReviewsManagementView } from './BusinessReviewsManagementView';
+import { BusinessWorkersManagementView } from './BusinessWorkersManagementView';
 import { NmiPaymentAccountData } from '../../types';
 import {
   normalizeTransactionType,
@@ -325,11 +326,39 @@ export const BusinessPortal: React.FC = () => {
     return state.businesses;
   }, [state.businesses, currentUser]);
 
-  const selectedBusiness =
+  const defaultFallbackBusiness: Business = useMemo(() => ({
+    id: 'biz-default',
+    userId: currentUser?.id,
+    status: 'Draft',
+    coreDetails: {
+      businessName: currentUser?.fullName ? `${currentUser.fullName}'s Business` : 'My Business',
+      legalEntityName: currentUser?.fullName ? `${currentUser.fullName} LLC` : 'My Business LLC',
+      category: 'Coworking & Office',
+      description: '',
+      streetAddress: '',
+      city: 'San Francisco',
+      state: 'CA',
+      zipCode: '94105',
+    },
+    operatingHours: [],
+    imageGallery: [],
+    amenities: [],
+    feesTax: {
+      businessTaxId: '',
+      salesTaxRate: 8.875,
+      taxExempt: false,
+      currency: 'USD',
+      automaticInvoicing: true,
+      serviceFees: [],
+    },
+  }), [currentUser?.id, currentUser?.fullName]);
+
+  const selectedBusiness: Business =
     vendorOwnedBusinesses.find((b) => b.id === selectedBusinessId) ||
     vendorOwnedBusinesses[0] ||
     state.businesses.find((b) => b.id === selectedBusinessId) ||
-    state.businesses[0];
+    state.businesses[0] ||
+    defaultFallbackBusiness;
 
   const selectedServiceBiz = selectedBusiness;
   const selectedServiceBizId = selectedBusiness?.id || 'biz-001';
@@ -578,10 +607,11 @@ export const BusinessPortal: React.FC = () => {
         selectedPlanForConfirmation.plan,
         selectedPlanForConfirmation.price
       );
+      const bizDisplayName = targetBiz.coreDetails?.businessName || (targetBiz as any).businessName || 'Business';
       showToast(
         targetBiz.status === 'KYC Approved'
-          ? `🎉 Payment confirmed! "${targetBiz.coreDetails.businessName}" is now active and Live.`
-          : `🎉 Subscription confirmed for "${targetBiz.coreDetails.businessName}"! Your business will activate once KYC is approved.`
+          ? `🎉 Payment confirmed! "${bizDisplayName}" is now active and Live.`
+          : `🎉 Subscription confirmed for "${bizDisplayName}"! Your business will activate once KYC is approved.`
       );
       setIsPlanConfirmModalOpen(false);
       setSelectedPlanForConfirmation(null);
@@ -630,11 +660,15 @@ export const BusinessPortal: React.FC = () => {
         : null;
       const rejectionCount = b.rejectionCount ?? b.verification?.rejectionCount ?? 0;
 
+      const bizName = b.coreDetails?.businessName || (b as any).businessName || (b as any).name || 'Untitled Business';
+      const bizCategory = b.coreDetails?.category || (b as any).category || 'Coworking & Office';
+      const bizCity = b.coreDetails?.city || (b as any).city || 'San Francisco';
+
       return {
         id: b.id,
-        name: b.coreDetails.businessName || 'Untitled Business',
-        category: b.coreDetails.category || 'Coworking & Office',
-        city: b.coreDetails.city || 'San Francisco',
+        name: bizName,
+        category: bizCategory,
+        city: bizCity,
         status,
         rawStatus: b.status,
         isKycRejected,
@@ -645,7 +679,7 @@ export const BusinessPortal: React.FC = () => {
         services: b.servicesCount ?? 8,
         workers: b.workersCount ?? 4,
         isActive: b.status === 'Live' || (b.status === 'KYC Approved' && hasPaid),
-        avatarChar: b.avatarChar || (b.coreDetails.businessName || 'B').charAt(0).toUpperCase(),
+        avatarChar: b.avatarChar || bizName.charAt(0).toUpperCase(),
       };
     });
   }, [vendorOwnedBusinesses]);
@@ -780,18 +814,20 @@ export const BusinessPortal: React.FC = () => {
   const [supportMessage, setSupportMessage] = useState('');
 
   const convertBusinessToFormData = (b: Business): BusinessFormData => {
+    const cd = b.coreDetails || (b as any);
+    const bName = cd?.businessName || (b as any).name || 'Untitled Business';
     return {
       ...DEFAULT_FORM_DATA,
       id: b.id,
-      businessName: b.coreDetails.businessName,
-      legalEntityName: b.coreDetails.legalEntityName,
-      category: b.coreDetails.category,
+      businessName: bName,
+      legalEntityName: cd?.legalEntityName || bName,
+      category: cd?.category || 'Coworking & Office',
       phone: b.phone || '+1 (415) 555-0199',
-      description: b.coreDetails.description,
-      streetAddress: b.coreDetails.streetAddress,
-      city: b.coreDetails.city,
-      state: b.coreDetails.state,
-      zipCode: b.coreDetails.zipCode,
+      description: cd?.description || '',
+      streetAddress: cd?.streetAddress || '',
+      city: cd?.city || 'San Francisco',
+      state: cd?.state || 'CA',
+      zipCode: cd?.zipCode || '94105',
       lat: 37.7749,
       lng: -122.4194,
       schedule: b.operatingHours.map((h, hIdx) => ({
@@ -878,8 +914,9 @@ export const BusinessPortal: React.FC = () => {
     if (!biz) return;
     const isNowActive = biz.status === 'KYC Approved' || biz.status === 'Live';
     adminToggleBusinessStatus(bizId, !isNowActive);
+    const bName = biz.coreDetails?.businessName || (biz as any).name || 'Business';
     showToast(
-      `${biz.coreDetails.businessName} is now ${
+      `${bName} is now ${
         !isNowActive ? 'Active and accepting orders' : 'Paused / Inactive'
       }.`
     );
@@ -889,7 +926,8 @@ export const BusinessPortal: React.FC = () => {
     const target = state.businesses.find((b) => b.id === bizId);
     if (target) {
       deleteBusinessById(bizId);
-      showToast(`Removed "${target.coreDetails.businessName}" from your businesses.`);
+      const tName = target.coreDetails?.businessName || (target as any).name || 'Business';
+      showToast(`Removed "${tName}" from your businesses.`);
     }
   };
 
@@ -914,7 +952,8 @@ export const BusinessPortal: React.FC = () => {
     setIsCreateBusinessModalOpen(false);
     setNewBizName('');
     setNewBizCity('');
-    showToast(`Successfully registered "${newBiz.coreDetails.businessName}" as Draft. Submit KYC for admin approval.`);
+    const createdName = newBiz.coreDetails?.businessName || newBizName.trim();
+    showToast(`Successfully registered "${createdName}" as Draft. Submit KYC for admin approval.`);
   };
 
   const handleEditBusinessSubmit = (e: React.FormEvent) => {
@@ -953,21 +992,23 @@ export const BusinessPortal: React.FC = () => {
       [savedBiz.id]: dataWithId,
     }));
 
+    const savedName = savedBiz.coreDetails?.businessName || (savedBiz as any).name || 'Business';
     if (multistepMode === 'create') {
-      showToast(`Business "${savedBiz.coreDetails.businessName}" created and synced to Super Admin!`);
+      showToast(`Business "${savedName}" created and synced to Super Admin!`);
       setMultistepMode(null);
     } else {
       setMultistepInitialData(dataWithId);
-      showToast(`Saved changes for "${savedBiz.coreDetails.businessName}".`);
+      showToast(`Saved changes for "${savedName}".`);
     }
   };
 
   const handleOpenEditMultiStep = (
     biz: {
       id: string;
-      name: string;
-      category: string;
-      city: string;
+      name?: string;
+      category?: string;
+      city?: string;
+      coreDetails?: any;
     },
     initialTab: MultiStepTab = 'business-setup'
   ) => {
@@ -995,9 +1036,9 @@ export const BusinessPortal: React.FC = () => {
         ...(existingStore || {}),
         ...converted,
         id: biz.id,
-        businessName: biz.name || contextBiz.coreDetails.businessName,
-        category: biz.category || contextBiz.coreDetails.category,
-        city: biz.city || contextBiz.coreDetails.city,
+        businessName: biz.name || contextBiz.coreDetails?.businessName || 'Business',
+        category: biz.category || contextBiz.coreDetails?.category || 'Coworking & Office',
+        city: biz.city || contextBiz.coreDetails?.city || 'San Francisco',
         signature: effectiveSig,
         signatureDate: effectiveSigDate,
       });
@@ -1496,7 +1537,8 @@ export const BusinessPortal: React.FC = () => {
   const handleSaveHours = () => {
     updateBusinessHours(selectedServiceBiz.id, editingScheduleHours);
     setHoursSaveSuccess(true);
-    showToast(`Working hours updated for "${selectedServiceBiz.coreDetails.businessName}".`);
+    const bName = selectedServiceBiz?.coreDetails?.businessName || (selectedServiceBiz as any)?.name || 'Business';
+    showToast(`Working hours updated for "${bName}".`);
     setTimeout(() => setHoursSaveSuccess(false), 3000);
   };
 
@@ -1637,7 +1679,7 @@ export const BusinessPortal: React.FC = () => {
 
     linkVendorBankAccount(selectedBusiness.id, {
       bankName: bankFormData.bankName || 'Commercial Bank',
-      accountHolderName: bankFormData.accountHolderName || selectedBusiness.coreDetails.businessName,
+      accountHolderName: bankFormData.accountHolderName || selectedBusiness?.coreDetails?.businessName || 'Business',
       routingNumber: bankFormData.routingNumber,
       accountNumber: bankFormData.accountNumber,
       accountType: bankFormData.accountType,
@@ -1690,10 +1732,11 @@ export const BusinessPortal: React.FC = () => {
     : selectedBusiness;
 
   const filteredBusinesses = vendorOwnedBusinesses.filter((b) => {
-    const matchesSearch =
-      b.coreDetails.businessName.toLowerCase().includes(businessSearchFilter.toLowerCase()) ||
-      b.coreDetails.city.toLowerCase().includes(businessSearchFilter.toLowerCase()) ||
-      b.coreDetails.category.toLowerCase().includes(businessSearchFilter.toLowerCase());
+    const bName = (b.coreDetails?.businessName || (b as any).businessName || (b as any).name || '').toLowerCase();
+    const bCity = (b.coreDetails?.city || (b as any).city || '').toLowerCase();
+    const bCat = (b.coreDetails?.category || (b as any).category || '').toLowerCase();
+    const q = businessSearchFilter.toLowerCase();
+    const matchesSearch = bName.includes(q) || bCity.includes(q) || bCat.includes(q);
     const matchesStatus =
       businessStatusFilter === 'All' || b.status === businessStatusFilter;
     return matchesSearch && matchesStatus;
@@ -2363,7 +2406,7 @@ export const BusinessPortal: React.FC = () => {
               {activeTab === 'advanced-booking-workflow' && 'Advanced Booking Workflow'}
               {activeTab === 'bookings' && 'Booking Management'}
               {(activeTab === 'my-services' || activeTab === 'service-availability') && 'Service Availability'}
-              {activeTab === 'workers' && 'Staff & On-site Specialists'}
+              {activeTab === 'workers' && 'Workers & On-site Specialists'}
               {activeTab === 'payouts' && 'Disbursements & Invoicing'}
               {activeTab === 'customers' && 'Client Directory'}
               {activeTab === 'reviews' && 'Customer Ratings'}
@@ -2606,7 +2649,7 @@ export const BusinessPortal: React.FC = () => {
                                 {userBiz && (
                                   <div className="flex items-center gap-1.5 mt-0.5">
                                     <span className="text-[11px] font-medium text-slate-600 truncate max-w-[140px]">
-                                      {userBiz.coreDetails.businessName}
+                                      {userBiz.coreDetails?.businessName || (userBiz as any)?.name || 'Business'}
                                     </span>
                                     <span
                                       className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full border ${
@@ -2988,9 +3031,10 @@ export const BusinessPortal: React.FC = () => {
                   >
                     {vendorOwnedBusinesses.map((biz) => {
                       const isW9Done = Boolean(biz.w9 && (biz.w9.status === 'submitted' || biz.w9.status === 'verified'));
+                      const bName = biz.coreDetails?.businessName || (biz as any).name || 'Business';
                       return (
                         <option key={biz.id} value={biz.id}>
-                          {biz.coreDetails.businessName} {isW9Done ? '(✓ W-9 Certified: 0% Tax)' : '(⚠️ W-9 Missing: 24% Tax)'}
+                          {bName} {isW9Done ? '(✓ W-9 Certified: 0% Tax)' : '(⚠️ W-9 Missing: 24% Tax)'}
                         </option>
                       );
                     })}
@@ -3014,9 +3058,9 @@ export const BusinessPortal: React.FC = () => {
                     handleOpenEditMultiStep(
                       {
                         id: biz.id,
-                        name: biz.coreDetails.businessName,
-                        category: biz.coreDetails.category,
-                        city: biz.coreDetails.city,
+                        name: biz.coreDetails?.businessName || (biz as any).name || 'Business',
+                        category: biz.coreDetails?.category || (biz as any).category || 'Coworking & Office',
+                        city: biz.coreDetails?.city || (biz as any).city || 'San Francisco',
                       },
                       'verification'
                     );
@@ -5724,7 +5768,7 @@ export const BusinessPortal: React.FC = () => {
                 <div className="flex items-center gap-2">
                   <Building2 className="w-4 h-4 text-slate-500" />
                   <span className="text-xs font-bold text-slate-700">Selected Business:</span>
-                  <span className="text-xs font-extrabold text-slate-900">{selectedBusiness.coreDetails.businessName}</span>
+                  <span className="text-xs font-extrabold text-slate-900">{selectedBusiness?.coreDetails?.businessName || (selectedBusiness as any)?.name || 'Business'}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-slate-500 font-medium">Switch Business:</span>
@@ -5737,9 +5781,10 @@ export const BusinessPortal: React.FC = () => {
                     {vendorOwnedBusinesses.map((biz) => {
                       const isW9Done = Boolean(biz.w9 && (biz.w9.status === 'submitted' || biz.w9.status === 'verified'));
                       const bizBal = getBusinessBalance(biz.id);
+                      const bName = biz.coreDetails?.businessName || (biz as any).name || 'Business';
                       return (
                         <option key={biz.id} value={biz.id}>
-                          {biz.coreDetails.businessName} — Avail: ${bizBal.availableBalance.toFixed(2)} {isW9Done ? '(0% Tax)' : '(24% Tax)'}
+                          {bName} — Avail: ${bizBal.availableBalance.toFixed(2)} {isW9Done ? '(0% Tax)' : '(24% Tax)'}
                         </option>
                       );
                     })}
@@ -5819,7 +5864,7 @@ export const BusinessPortal: React.FC = () => {
                         </span>
                       </div>
                       <p className="text-[11px] text-emerald-800 mt-0.5 font-mono">
-                        Account: {selectedBusiness.verification?.bankAccount?.accountNumberMasked || '•••• 9382'} • Routing: {selectedBusiness.verification?.bankAccount?.routingNumber || '121000358'} ({selectedBusiness.verification?.bankAccount?.accountHolderName || selectedBusiness.coreDetails.businessName})
+                        Account: {selectedBusiness.verification?.bankAccount?.accountNumberMasked || '•••• 9382'} • Routing: {selectedBusiness.verification?.bankAccount?.routingNumber || '121000358'} ({selectedBusiness.verification?.bankAccount?.accountHolderName || selectedBusiness?.coreDetails?.businessName || 'Business'})
                       </p>
                     </div>
                   </div>
@@ -5917,7 +5962,7 @@ export const BusinessPortal: React.FC = () => {
                     </div>
                     <p className="text-xs text-slate-500 font-mono mt-0.5">
                       {isBankLinked
-                        ? `Account: ${selectedBusiness.verification?.bankAccount?.accountNumberMasked || '•••• 9382'} • Routing: ${selectedBusiness.verification?.bankAccount?.routingNumber || '121000358'} • ${selectedBusiness.verification?.bankAccount?.accountHolderName || selectedBusiness.coreDetails.businessName}`
+                        ? `Account: ${selectedBusiness.verification?.bankAccount?.accountNumberMasked || '•••• 9382'} • Routing: ${selectedBusiness.verification?.bankAccount?.routingNumber || '121000358'} • ${selectedBusiness.verification?.bankAccount?.accountHolderName || selectedBusiness?.coreDetails?.businessName || 'Business'}`
                         : 'No bank account linked. Payout requests require a destination bank.'}
                     </p>
                   </div>
@@ -6168,18 +6213,21 @@ export const BusinessPortal: React.FC = () => {
           {/* =================================================================== */}
           {activeTab === 'subscriptions' && (
             <div className="space-y-6 animate-in fade-in duration-150 pb-16">
-              {/* Context banner if opened for a specific KYC Approved business */}
               {/* Context banner if opened for a specific business */}
-              {payingBiz && (
+              {payingBiz && (() => {
+                const payingName = payingBiz.coreDetails?.businessName || (payingBiz as any).name || 'Business';
+                const payingCat = payingBiz.coreDetails?.category || (payingBiz as any).category || 'Coworking & Office';
+                const payingCity = payingBiz.coreDetails?.city || (payingBiz as any).city || 'San Francisco';
+                return (
                 <div className="bg-slate-900 text-white p-4 sm:p-5 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-md border border-slate-800">
                   <div className="flex items-center gap-3.5">
                     <div className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center font-black text-sm text-emerald-400 shrink-0">
-                      {payingBiz.avatarChar || payingBiz.coreDetails.businessName.charAt(0).toUpperCase()}
+                      {payingBiz.avatarChar || payingName.charAt(0).toUpperCase()}
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="font-extrabold text-sm sm:text-base text-white">
-                          {payingBiz.coreDetails.businessName}
+                          {payingName}
                         </span>
                         <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
                           payingBiz.status === 'KYC Approved' || payingBiz.status === 'Live'
@@ -6190,7 +6238,7 @@ export const BusinessPortal: React.FC = () => {
                         </span>
                       </div>
                       <p className="text-xs text-slate-400 mt-0.5">
-                        {payingBiz.coreDetails.category} • {payingBiz.coreDetails.city} • {
+                        {payingCat} • {payingCity} • {
                           payingBiz.status === 'KYC Approved'
                             ? 'Select a tier below to activate and go live on the marketplace.'
                             : 'Select a tier below. Your subscription will be confirmed and your business will activate once KYC is approved.'
@@ -6212,7 +6260,7 @@ export const BusinessPortal: React.FC = () => {
                         >
                           {vendorOwnedBusinesses.map((b) => (
                             <option key={b.id} value={b.id}>
-                              {b.coreDetails.businessName} ({b.status})
+                              {b.coreDetails?.businessName || (b as any).name || 'Business'} ({b.status})
                             </option>
                           ))}
                         </select>
@@ -6229,7 +6277,8 @@ export const BusinessPortal: React.FC = () => {
                     </button>
                   </div>
                 </div>
-              )}
+                );
+              })()}
 
               {/* Main Top Header matching Image 2 */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -6542,8 +6591,20 @@ export const BusinessPortal: React.FC = () => {
             </div>
           )}
 
+          {/* =================================================================== */}
+          {/* VIEW 9: WORKERS & SPECIALISTS MANAGEMENT                            */}
+          {/* =================================================================== */}
+          {activeTab === 'workers' && (
+            <BusinessWorkersManagementView
+              business={selectedBusiness}
+              allBusinesses={state.businesses}
+              bookings={bookings}
+              onSelectBooking={(b) => setSelectedBookingDetails(b)}
+            />
+          )}
+
           {/* Fallback for other sidebar items */}
-          {['workers', 'customers', 'reviews', 'account', 'settings'].includes(activeTab) && (
+          {['customers', 'reviews', 'account', 'settings'].includes(activeTab) && (
             <div className="p-12 bg-white rounded-2xl border border-slate-200 text-center space-y-3 animate-in fade-in">
               <Building2 className="w-10 h-10 text-slate-400 mx-auto" />
               <h2 className="text-lg font-extrabold text-slate-900 capitalize">{activeTab} Section</h2>
@@ -6574,7 +6635,7 @@ export const BusinessPortal: React.FC = () => {
         const destBankName = selectedBusiness.verification?.bankAccount?.bankName || 'Commercial Bank';
         const destMasked = selectedBusiness.verification?.bankAccount?.accountNumberMasked || '•••• 9382';
         const destRouting = selectedBusiness.verification?.bankAccount?.routingNumber || '121000358';
-        const destHolder = selectedBusiness.verification?.bankAccount?.accountHolderName || selectedBusiness.coreDetails.businessName;
+        const destHolder = selectedBusiness?.verification?.bankAccount?.accountHolderName || selectedBusiness?.coreDetails?.businessName || 'Business';
 
         return (
           <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
@@ -7339,21 +7400,25 @@ export const BusinessPortal: React.FC = () => {
             {/* Modal Body */}
             <div className="p-6 space-y-5">
               {/* Target Business Card */}
-              {payingBiz && (
+              {payingBiz && (() => {
+                const payingName = payingBiz.coreDetails?.businessName || (payingBiz as any).name || 'Business';
+                const payingCat = payingBiz.coreDetails?.category || (payingBiz as any).category || 'Coworking & Office';
+                const payingCity = payingBiz.coreDetails?.city || (payingBiz as any).city || 'San Francisco';
+                return (
                 <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-2xl flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-xl bg-white border border-slate-200 flex items-center justify-center font-bold text-slate-800 text-xs shrink-0 shadow-2xs">
-                      {payingBiz.avatarChar || payingBiz.coreDetails.businessName.charAt(0).toUpperCase()}
+                      {payingBiz.avatarChar || payingName.charAt(0).toUpperCase()}
                     </div>
                     <div>
                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                         Target Business
                       </span>
                       <p className="font-bold text-slate-900 text-xs sm:text-sm">
-                        {payingBiz.coreDetails.businessName}
+                        {payingName}
                       </p>
                       <p className="text-[11px] text-slate-500">
-                        {payingBiz.coreDetails.category} • {payingBiz.coreDetails.city}
+                        {payingCat} • {payingCity}
                       </p>
                     </div>
                   </div>
@@ -7365,7 +7430,8 @@ export const BusinessPortal: React.FC = () => {
                     {payingBiz.status === 'KYC Approved' ? 'KYC Verified' : payingBiz.status}
                   </span>
                 </div>
-              )}
+                );
+              })()}
 
               {/* Plan Summary Card */}
               <div className="p-5 rounded-2xl border border-slate-200 bg-linear-to-br from-slate-50/70 to-white space-y-3">
@@ -8020,6 +8086,33 @@ export const BusinessPortal: React.FC = () => {
                 >
                   {selectedBookingDetails.payment_status}
                 </span>
+              </div>
+
+              {/* Worker Assignment & Dispatch Widget */}
+              <div className="p-3.5 rounded-2xl bg-indigo-50/80 border border-indigo-100 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 font-bold text-xs text-indigo-950">
+                    <UsersRound className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Assign Specialist Worker</span>
+                  </div>
+                  <span className="text-[10px] bg-indigo-100 text-indigo-800 font-extrabold px-2 py-0.5 rounded-full uppercase">
+                    Live Shift Match
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-600 leading-relaxed font-medium">
+                  Check specialist staff on shift for this venue on {selectedBookingDetails.booking_date || 'scheduled appointment date'} and dispatch the appointment.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedBookingDetails(null);
+                    setActiveTab('workers');
+                  }}
+                  className="w-full py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>Check Worker Availability & Dispatch</span>
+                </button>
               </div>
 
               {/* Action Buttons */}

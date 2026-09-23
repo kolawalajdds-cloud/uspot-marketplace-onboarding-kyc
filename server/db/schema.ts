@@ -359,3 +359,90 @@ export const notifications = pgTable('notifications', {
   timestamp: varchar('timestamp', { length: 50 }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
+
+// ============================================================================
+// 10. WORKER PORTAL (JOBS, CONTRACTS, CHECK-IN/OUT, & TRANSACTIONS)
+// ============================================================================
+export const workerJobs = pgTable('worker_jobs', {
+  id: varchar('id', { length: 64 }).primaryKey(),
+  workerId: varchar('worker_id', { length: 64 }).references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  bookingId: varchar('booking_id', { length: 64 }),
+  businessId: varchar('business_id', { length: 64 }),
+  businessName: varchar('business_name', { length: 255 }).notNull(),
+  title: varchar('title', { length: 255 }).notNull(),
+  serviceCategory: varchar('service_category', { length: 100 }),
+  customerName: varchar('customer_name', { length: 150 }).notNull(),
+  customerPhone: varchar('customer_phone', { length: 50 }),
+  customerEmail: varchar('customer_email', { length: 255 }),
+  location: text('location').notNull(),
+  scheduledDate: varchar('scheduled_date', { length: 30 }).notNull(),
+  scheduledStartTime: varchar('scheduled_start_time', { length: 20 }).notNull(),
+  scheduledEndTime: varchar('scheduled_end_time', { length: 20 }).notNull(),
+  durationMinutes: integer('duration_minutes').default(60).notNull(),
+  status: varchar('status', { length: 30 }).default('scheduled').notNull(), // 'scheduled' | 'in_progress' | 'completed' | 'cancelled'
+  rate: numeric('rate', { precision: 10, scale: 2 }).notNull(),
+  tip: numeric('tip', { precision: 10, scale: 2 }).default('0.00'),
+  totalPayout: numeric('total_payout', { precision: 10, scale: 2 }).notNull(),
+  notes: text('notes'),
+  checkInTime: timestamp('check_in_time', { withTimezone: true }),
+  checkInNotes: text('check_in_notes'),
+  checkInPhotos: jsonb('check_in_photos').default([]),
+  checkOutTime: timestamp('check_out_time', { withTimezone: true }),
+  checkOutNotes: text('check_out_notes'),
+  customerSignOffName: varchar('customer_sign_off_name', { length: 150 }),
+  signature: text('signature'),
+  rating: integer('rating'),
+  feedback: text('feedback'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const workerContracts = pgTable('worker_contracts', {
+  id: varchar('id', { length: 64 }).primaryKey(),
+  workerId: varchar('worker_id', { length: 64 }).references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  businessId: varchar('business_id', { length: 64 }),
+  businessName: varchar('business_name', { length: 255 }).notNull(),
+  title: varchar('title', { length: 255 }).notNull(),
+  contractType: varchar('contract_type', { length: 50 }).default('independent_contractor').notNull(), // 'independent_contractor' | 'w2_hourly' | 'master_service_agreement'
+  status: varchar('status', { length: 30 }).default('active').notNull(), // 'active' | 'pending_signature' | 'expired' | 'terminated'
+  hourlyRate: numeric('hourly_rate', { precision: 10, scale: 2 }).notNull(),
+  commissionPercentage: numeric('commission_percentage', { precision: 5, scale: 2 }).default('75.00'),
+  startDate: varchar('start_date', { length: 30 }).notNull(),
+  endDate: varchar('end_date', { length: 30 }),
+  terms: text('terms').notNull(),
+  signedAt: timestamp('signed_at', { withTimezone: true }),
+  signature: text('signature'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const workerTransactions = pgTable('worker_transactions', {
+  id: varchar('id', { length: 64 }).primaryKey(),
+  workerId: varchar('worker_id', { length: 64 }).references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  jobId: varchar('job_id', { length: 64 }),
+  type: varchar('type', { length: 50 }).notNull(), // 'job_payout' | 'tip' | 'bonus' | 'direct_deposit' | 'withholding'
+  amount: numeric('amount', { precision: 10, scale: 2 }).notNull(),
+  status: varchar('status', { length: 30 }).default('completed').notNull(), // 'completed' | 'pending' | 'processing'
+  description: text('description').notNull(),
+  referenceNumber: varchar('reference_number', { length: 50 }).notNull(),
+  payoutMethod: varchar('payout_method', { length: 50 }).default('Direct Deposit (ACH)').notNull(),
+  date: varchar('date', { length: 50 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const workerBusinessSchedules = pgTable('worker_business_schedules', {
+  id: varchar('id', { length: 64 }).primaryKey(),
+  workerId: varchar('worker_id', { length: 64 }).references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  businessId: varchar('business_id', { length: 64 }).notNull(),
+  businessName: varchar('business_name', { length: 255 }).notNull(),
+  dayOfWeek: integer('day_of_week').notNull(), // 0 = Sunday, 1 = Monday, 2 = Tuesday, 3 = Wednesday, 4 = Thursday, 5 = Friday, 6 = Saturday
+  dayName: varchar('day_name', { length: 20 }).notNull(), // 'Monday', 'Tuesday', ...
+  startTime: varchar('start_time', { length: 20 }).notNull(), // '09:00 AM'
+  endTime: varchar('end_time', { length: 20 }).notNull(), // '12:00 PM'
+  isAvailable: boolean('is_available').default(true).notNull(),
+  hourlyRate: numeric('hourly_rate', { precision: 10, scale: 2 }),
+  notes: text('notes'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+

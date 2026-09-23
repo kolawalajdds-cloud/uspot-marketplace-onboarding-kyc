@@ -5,6 +5,37 @@ import { eq } from 'drizzle-orm';
 
 const router = Router();
 
+// Helper function to map service db record to frontend interface
+function mapDbService(s: any) {
+  return {
+    ...s,
+    business_id: s.businessId,
+    service_id: s.id,
+    service_category_id: s.serviceCategoryId,
+    category_name: s.categoryName,
+    base_price: Number(s.basePrice),
+    hourly_rate: s.hourlyRate ? Number(s.hourlyRate) : undefined,
+    duration_minutes: s.durationMinutes,
+    requires_approval: s.requiresApproval,
+    photo_url: s.photoUrl,
+    thumbnail_url: s.thumbnailUrl,
+    gallery_photos: (s.galleryPhotos as string[]) || [],
+    assigned_workers_count: s.assignedWorkersCount || 1,
+    created_at: s.createdAt ? new Date(s.createdAt).toISOString() : undefined,
+    updated_at: s.updatedAt ? new Date(s.updatedAt).toISOString() : undefined,
+  };
+}
+
+// GET all business services
+router.get('/', async (req, res) => {
+  try {
+    const services = await db.select().from(businessServices);
+    res.json(services.map(mapDbService));
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // GET all service categories
 router.get('/categories', async (req, res) => {
   try {
@@ -23,18 +54,7 @@ router.get('/business/:businessId', async (req, res) => {
       .from(businessServices)
       .where(eq(businessServices.businessId, req.params.businessId));
     
-    // Map numerical fields to numbers to match frontend types
-    const mapped = services.map((s) => ({
-      ...s,
-      base_price: Number(s.basePrice),
-      hourly_rate: s.hourlyRate ? Number(s.hourlyRate) : undefined,
-      duration_minutes: s.durationMinutes,
-      requires_approval: s.requiresApproval,
-      photo_url: s.photoUrl,
-      thumbnail_url: s.thumbnailUrl,
-      gallery_photos: (s.galleryPhotos as string[]) || [],
-      assigned_workers_count: s.assignedWorkersCount || 1,
-    }));
+    const mapped = services.map(mapDbService);
     res.json(mapped);
   } catch (error: any) {
     res.status(500).json({ error: error.message });

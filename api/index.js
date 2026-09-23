@@ -10,7 +10,7 @@ import cors from "cors";
 import dotenv2 from "dotenv";
 
 // server/routes/users.ts
-import { Router } from "express";
+import { Router as Router2 } from "express";
 
 // server/db/index.ts
 import { Pool } from "pg";
@@ -37,7 +37,11 @@ __export(schema_exports, {
   serviceCategories: () => serviceCategories,
   users: () => users,
   w9Records: () => w9Records,
-  withdrawalRequests: () => withdrawalRequests
+  withdrawalRequests: () => withdrawalRequests,
+  workerBusinessSchedules: () => workerBusinessSchedules,
+  workerContracts: () => workerContracts,
+  workerJobs: () => workerJobs,
+  workerTransactions: () => workerTransactions
 });
 import {
   pgTable,
@@ -359,6 +363,94 @@ var notifications = pgTable("notifications", {
   timestamp: varchar("timestamp", { length: 50 }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
 });
+var workerJobs = pgTable("worker_jobs", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  workerId: varchar("worker_id", { length: 64 }).references(() => users.id, { onDelete: "cascade" }).notNull(),
+  bookingId: varchar("booking_id", { length: 64 }),
+  businessId: varchar("business_id", { length: 64 }),
+  businessName: varchar("business_name", { length: 255 }).notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  serviceCategory: varchar("service_category", { length: 100 }),
+  customerName: varchar("customer_name", { length: 150 }).notNull(),
+  customerPhone: varchar("customer_phone", { length: 50 }),
+  customerEmail: varchar("customer_email", { length: 255 }),
+  location: text("location").notNull(),
+  scheduledDate: varchar("scheduled_date", { length: 30 }).notNull(),
+  scheduledStartTime: varchar("scheduled_start_time", { length: 20 }).notNull(),
+  scheduledEndTime: varchar("scheduled_end_time", { length: 20 }).notNull(),
+  durationMinutes: integer("duration_minutes").default(60).notNull(),
+  status: varchar("status", { length: 30 }).default("scheduled").notNull(),
+  // 'scheduled' | 'in_progress' | 'completed' | 'cancelled'
+  rate: numeric("rate", { precision: 10, scale: 2 }).notNull(),
+  tip: numeric("tip", { precision: 10, scale: 2 }).default("0.00"),
+  totalPayout: numeric("total_payout", { precision: 10, scale: 2 }).notNull(),
+  notes: text("notes"),
+  checkInTime: timestamp("check_in_time", { withTimezone: true }),
+  checkInNotes: text("check_in_notes"),
+  checkInPhotos: jsonb("check_in_photos").default([]),
+  checkOutTime: timestamp("check_out_time", { withTimezone: true }),
+  checkOutNotes: text("check_out_notes"),
+  customerSignOffName: varchar("customer_sign_off_name", { length: 150 }),
+  signature: text("signature"),
+  rating: integer("rating"),
+  feedback: text("feedback"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+});
+var workerContracts = pgTable("worker_contracts", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  workerId: varchar("worker_id", { length: 64 }).references(() => users.id, { onDelete: "cascade" }).notNull(),
+  businessId: varchar("business_id", { length: 64 }),
+  businessName: varchar("business_name", { length: 255 }).notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  contractType: varchar("contract_type", { length: 50 }).default("independent_contractor").notNull(),
+  // 'independent_contractor' | 'w2_hourly' | 'master_service_agreement'
+  status: varchar("status", { length: 30 }).default("active").notNull(),
+  // 'active' | 'pending_signature' | 'expired' | 'terminated'
+  hourlyRate: numeric("hourly_rate", { precision: 10, scale: 2 }).notNull(),
+  commissionPercentage: numeric("commission_percentage", { precision: 5, scale: 2 }).default("75.00"),
+  startDate: varchar("start_date", { length: 30 }).notNull(),
+  endDate: varchar("end_date", { length: 30 }),
+  terms: text("terms").notNull(),
+  signedAt: timestamp("signed_at", { withTimezone: true }),
+  signature: text("signature"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+});
+var workerTransactions = pgTable("worker_transactions", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  workerId: varchar("worker_id", { length: 64 }).references(() => users.id, { onDelete: "cascade" }).notNull(),
+  jobId: varchar("job_id", { length: 64 }),
+  type: varchar("type", { length: 50 }).notNull(),
+  // 'job_payout' | 'tip' | 'bonus' | 'direct_deposit' | 'withholding'
+  amount: numeric("amount", { precision: 10, scale: 2 }).notNull(),
+  status: varchar("status", { length: 30 }).default("completed").notNull(),
+  // 'completed' | 'pending' | 'processing'
+  description: text("description").notNull(),
+  referenceNumber: varchar("reference_number", { length: 50 }).notNull(),
+  payoutMethod: varchar("payout_method", { length: 50 }).default("Direct Deposit (ACH)").notNull(),
+  date: varchar("date", { length: 50 }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull()
+});
+var workerBusinessSchedules = pgTable("worker_business_schedules", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  workerId: varchar("worker_id", { length: 64 }).references(() => users.id, { onDelete: "cascade" }).notNull(),
+  businessId: varchar("business_id", { length: 64 }).notNull(),
+  businessName: varchar("business_name", { length: 255 }).notNull(),
+  dayOfWeek: integer("day_of_week").notNull(),
+  // 0 = Sunday, 1 = Monday, 2 = Tuesday, 3 = Wednesday, 4 = Thursday, 5 = Friday, 6 = Saturday
+  dayName: varchar("day_name", { length: 20 }).notNull(),
+  // 'Monday', 'Tuesday', ...
+  startTime: varchar("start_time", { length: 20 }).notNull(),
+  // '09:00 AM'
+  endTime: varchar("end_time", { length: 20 }).notNull(),
+  // '12:00 PM'
+  isAvailable: boolean("is_available").default(true).notNull(),
+  hourlyRate: numeric("hourly_rate", { precision: 10, scale: 2 }),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull()
+});
 
 // server/db/index.ts
 import dotenv from "dotenv";
@@ -374,259 +466,22 @@ var pool = new Pool({
 var db = drizzle(pool, { schema: schema_exports });
 
 // server/routes/users.ts
-import { eq } from "drizzle-orm";
-var router = Router();
-router.get("/", async (req, res) => {
-  try {
-    const allUsers = await db.select().from(users);
-    res.json(allUsers);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-router.get("/:id", async (req, res) => {
-  try {
-    const [user] = await db.select().from(users).where(eq(users.id, req.params.id));
-    if (!user) {
-      return res.status(404).json({ error: "User not found" });
-    }
-    res.json(user);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-router.post("/login", async (req, res) => {
-  try {
-    const { email, username, identifier, role } = req.body;
-    const term = (identifier || email || username || "").trim().toLowerCase();
-    const allUsers = await db.select().from(users);
-    let user = term ? allUsers.find(
-      (u) => u.email?.toLowerCase() === term || u.username?.toLowerCase() === term || u.id.toLowerCase() === term
-    ) : null;
-    if (!user && role) {
-      user = allUsers.find((u) => u.role.toLowerCase() === role.toLowerCase());
-    }
-    if (!user) {
-      return res.status(404).json({ error: "No user found with the provided credentials. Please check your email or register." });
-    }
-    const allBusinesses = await db.select().from(businesses);
-    const userBiz = allBusinesses.find(
-      (b) => b.userId && b.userId === user.id || b.email && b.email.toLowerCase() === user.email.toLowerCase()
-    );
-    res.json({
-      success: true,
-      user,
-      business: userBiz || null
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-router.patch("/:id", async (req, res) => {
-  try {
-    const [updated] = await db.update(users).set({ ...req.body, updatedAt: /* @__PURE__ */ new Date() }).where(eq(users.id, req.params.id)).returning();
-    res.json(updated);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-router.post("/register", async (req, res) => {
-  try {
-    const {
-      accountType,
-      // 'personal' | 'business'
-      email,
-      password,
-      firstName,
-      lastName,
-      phone,
-      jobTitle,
-      nickname,
-      username: providedUsername,
-      marketingOptIn
-    } = req.body;
-    if (!email || !firstName || !lastName) {
-      return res.status(400).json({ error: "Email, First Name, and Last Name are required." });
-    }
-    const trimmedEmail = email.trim().toLowerCase();
-    const [existingUser] = await db.select().from(users).where(eq(users.email, trimmedEmail));
-    if (existingUser) {
-      return res.status(400).json({ error: "An account with this email already exists. Please login instead." });
-    }
-    const isBusiness = accountType === "business";
-    const role = isBusiness ? "business" : "customer";
-    const roleLabel = isBusiness ? "Business Entity" : "Customer";
-    const newUserId = `user-${role}-${Date.now()}`;
-    const cleanFirstName = firstName.trim();
-    const cleanLastName = lastName.trim();
-    const fullName = `${cleanFirstName} ${cleanLastName}`;
-    const initials = ((cleanFirstName[0] || "U") + (cleanLastName[0] || "")).toUpperCase();
-    const username = providedUsername?.trim() || trimmedEmail.split("@")[0] + "_" + Math.floor(100 + Math.random() * 900);
-    const finalNickname = nickname?.trim() || cleanFirstName;
-    const [newUser] = await db.insert(users).values({
-      id: newUserId,
-      role,
-      roleLabel,
-      status: "active",
-      email: trimmedEmail,
-      username,
-      phone: phone?.trim() || null,
-      nickname: finalNickname,
-      fullName,
-      referralCode: `REF-${Math.floor(1e3 + Math.random() * 9e3)}`,
-      emailVerified: true,
-      phoneVerified: Boolean(phone),
-      timezone: "America/New_York",
-      avatarInitials: initials,
-      department: jobTitle?.trim() || (isBusiness ? "Business Operations" : "Marketplace Customer"),
-      memberSince: (/* @__PURE__ */ new Date()).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-    }).returning();
-    let createdBusiness = null;
-    if (isBusiness) {
-      const businessId = `biz-${Date.now()}`;
-      let domainName = trimmedEmail.split("@")[1]?.split(".")[0] || "";
-      if (["gmail", "yahoo", "outlook", "hotmail", "icloud", "proton"].includes(domainName.toLowerCase())) {
-        domainName = "";
-      }
-      const businessName = domainName ? domainName.charAt(0).toUpperCase() + domainName.slice(1) + " Services" : `${fullName}'s Business`;
-      const [newBiz] = await db.insert(businesses).values({
-        id: businessId,
-        userId: newUser.id,
-        businessName,
-        legalEntityName: `${businessName} LLC`,
-        category: "Coworking & Creative Hub",
-        description: `Professional spaces, reservations, and merchant operations by ${fullName}.`,
-        streetAddress: "100 Market St, Suite 400",
-        city: "San Francisco",
-        state: "CA",
-        zipCode: "94105",
-        phone: phone?.trim() || "+1 (555) 019-2834",
-        email: trimmedEmail,
-        status: "Draft",
-        subscriptionPlan: "Starter",
-        salesTaxRate: "8.87",
-        currency: "USD",
-        automaticInvoicing: true,
-        avatarChar: businessName[0]?.toUpperCase() || "B"
-      }).returning();
-      for (let day = 0; day <= 6; day++) {
-        await db.insert(businessHours).values({
-          businessId,
-          dayOfWeek: day,
-          openTime: "08:00",
-          closeTime: "19:00",
-          isClosed: day === 0
-          // Closed Sunday
-        });
-      }
-      await db.insert(businessAmenities).values([
-        {
-          businessId,
-          category: "General & Comfort",
-          name: "High-Speed Wi-Fi",
-          description: "1Gbps enterprise connection",
-          checked: true
-        },
-        {
-          businessId,
-          category: "General & Comfort",
-          name: "Restrooms",
-          description: "Clean restrooms on premises",
-          checked: true
-        },
-        {
-          businessId,
-          category: "Tech & Workspace",
-          name: "Power Outlets",
-          description: "Power outlets readily available at all spots",
-          checked: true
-        }
-      ]);
-      await db.insert(kycVerifications).values({
-        businessId,
-        legalEntityType: "Limited Liability Company (LLC)",
-        status: "Draft",
-        riskTier: "Low",
-        sanctionsStatus: "Not Started",
-        tinMatchStatus: "Not Started"
-      });
-      createdBusiness = newBiz;
-    }
-    res.status(201).json({
-      success: true,
-      user: newUser,
-      business: createdBusiness
-    });
-  } catch (error) {
-    console.error("Registration Error:", error);
-    res.status(500).json({ error: error.message || "Failed to register account" });
-  }
-});
-router.post("/", async (req, res) => {
-  try {
-    const {
-      id,
-      role,
-      roleLabel,
-      status,
-      email,
-      username,
-      phone,
-      nickname,
-      fullName,
-      referralCode,
-      emailVerified,
-      phoneVerified,
-      timezone,
-      avatarInitials,
-      department,
-      primaryServiceCategory,
-      yearsOfExperience,
-      memberSince
-    } = req.body;
-    const trimmedEmail = (email || "").trim().toLowerCase();
-    const newId = id || `user-${role || "customer"}-${Date.now()}`;
-    const [created] = await db.insert(users).values({
-      id: newId,
-      role: role || "customer",
-      roleLabel: roleLabel || (role === "business" ? "Business" : "Customer"),
-      status: status || "active",
-      email: trimmedEmail,
-      username: username || trimmedEmail.split("@")[0] + "_" + Math.floor(100 + Math.random() * 900),
-      phone: phone || null,
-      nickname: nickname || fullName?.split(" ")[0] || null,
-      fullName: fullName || trimmedEmail.split("@")[0],
-      referralCode: referralCode || `REF-${Math.floor(1e3 + Math.random() * 9e3)}`,
-      emailVerified: emailVerified ?? true,
-      phoneVerified: phoneVerified ?? true,
-      timezone: timezone || "America/New_York",
-      avatarInitials: avatarInitials || (fullName ? fullName.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase() : "U"),
-      department: department || (role === "business" ? "Vendor Merchant" : "Customer"),
-      primaryServiceCategory: primaryServiceCategory || null,
-      yearsOfExperience: yearsOfExperience ? String(yearsOfExperience) : null,
-      memberSince: memberSince || (/* @__PURE__ */ new Date()).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-    }).returning();
-    res.status(201).json(created);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-var users_default = router;
+import { eq as eq2 } from "drizzle-orm";
 
 // server/routes/businesses.ts
-import { Router as Router2 } from "express";
-import { eq as eq2 } from "drizzle-orm";
-var router2 = Router2();
+import { Router } from "express";
+import { eq } from "drizzle-orm";
+var router = Router();
 async function getCompleteBusiness(businessId) {
-  const [biz] = await db.select().from(businesses).where(eq2(businesses.id, businessId));
+  const [biz] = await db.select().from(businesses).where(eq(businesses.id, businessId));
   if (!biz) return null;
-  const hours = await db.select().from(businessHours).where(eq2(businessHours.businessId, businessId));
-  const amenities = await db.select().from(businessAmenities).where(eq2(businessAmenities.businessId, businessId));
-  const gallery = await db.select().from(businessGallery).where(eq2(businessGallery.businessId, businessId));
-  const holidays = await db.select().from(holidayClosures).where(eq2(holidayClosures.businessId, businessId));
-  const [kyc] = await db.select().from(kycVerifications).where(eq2(kycVerifications.businessId, businessId));
-  const [w9] = await db.select().from(w9Records).where(eq2(w9Records.businessId, businessId));
-  const [nmi] = await db.select().from(nmiPaymentAccounts).where(eq2(nmiPaymentAccounts.businessId, businessId));
+  const hours = await db.select().from(businessHours).where(eq(businessHours.businessId, businessId));
+  const amenities = await db.select().from(businessAmenities).where(eq(businessAmenities.businessId, businessId));
+  const gallery = await db.select().from(businessGallery).where(eq(businessGallery.businessId, businessId));
+  const holidays = await db.select().from(holidayClosures).where(eq(holidayClosures.businessId, businessId));
+  const [kyc] = await db.select().from(kycVerifications).where(eq(kycVerifications.businessId, businessId));
+  const [w9] = await db.select().from(w9Records).where(eq(w9Records.businessId, businessId));
+  const [nmi] = await db.select().from(nmiPaymentAccounts).where(eq(nmiPaymentAccounts.businessId, businessId));
   return {
     id: biz.id,
     userId: biz.userId,
@@ -788,7 +643,7 @@ async function getCompleteBusiness(businessId) {
     avatarChar: biz.avatarChar || biz.businessName[0] || "B"
   };
 }
-router2.get("/", async (req, res) => {
+router.get("/", async (req, res) => {
   try {
     const all = await db.select().from(businesses);
     const populated = await Promise.all(all.map((b) => getCompleteBusiness(b.id)));
@@ -797,7 +652,7 @@ router2.get("/", async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-router2.get("/:id", async (req, res) => {
+router.get("/:id", async (req, res) => {
   try {
     const biz = await getCompleteBusiness(req.params.id);
     if (!biz) {
@@ -808,7 +663,7 @@ router2.get("/:id", async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-router2.post("/", async (req, res) => {
+router.post("/", async (req, res) => {
   try {
     const { id, userId, coreDetails, status, subscriptionPlan } = req.body;
     const [created] = await db.insert(businesses).values({
@@ -831,7 +686,7 @@ router2.post("/", async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-router2.patch("/:id", async (req, res) => {
+router.patch("/:id", async (req, res) => {
   try {
     const { coreDetails, status, subscriptionPlan, ...rest } = req.body;
     const updateData = { updatedAt: /* @__PURE__ */ new Date(), ...rest };
@@ -847,14 +702,257 @@ router2.patch("/:id", async (req, res) => {
     }
     if (status) updateData.status = status;
     if (subscriptionPlan) updateData.subscriptionPlan = subscriptionPlan;
-    await db.update(businesses).set(updateData).where(eq2(businesses.id, req.params.id));
+    await db.update(businesses).set(updateData).where(eq(businesses.id, req.params.id));
     const updated = await getCompleteBusiness(req.params.id);
     res.json(updated);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
-var businesses_default = router2;
+var businesses_default = router;
+
+// server/routes/users.ts
+var router2 = Router2();
+router2.get("/", async (req, res) => {
+  try {
+    const allUsers = await db.select().from(users);
+    res.json(allUsers);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router2.get("/:id", async (req, res) => {
+  try {
+    const [user] = await db.select().from(users).where(eq2(users.id, req.params.id));
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router2.post("/login", async (req, res) => {
+  try {
+    const { email, username, identifier, role, password } = req.body;
+    const term = (identifier || email || username || "").trim().toLowerCase();
+    if (!term && !role) {
+      return res.status(400).json({ error: "Please enter your email or username." });
+    }
+    const allUsers = await db.select().from(users);
+    let user = term ? allUsers.find(
+      (u) => u.email?.toLowerCase() === term || u.username?.toLowerCase() === term || u.id.toLowerCase() === term
+    ) : null;
+    if (!user && role) {
+      user = allUsers.find((u) => u.role.toLowerCase() === role.toLowerCase());
+    }
+    if (!user) {
+      return res.status(404).json({ error: "No user found with the provided credentials. Please check your email or register." });
+    }
+    const allBusinesses = await db.select().from(businesses);
+    const userBiz = allBusinesses.find(
+      (b) => b.userId && b.userId === user.id || b.email && b.email.toLowerCase() === user.email.toLowerCase()
+    );
+    const completeBiz = userBiz ? await getCompleteBusiness(userBiz.id) : null;
+    res.json({
+      success: true,
+      user,
+      business: completeBiz
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router2.patch("/:id", async (req, res) => {
+  try {
+    const [updated] = await db.update(users).set({ ...req.body, updatedAt: /* @__PURE__ */ new Date() }).where(eq2(users.id, req.params.id)).returning();
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+router2.post("/register", async (req, res) => {
+  try {
+    const {
+      accountType,
+      // 'personal' | 'business'
+      email,
+      password,
+      firstName,
+      lastName,
+      phone,
+      jobTitle,
+      nickname,
+      username: providedUsername,
+      marketingOptIn
+    } = req.body;
+    if (!email || !firstName || !lastName) {
+      return res.status(400).json({ error: "Email, First Name, and Last Name are required." });
+    }
+    const trimmedEmail = email.trim().toLowerCase();
+    const [existingUser] = await db.select().from(users).where(eq2(users.email, trimmedEmail));
+    if (existingUser) {
+      return res.status(400).json({ error: "An account with this email already exists. Please login instead." });
+    }
+    const isBusiness = accountType === "business";
+    const role = isBusiness ? "business" : "customer";
+    const roleLabel = isBusiness ? "Business Entity" : "Customer";
+    const newUserId = `user-${role}-${Date.now()}`;
+    const cleanFirstName = firstName.trim();
+    const cleanLastName = lastName.trim();
+    const fullName = `${cleanFirstName} ${cleanLastName}`;
+    const initials = ((cleanFirstName[0] || "U") + (cleanLastName[0] || "")).toUpperCase();
+    const username = providedUsername?.trim() || trimmedEmail.split("@")[0] + "_" + Math.floor(100 + Math.random() * 900);
+    const finalNickname = nickname?.trim() || cleanFirstName;
+    const [newUser] = await db.insert(users).values({
+      id: newUserId,
+      role,
+      roleLabel,
+      status: "active",
+      email: trimmedEmail,
+      username,
+      phone: phone?.trim() || null,
+      nickname: finalNickname,
+      fullName,
+      referralCode: `REF-${Math.floor(1e3 + Math.random() * 9e3)}`,
+      emailVerified: true,
+      phoneVerified: Boolean(phone),
+      timezone: "America/New_York",
+      avatarInitials: initials,
+      department: jobTitle?.trim() || (isBusiness ? "Business Operations" : "Marketplace Customer"),
+      memberSince: (/* @__PURE__ */ new Date()).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+    }).returning();
+    let createdBusiness = null;
+    if (isBusiness) {
+      const businessId = `biz-${Date.now()}`;
+      let domainName = trimmedEmail.split("@")[1]?.split(".")[0] || "";
+      if (["gmail", "yahoo", "outlook", "hotmail", "icloud", "proton"].includes(domainName.toLowerCase())) {
+        domainName = "";
+      }
+      const businessName = domainName ? domainName.charAt(0).toUpperCase() + domainName.slice(1) + " Services" : `${fullName}'s Business`;
+      const [newBiz] = await db.insert(businesses).values({
+        id: businessId,
+        userId: newUser.id,
+        businessName,
+        legalEntityName: `${businessName} LLC`,
+        category: "Coworking & Creative Hub",
+        description: `Professional spaces, reservations, and merchant operations by ${fullName}.`,
+        streetAddress: "100 Market St, Suite 400",
+        city: "San Francisco",
+        state: "CA",
+        zipCode: "94105",
+        phone: phone?.trim() || "+1 (555) 019-2834",
+        email: trimmedEmail,
+        status: "Draft",
+        subscriptionPlan: "Starter",
+        salesTaxRate: "8.87",
+        currency: "USD",
+        automaticInvoicing: true,
+        avatarChar: businessName[0]?.toUpperCase() || "B"
+      }).returning();
+      for (let day = 0; day <= 6; day++) {
+        await db.insert(businessHours).values({
+          businessId,
+          dayOfWeek: day,
+          openTime: "08:00",
+          closeTime: "19:00",
+          isClosed: day === 0
+          // Closed Sunday
+        });
+      }
+      await db.insert(businessAmenities).values([
+        {
+          businessId,
+          category: "General & Comfort",
+          name: "High-Speed Wi-Fi",
+          description: "1Gbps enterprise connection",
+          checked: true
+        },
+        {
+          businessId,
+          category: "General & Comfort",
+          name: "Restrooms",
+          description: "Clean restrooms on premises",
+          checked: true
+        },
+        {
+          businessId,
+          category: "Tech & Workspace",
+          name: "Power Outlets",
+          description: "Power outlets readily available at all spots",
+          checked: true
+        }
+      ]);
+      await db.insert(kycVerifications).values({
+        businessId,
+        legalEntityType: "Limited Liability Company (LLC)",
+        status: "Draft",
+        riskTier: "Low",
+        sanctionsStatus: "Not Started",
+        tinMatchStatus: "Not Started"
+      });
+      createdBusiness = newBiz;
+    }
+    res.status(201).json({
+      success: true,
+      user: newUser,
+      business: createdBusiness
+    });
+  } catch (error) {
+    console.error("Registration Error:", error);
+    res.status(500).json({ error: error.message || "Failed to register account" });
+  }
+});
+router2.post("/", async (req, res) => {
+  try {
+    const {
+      id,
+      role,
+      roleLabel,
+      status,
+      email,
+      username,
+      phone,
+      nickname,
+      fullName,
+      referralCode,
+      emailVerified,
+      phoneVerified,
+      timezone,
+      avatarInitials,
+      department,
+      primaryServiceCategory,
+      yearsOfExperience,
+      memberSince
+    } = req.body;
+    const trimmedEmail = (email || "").trim().toLowerCase();
+    const newId = id || `user-${role || "customer"}-${Date.now()}`;
+    const [created] = await db.insert(users).values({
+      id: newId,
+      role: role || "customer",
+      roleLabel: roleLabel || (role === "business" ? "Business" : "Customer"),
+      status: status || "active",
+      email: trimmedEmail,
+      username: username || trimmedEmail.split("@")[0] + "_" + Math.floor(100 + Math.random() * 900),
+      phone: phone || null,
+      nickname: nickname || fullName?.split(" ")[0] || null,
+      fullName: fullName || trimmedEmail.split("@")[0],
+      referralCode: referralCode || `REF-${Math.floor(1e3 + Math.random() * 9e3)}`,
+      emailVerified: emailVerified ?? true,
+      phoneVerified: phoneVerified ?? true,
+      timezone: timezone || "America/New_York",
+      avatarInitials: avatarInitials || (fullName ? fullName.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase() : "U"),
+      department: department || (role === "business" ? "Vendor Merchant" : "Customer"),
+      primaryServiceCategory: primaryServiceCategory || null,
+      yearsOfExperience: yearsOfExperience ? String(yearsOfExperience) : null,
+      memberSince: memberSince || (/* @__PURE__ */ new Date()).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+    }).returning();
+    res.status(201).json(created);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+var users_default = router2;
 
 // server/routes/compliance.ts
 import { Router as Router3 } from "express";
@@ -1032,6 +1130,33 @@ var compliance_default = router3;
 import { Router as Router4 } from "express";
 import { eq as eq4 } from "drizzle-orm";
 var router4 = Router4();
+function mapDbService(s) {
+  return {
+    ...s,
+    business_id: s.businessId,
+    service_id: s.id,
+    service_category_id: s.serviceCategoryId,
+    category_name: s.categoryName,
+    base_price: Number(s.basePrice),
+    hourly_rate: s.hourlyRate ? Number(s.hourlyRate) : void 0,
+    duration_minutes: s.durationMinutes,
+    requires_approval: s.requiresApproval,
+    photo_url: s.photoUrl,
+    thumbnail_url: s.thumbnailUrl,
+    gallery_photos: s.galleryPhotos || [],
+    assigned_workers_count: s.assignedWorkersCount || 1,
+    created_at: s.createdAt ? new Date(s.createdAt).toISOString() : void 0,
+    updated_at: s.updatedAt ? new Date(s.updatedAt).toISOString() : void 0
+  };
+}
+router4.get("/", async (req, res) => {
+  try {
+    const services = await db.select().from(businessServices);
+    res.json(services.map(mapDbService));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 router4.get("/categories", async (req, res) => {
   try {
     const categories = await db.select().from(serviceCategories);
@@ -1043,17 +1168,7 @@ router4.get("/categories", async (req, res) => {
 router4.get("/business/:businessId", async (req, res) => {
   try {
     const services = await db.select().from(businessServices).where(eq4(businessServices.businessId, req.params.businessId));
-    const mapped = services.map((s) => ({
-      ...s,
-      base_price: Number(s.basePrice),
-      hourly_rate: s.hourlyRate ? Number(s.hourlyRate) : void 0,
-      duration_minutes: s.durationMinutes,
-      requires_approval: s.requiresApproval,
-      photo_url: s.photoUrl,
-      thumbnail_url: s.thumbnailUrl,
-      gallery_photos: s.galleryPhotos || [],
-      assigned_workers_count: s.assignedWorkersCount || 1
-    }));
+    const mapped = services.map(mapDbService);
     res.json(mapped);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -1132,22 +1247,39 @@ var services_default = router4;
 import { Router as Router5 } from "express";
 import { eq as eq5 } from "drizzle-orm";
 var router5 = Router5();
+function mapCard(c) {
+  return {
+    id: c.id,
+    customer_id: c.customerId,
+    cardholder_name: c.cardholderName,
+    brand: c.brand,
+    last4: c.last4,
+    exp_month: c.expMonth,
+    exp_year: c.expYear,
+    is_default: c.isDefault,
+    billing_address: c.billingAddress,
+    created_at: c.createdAt ? new Date(c.createdAt).toISOString() : (/* @__PURE__ */ new Date()).toISOString()
+  };
+}
+router5.get("/", async (req, res) => {
+  try {
+    const { customerId } = req.query;
+    let query;
+    if (customerId) {
+      query = db.select().from(customerSavedCards).where(eq5(customerSavedCards.customerId, String(customerId)));
+    } else {
+      query = db.select().from(customerSavedCards);
+    }
+    const cards = await query;
+    res.json(cards.map(mapCard));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 router5.get("/customer/:customerId", async (req, res) => {
   try {
     const cards = await db.select().from(customerSavedCards).where(eq5(customerSavedCards.customerId, req.params.customerId));
-    const mapped = cards.map((c) => ({
-      id: c.id,
-      customer_id: c.customerId,
-      cardholder_name: c.cardholderName,
-      brand: c.brand,
-      last4: c.last4,
-      exp_month: c.expMonth,
-      exp_year: c.expYear,
-      is_default: c.isDefault,
-      billing_address: c.billingAddress,
-      created_at: c.createdAt.toISOString()
-    }));
-    res.json(mapped);
+    res.json(cards.map(mapCard));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -1438,37 +1570,49 @@ var bookings_default = router6;
 import { Router as Router7 } from "express";
 import { eq as eq7, desc as desc2 } from "drizzle-orm";
 var router7 = Router7();
+async function populateReviews(reviews) {
+  return Promise.all(
+    reviews.map(async (r) => {
+      const [resp] = await db.select().from(reviewResponses).where(eq7(reviewResponses.reviewId, r.id));
+      return {
+        id: r.id,
+        business_id: r.businessId,
+        business_name: r.businessName,
+        booking_id: r.bookingId || void 0,
+        service_id: r.serviceId || void 0,
+        service_name: r.serviceName || void 0,
+        customer_id: r.customerId || void 0,
+        customer_name: r.customerName,
+        customer_avatar: r.customerAvatar || void 0,
+        rating: r.rating,
+        review_text: r.reviewText,
+        media: r.media || [],
+        created_at: r.createdAt ? new Date(r.createdAt).toISOString() : (/* @__PURE__ */ new Date()).toISOString(),
+        time_ago: r.timeAgo || "Recently",
+        response_deadline: r.responseDeadline || void 0,
+        response: resp ? {
+          text: resp.responseText,
+          responded_at: resp.respondedAt ? new Date(resp.respondedAt).toISOString() : (/* @__PURE__ */ new Date()).toISOString(),
+          responded_time_ago: resp.respondedTimeAgo || "Responded recently",
+          author_name: resp.authorName
+        } : void 0
+      };
+    })
+  );
+}
+router7.get("/", async (req, res) => {
+  try {
+    const reviews = await db.select().from(businessReviews).orderBy(desc2(businessReviews.createdAt));
+    const populated = await populateReviews(reviews);
+    res.json(populated);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 router7.get("/business/:businessId", async (req, res) => {
   try {
     const reviews = await db.select().from(businessReviews).where(eq7(businessReviews.businessId, req.params.businessId)).orderBy(desc2(businessReviews.createdAt));
-    const populated = await Promise.all(
-      reviews.map(async (r) => {
-        const [resp] = await db.select().from(reviewResponses).where(eq7(reviewResponses.reviewId, r.id));
-        return {
-          id: r.id,
-          business_id: r.businessId,
-          business_name: r.businessName,
-          booking_id: r.bookingId || void 0,
-          service_id: r.serviceId || void 0,
-          service_name: r.serviceName || void 0,
-          customer_id: r.customerId || void 0,
-          customer_name: r.customerName,
-          customer_avatar: r.customerAvatar || void 0,
-          rating: r.rating,
-          review_text: r.reviewText,
-          media: r.media || [],
-          created_at: r.createdAt.toISOString(),
-          time_ago: r.timeAgo || "Recently",
-          response_deadline: r.responseDeadline || void 0,
-          response: resp ? {
-            text: resp.responseText,
-            responded_at: resp.respondedAt.toISOString(),
-            responded_time_ago: resp.respondedTimeAgo || "Responded recently",
-            author_name: resp.authorName
-          } : void 0
-        };
-      })
-    );
+    const populated = await populateReviews(reviews);
     res.json(populated);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -1666,6 +1810,1024 @@ router8.post("/withdraw", async (req, res) => {
 });
 var ledger_default = router8;
 
+// server/routes/worker.ts
+import { Router as Router9 } from "express";
+import { eq as eq9, and as and2, desc as desc4 } from "drizzle-orm";
+var router9 = Router9();
+function parseTimeToMinutes(tStr) {
+  if (!tStr) return 0;
+  const cleaned = tStr.trim().toUpperCase();
+  const isPM = cleaned.includes("PM");
+  const isAM = cleaned.includes("AM");
+  const timePart = cleaned.replace(/AM|PM/g, "").trim();
+  const [hStr, mStr] = timePart.split(":");
+  let h = parseInt(hStr, 10) || 0;
+  const m = parseInt(mStr, 10) || 0;
+  if (isPM && h < 12) h += 12;
+  if (isAM && h === 12) h = 0;
+  return h * 60 + m;
+}
+async function ensureWorkerDemoSchedule(workerId) {
+  try {
+    const existing = await db.select().from(workerBusinessSchedules).where(eq9(workerBusinessSchedules.workerId, workerId));
+    if (existing.length === 0) {
+      const demoSlots = [
+        // Monday (1)
+        {
+          id: `sch-${workerId}-mon-1`,
+          workerId,
+          businessId: "biz-salon-01",
+          businessName: "Glow Salon & Hair Studio",
+          dayOfWeek: 1,
+          dayName: "Monday",
+          startTime: "09:00 AM",
+          endTime: "12:00 PM",
+          isAvailable: true,
+          hourlyRate: "85.00",
+          notes: "Morning salon shift: Hair cutting, styling & coloring"
+        },
+        {
+          id: `sch-${workerId}-mon-2`,
+          workerId,
+          businessId: "biz-spa-02",
+          businessName: "Onyx Luxury Spa & Wellness",
+          dayOfWeek: 1,
+          dayName: "Monday",
+          startTime: "02:00 PM",
+          endTime: "06:00 PM",
+          isAvailable: true,
+          hourlyRate: "95.00",
+          notes: "Afternoon spa shift: Wellness treatments & hydrotherapy"
+        },
+        // Tuesday (2)
+        {
+          id: `sch-${workerId}-tue-1`,
+          workerId,
+          businessId: "biz-salon-01",
+          businessName: "Glow Salon & Hair Studio",
+          dayOfWeek: 2,
+          dayName: "Tuesday",
+          startTime: "09:00 AM",
+          endTime: "01:00 PM",
+          isAvailable: true,
+          hourlyRate: "85.00",
+          notes: "Morning shift at Glow Salon"
+        },
+        {
+          id: `sch-${workerId}-tue-2`,
+          workerId,
+          businessId: "biz-spa-02",
+          businessName: "Onyx Luxury Spa & Wellness",
+          dayOfWeek: 2,
+          dayName: "Tuesday",
+          startTime: "03:00 PM",
+          endTime: "07:00 PM",
+          isAvailable: true,
+          hourlyRate: "95.00",
+          notes: "Evening wellness shifts at Onyx Spa"
+        },
+        // Wednesday (3)
+        {
+          id: `sch-${workerId}-wed-1`,
+          workerId,
+          businessId: "biz-salon-01",
+          businessName: "Glow Salon & Hair Studio",
+          dayOfWeek: 3,
+          dayName: "Wednesday",
+          startTime: "10:00 AM",
+          endTime: "02:00 PM",
+          isAvailable: true,
+          hourlyRate: "85.00",
+          notes: "Mid-day salon shift"
+        },
+        {
+          id: `sch-${workerId}-wed-2`,
+          workerId,
+          businessId: "biz-spa-02",
+          businessName: "Onyx Luxury Spa & Wellness",
+          dayOfWeek: 3,
+          dayName: "Wednesday",
+          startTime: "03:00 PM",
+          endTime: "06:00 PM",
+          isAvailable: true,
+          hourlyRate: "95.00",
+          notes: "Spa sauna calibration & specialist service"
+        },
+        // Thursday (4)
+        {
+          id: `sch-${workerId}-thu-1`,
+          workerId,
+          businessId: "biz-salon-01",
+          businessName: "Glow Salon & Hair Studio",
+          dayOfWeek: 4,
+          dayName: "Thursday",
+          startTime: "09:00 AM",
+          endTime: "12:00 PM",
+          isAvailable: true,
+          hourlyRate: "85.00",
+          notes: "Morning salon appointments"
+        },
+        {
+          id: `sch-${workerId}-thu-2`,
+          workerId,
+          businessId: "biz-spa-02",
+          businessName: "Onyx Luxury Spa & Wellness",
+          dayOfWeek: 4,
+          dayName: "Thursday",
+          startTime: "01:00 PM",
+          endTime: "05:00 PM",
+          isAvailable: true,
+          hourlyRate: "95.00",
+          notes: "Afternoon luxury massage & facilities operations"
+        },
+        // Friday (5)
+        {
+          id: `sch-${workerId}-fri-1`,
+          workerId,
+          businessId: "biz-salon-01",
+          businessName: "Glow Salon & Hair Studio",
+          dayOfWeek: 5,
+          dayName: "Friday",
+          startTime: "09:00 AM",
+          endTime: "01:00 PM",
+          isAvailable: true,
+          hourlyRate: "85.00",
+          notes: "Peak Friday salon styling"
+        },
+        {
+          id: `sch-${workerId}-fri-2`,
+          workerId,
+          businessId: "biz-spa-02",
+          businessName: "Onyx Luxury Spa & Wellness",
+          dayOfWeek: 5,
+          dayName: "Friday",
+          startTime: "02:00 PM",
+          endTime: "06:00 PM",
+          isAvailable: true,
+          hourlyRate: "95.00",
+          notes: "Peak Friday spa wellness shifts"
+        },
+        // Saturday (6)
+        {
+          id: `sch-${workerId}-sat-1`,
+          workerId,
+          businessId: "biz-salon-01",
+          businessName: "Glow Salon & Hair Studio",
+          dayOfWeek: 6,
+          dayName: "Saturday",
+          startTime: "10:00 AM",
+          endTime: "04:00 PM",
+          isAvailable: true,
+          hourlyRate: "95.00",
+          notes: "Weekend prime salon specialist hours"
+        }
+      ];
+      await db.insert(workerBusinessSchedules).values(demoSlots);
+    }
+  } catch (err) {
+    console.error("ensureWorkerDemoSchedule error:", err);
+  }
+}
+async function ensureWorkerDemoData(workerId) {
+  try {
+    await ensureWorkerDemoSchedule(workerId);
+    const existingJobs = await db.select().from(workerJobs).where(eq9(workerJobs.workerId, workerId));
+    if (existingJobs.length === 0) {
+      const todayStr = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+      const tomorrow = new Date(Date.now() + 864e5).toISOString().split("T")[0];
+      const yesterday = new Date(Date.now() - 864e5).toISOString().split("T")[0];
+      const twoDaysAgo = new Date(Date.now() - 1728e5).toISOString().split("T")[0];
+      await db.insert(workerJobs).values([
+        {
+          id: `job-wrk-101`,
+          workerId,
+          businessId: "biz-salon-01",
+          businessName: "Glow Salon & Hair Studio",
+          title: "Master Color Correction & Highlights",
+          serviceCategory: "Hair & Styling",
+          customerName: "Sarah Jenkins",
+          customerPhone: "+1 (555) 432-8899",
+          customerEmail: "sarah.j@example.com",
+          location: "742 Evergreen Terrace, Suite 104, New York, NY 10001",
+          scheduledDate: todayStr,
+          scheduledStartTime: "10:00 AM",
+          scheduledEndTime: "12:30 PM",
+          durationMinutes: 150,
+          status: "in_progress",
+          rate: "145.00",
+          tip: "25.00",
+          totalPayout: "170.00",
+          notes: "Customer requested ammonia-free organic toner. Patch test verified.",
+          checkInTime: new Date(Date.now() - 36e5),
+          // 1 hour ago
+          checkInNotes: "Arrived on time. Workstation sanitized and colors formulated."
+        },
+        {
+          id: `job-wrk-102`,
+          workerId,
+          businessId: "biz-salon-01",
+          businessName: "Glow Salon & Hair Studio",
+          title: "Keratin Smoothing Complex Treatment",
+          serviceCategory: "Hair Treatment",
+          customerName: "Elena Rostova",
+          customerPhone: "+1 (555) 901-2244",
+          customerEmail: "elena.r@example.com",
+          location: "742 Evergreen Terrace, Station 3, New York, NY 10001",
+          scheduledDate: todayStr,
+          scheduledStartTime: "02:00 PM",
+          scheduledEndTime: "04:00 PM",
+          durationMinutes: 120,
+          status: "scheduled",
+          rate: "180.00",
+          tip: "0.00",
+          totalPayout: "180.00",
+          notes: "Pre-washed hair. Bring thermal protector serum."
+        },
+        {
+          id: `job-wrk-103`,
+          workerId,
+          businessId: "biz-spa-02",
+          businessName: "Onyx Luxury Spa & Wellness",
+          title: "Full HVAC Air Quality & Filter Replacement",
+          serviceCategory: "Facilities & Maintenance",
+          customerName: "Onyx Operations Dept",
+          customerPhone: "+1 (555) 345-6789",
+          customerEmail: "devon.lane@example.com",
+          location: "88 Hudson Yards, Floor 4, New York, NY 10001",
+          scheduledDate: tomorrow,
+          scheduledStartTime: "09:00 AM",
+          scheduledEndTime: "11:30 AM",
+          durationMinutes: 150,
+          status: "scheduled",
+          rate: "210.00",
+          tip: "0.00",
+          totalPayout: "210.00",
+          notes: "Routine quarterly HEPA filter replacement across 6 treatment suites."
+        },
+        {
+          id: `job-wrk-104`,
+          workerId,
+          businessId: "biz-spa-02",
+          businessName: "Onyx Luxury Spa & Wellness",
+          title: "Hydrotherapy Sauna Calibration & Electrical Check",
+          serviceCategory: "Electrical & Plumbing",
+          customerName: "Marcus Vance",
+          customerPhone: "+1 (555) 678-1122",
+          customerEmail: "marcus.vance@onyxspa.com",
+          location: "88 Hudson Yards, Thermal Suite B, New York, NY 10001",
+          scheduledDate: yesterday,
+          scheduledStartTime: "11:00 AM",
+          scheduledEndTime: "01:00 PM",
+          durationMinutes: 120,
+          status: "completed",
+          rate: "195.00",
+          tip: "30.00",
+          totalPayout: "225.00",
+          notes: "Pressure regulator calibrated. Replaced thermal sensor probe.",
+          checkInTime: new Date(Date.now() - 9e7),
+          checkOutTime: new Date(Date.now() - 828e5),
+          customerSignOffName: "Marcus Vance",
+          signature: "M. Vance (Verified Facilities Director)",
+          rating: 5,
+          feedback: "Outstanding technical precision. Sauna operating at peak efficiency."
+        },
+        {
+          id: `job-wrk-105`,
+          workerId,
+          businessId: "biz-salon-01",
+          businessName: "Glow Salon & Hair Studio",
+          title: "Emergency Drainage Clear & Fixture Repair",
+          serviceCategory: "Plumbing & Emergency",
+          customerName: "Alex Vance",
+          customerPhone: "+1 (555) 234-5678",
+          customerEmail: "alex.vance@uspot.com",
+          location: "742 Evergreen Terrace, Wash Station 1-4, New York, NY 10001",
+          scheduledDate: twoDaysAgo,
+          scheduledStartTime: "08:30 AM",
+          scheduledEndTime: "10:30 AM",
+          durationMinutes: 120,
+          status: "completed",
+          rate: "160.00",
+          tip: "20.00",
+          totalPayout: "180.00",
+          notes: "Cleared main trap blockage. Restored full water flow.",
+          checkInTime: new Date(Date.now() - 1764e5),
+          checkOutTime: new Date(Date.now() - 1692e5),
+          customerSignOffName: "Alex Vance",
+          signature: "Alex Vance (Store Owner)",
+          rating: 5,
+          feedback: "Rescued our morning appointments! Quick response time."
+        }
+      ]);
+      await db.insert(workerContracts).values([
+        {
+          id: `ctr-wrk-201`,
+          workerId,
+          businessId: "biz-salon-01",
+          businessName: "Glow Salon & Hair Studio",
+          title: "Master Stylist & Facilities Specialist On-Demand Agreement",
+          contractType: "independent_contractor",
+          status: "active",
+          hourlyRate: "85.00",
+          commissionPercentage: "75.00",
+          startDate: "2026-01-15",
+          endDate: "2026-12-31",
+          terms: "Contractor agrees to provide specialized cosmetic, electrical, and facility services for Glow Salon & Hair Studio. Payment is disbursed via UrSpot Direct Deposit bi-weekly.",
+          signedAt: /* @__PURE__ */ new Date("2026-01-15T14:30:00Z"),
+          signature: "Morgan Blake (Authorized Contractor)"
+        },
+        {
+          id: `ctr-wrk-202`,
+          workerId,
+          businessId: "biz-spa-02",
+          businessName: "Onyx Luxury Spa & Wellness",
+          title: "Senior Technical Infrastructure & Specialist Service Retainer",
+          contractType: "master_service_agreement",
+          status: "active",
+          hourlyRate: "95.00",
+          commissionPercentage: "80.00",
+          startDate: "2026-03-01",
+          endDate: "2027-02-28",
+          terms: "Dedicated high-tier infrastructure maintenance and certified specialist operations for wellness facilities. Guaranteed minimum 10 hours monthly allocation.",
+          signedAt: /* @__PURE__ */ new Date("2026-03-01T09:00:00Z"),
+          signature: "Morgan Blake (Authorized Specialist)"
+        }
+      ]);
+      await db.insert(workerTransactions).values([
+        {
+          id: `tx-wrk-301`,
+          workerId,
+          jobId: "job-wrk-104",
+          type: "job_payout",
+          amount: "225.00",
+          status: "completed",
+          description: "Payout for Hydrotherapy Sauna Calibration & Electrical Check",
+          referenceNumber: "WRK-PAY-882194",
+          payoutMethod: "Direct Deposit (ACH)",
+          date: yesterday
+        },
+        {
+          id: `tx-wrk-302`,
+          workerId,
+          jobId: "job-wrk-105",
+          type: "job_payout",
+          amount: "180.00",
+          status: "completed",
+          description: "Payout for Emergency Drainage Clear & Fixture Repair",
+          referenceNumber: "WRK-PAY-881903",
+          payoutMethod: "Direct Deposit (ACH)",
+          date: twoDaysAgo
+        },
+        {
+          id: `tx-wrk-303`,
+          workerId,
+          type: "bonus",
+          amount: "75.00",
+          status: "completed",
+          description: "Monthly 5-Star Customer Satisfaction Rating Bonus",
+          referenceNumber: "WRK-BONUS-99120",
+          payoutMethod: "UrSpot Platform Bonus",
+          date: "2026-09-15"
+        },
+        {
+          id: `tx-wrk-304`,
+          workerId,
+          type: "direct_deposit",
+          amount: "680.00",
+          status: "completed",
+          description: "Bi-Weekly Direct Deposit Payout to Chase Premier Business (\u2022\u2022\u2022\u2022 7712)",
+          referenceNumber: "ACH-TRANSFER-449102",
+          payoutMethod: "Chase Premier Business (\u2022\u2022\u2022\u2022 7712)",
+          date: "2026-09-10"
+        }
+      ]);
+    }
+  } catch (err) {
+    console.error("ensureWorkerDemoData error:", err);
+  }
+}
+router9.post("/login", async (req, res) => {
+  try {
+    const { identifier, email, username, password } = req.body;
+    const term = (identifier || email || username || "").trim().toLowerCase();
+    const allUsers = await db.select().from(users);
+    let worker = allUsers.find(
+      (u) => (u.role === "worker" || u.role === "specialist") && (u.email?.toLowerCase() === term || u.username?.toLowerCase() === term || u.id.toLowerCase() === term)
+    );
+    if (!worker) {
+      worker = allUsers.find((u) => u.role === "worker" || u.role === "specialist");
+    }
+    if (!worker) {
+      return res.status(404).json({ error: "Worker account not found." });
+    }
+    await ensureWorkerDemoData(worker.id);
+    res.json({
+      success: true,
+      worker: {
+        ...worker,
+        role: "worker",
+        roleLabel: "Worker"
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+router9.post("/onboarding", async (req, res) => {
+  try {
+    const {
+      fullName,
+      email,
+      phone,
+      primaryServiceCategory,
+      yearsOfExperience,
+      hourlyRate,
+      payoutBankName,
+      payoutRoutingNumber,
+      payoutAccountNumber,
+      skills
+    } = req.body;
+    if (!email || !fullName) {
+      return res.status(400).json({ error: "Email and Full Name are required." });
+    }
+    const trimmedEmail = email.trim().toLowerCase();
+    const existing = await db.select().from(users).where(eq9(users.email, trimmedEmail));
+    const maskedAccount = payoutAccountNumber ? `\u2022\u2022\u2022\u2022 ${payoutAccountNumber.slice(-4)}` : "\u2022\u2022\u2022\u2022 7712";
+    let workerId = `user-worker-${Date.now()}`;
+    let savedWorker;
+    if (existing.length > 0) {
+      workerId = existing[0].id;
+      const [updated] = await db.update(users).set({
+        fullName,
+        phone: phone || existing[0].phone,
+        role: "worker",
+        roleLabel: "Worker",
+        primaryServiceCategory: primaryServiceCategory || existing[0].primaryServiceCategory,
+        yearsOfExperience: yearsOfExperience ? String(yearsOfExperience) : existing[0].yearsOfExperience,
+        updatedAt: /* @__PURE__ */ new Date()
+      }).where(eq9(users.id, workerId)).returning();
+      savedWorker = updated;
+    } else {
+      const initials = fullName.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
+      const [created] = await db.insert(users).values({
+        id: workerId,
+        role: "worker",
+        roleLabel: "Worker",
+        status: "active",
+        email: trimmedEmail,
+        username: trimmedEmail.split("@")[0],
+        fullName,
+        phone: phone || "+1 (555) 000-0000",
+        avatarInitials: initials,
+        referralCode: `WRK-${Math.floor(1e3 + Math.random() * 9e3)}`,
+        emailVerified: true,
+        phoneVerified: true,
+        department: "Field Operations & Service Specialist",
+        primaryServiceCategory: primaryServiceCategory || "General Maintenance & Services",
+        yearsOfExperience: yearsOfExperience ? String(yearsOfExperience) : "5",
+        memberSince: (/* @__PURE__ */ new Date()).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+      }).returning();
+      savedWorker = created;
+    }
+    await ensureWorkerDemoData(workerId);
+    res.json({
+      success: true,
+      worker: {
+        ...savedWorker,
+        hourlyRate: hourlyRate || 85,
+        rating: 4.95,
+        payoutBankName: payoutBankName || "Chase Bank",
+        payoutAccountMasked: maskedAccount,
+        payoutRoutingNumber: payoutRoutingNumber || "021000021",
+        skills: skills || ["Certified Specialist", "Safety Verified"]
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+router9.get("/businesses/:businessId/available-workers", async (req, res) => {
+  try {
+    const { businessId } = req.params;
+    const { date: date2, time: time2, startTime, endTime, timeSlot } = req.query;
+    const allBusinesses = await db.select().from(businesses);
+    const matchedBiz = allBusinesses.find(
+      (b) => b.id === businessId || b.id === "biz-001" && businessId === "biz-salon-01" || b.id === "biz-salon-01" && businessId === "biz-001" || b.id === "biz-002" && businessId === "biz-spa-02" || b.id === "biz-spa-02" && businessId === "biz-002" || b.businessName.toLowerCase() === businessId.toLowerCase()
+    );
+    const targetBizId = matchedBiz?.id || businessId;
+    const targetBizName = matchedBiz?.businessName || (businessId.includes("spa") ? "Onyx Luxury Spa & Wellness" : "Glow Salon & Hair Studio");
+    const targetDateStr = date2 ? String(date2).split("T")[0] : (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+    const dateObj = /* @__PURE__ */ new Date(targetDateStr + "T12:00:00Z");
+    const dayOfWeek = isNaN(dateObj.getDay()) ? (/* @__PURE__ */ new Date()).getDay() : dateObj.getDay();
+    const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    const targetDayName = DAY_NAMES[dayOfWeek];
+    let reqStartMinutes = 9 * 60;
+    let reqEndMinutes = 12 * 60;
+    if (startTime && endTime) {
+      reqStartMinutes = parseTimeToMinutes(String(startTime));
+      reqEndMinutes = parseTimeToMinutes(String(endTime));
+    } else if (timeSlot && String(timeSlot).includes("-")) {
+      const [s, e] = String(timeSlot).split("-");
+      reqStartMinutes = parseTimeToMinutes(s.trim());
+      reqEndMinutes = parseTimeToMinutes(e.trim());
+    } else if (time2) {
+      reqStartMinutes = parseTimeToMinutes(String(time2));
+      reqEndMinutes = reqStartMinutes + 60;
+    }
+    const allUsers = await db.select().from(users);
+    const workerUsers = allUsers.filter((u) => u.role === "worker" || u.role === "specialist");
+    const allContracts = await db.select().from(workerContracts);
+    const results = [];
+    for (const worker of workerUsers) {
+      await ensureWorkerDemoData(worker.id);
+      await ensureWorkerDemoSchedule(worker.id);
+      const workerContract = allContracts.find(
+        (c) => c.workerId === worker.id && (c.businessId === targetBizId || c.businessId === businessId || c.businessName.toLowerCase() === targetBizName.toLowerCase() || targetBizId.includes("salon") && c.businessName.toLowerCase().includes("salon") || targetBizId.includes("spa") && c.businessName.toLowerCase().includes("spa"))
+      ) || {
+        id: `ctr-${worker.id}-default`,
+        workerId: worker.id,
+        businessId: targetBizId,
+        businessName: targetBizName,
+        title: "Master Specialist & Certified Operator",
+        hourlyRate: "85.00",
+        status: "active",
+        contractType: "independent_contractor"
+      };
+      const daySchedules = await db.select().from(workerBusinessSchedules).where(
+        and2(
+          eq9(workerBusinessSchedules.workerId, worker.id),
+          eq9(workerBusinessSchedules.dayOfWeek, dayOfWeek),
+          eq9(workerBusinessSchedules.isAvailable, true)
+        )
+      );
+      const dayJobs = await db.select().from(workerJobs).where(
+        and2(
+          eq9(workerJobs.workerId, worker.id),
+          eq9(workerJobs.scheduledDate, targetDateStr)
+        )
+      );
+      const thisBizSlot = daySchedules.find((slot) => {
+        const isSameBiz = slot.businessId === targetBizId || slot.businessId === businessId || slot.businessName.toLowerCase() === targetBizName.toLowerCase() || targetBizId.includes("salon") && slot.businessName.toLowerCase().includes("salon") || targetBizId.includes("spa") && slot.businessName.toLowerCase().includes("spa");
+        if (!isSameBiz) return false;
+        const slotStart = parseTimeToMinutes(slot.startTime);
+        const slotEnd = parseTimeToMinutes(slot.endTime);
+        return Math.max(slotStart, reqStartMinutes) < Math.min(slotEnd, reqEndMinutes);
+      });
+      const otherBizSlot = daySchedules.find((slot) => {
+        const isSameBiz = slot.businessId === targetBizId || slot.businessId === businessId || slot.businessName.toLowerCase() === targetBizName.toLowerCase() || targetBizId.includes("salon") && slot.businessName.toLowerCase().includes("salon") || targetBizId.includes("spa") && slot.businessName.toLowerCase().includes("spa");
+        if (isSameBiz) return false;
+        const slotStart = parseTimeToMinutes(slot.startTime);
+        const slotEnd = parseTimeToMinutes(slot.endTime);
+        return Math.max(slotStart, reqStartMinutes) < Math.min(slotEnd, reqEndMinutes);
+      });
+      const conflictingJob = dayJobs.find((j) => {
+        if (j.status === "cancelled") return false;
+        const jobStart = parseTimeToMinutes(j.scheduledStartTime);
+        const jobEnd = parseTimeToMinutes(j.scheduledEndTime);
+        return Math.max(jobStart, reqStartMinutes) < Math.min(jobEnd, reqEndMinutes);
+      });
+      let availabilityStatus = "off_duty";
+      let availabilityMessage = `Off-duty / Not scheduled on ${targetDayName}.`;
+      if (thisBizSlot) {
+        if (conflictingJob) {
+          availabilityStatus = "busy_job";
+          availabilityMessage = `Scheduled for ${targetBizName} but has an active job (${conflictingJob.title}) from ${conflictingJob.scheduledStartTime} to ${conflictingJob.scheduledEndTime}.`;
+        } else {
+          availabilityStatus = "available";
+          availabilityMessage = `Available on ${targetDayName} (${thisBizSlot.startTime} - ${thisBizSlot.endTime}) for ${targetBizName}.`;
+        }
+      } else if (otherBizSlot) {
+        availabilityStatus = "busy_other_business";
+        availabilityMessage = `Working at ${otherBizSlot.businessName} (${otherBizSlot.startTime} - ${otherBizSlot.endTime}) on ${targetDayName}.`;
+      } else if (daySchedules.length > 0) {
+        const scheduleTimes = daySchedules.map((s) => `${s.businessName}: ${s.startTime}-${s.endTime}`).join("; ");
+        availabilityStatus = "off_duty";
+        availabilityMessage = `Shift hours on ${targetDayName} do not match requested time. Scheduled: ${scheduleTimes}.`;
+      }
+      results.push({
+        worker: {
+          id: worker.id,
+          fullName: worker.fullName,
+          email: worker.email,
+          phone: worker.phone,
+          avatar: worker.avatar || worker.avatarUrl || worker.avatarInitials,
+          role: "worker"
+        },
+        contract: workerContract,
+        availabilityStatus,
+        availabilityMessage,
+        matchedScheduleSlot: thisBizSlot || null,
+        conflictingBusinessName: otherBizSlot ? otherBizSlot.businessName : void 0,
+        conflictingJob: conflictingJob || null,
+        assignedJobsCountToday: dayJobs.length,
+        daySchedules
+      });
+    }
+    res.json({
+      success: true,
+      businessId: targetBizId,
+      businessName: targetBizName,
+      date: targetDateStr,
+      dayName: targetDayName,
+      dayOfWeek,
+      requestedTimeWindow: {
+        startTime: startTime || (timeSlot ? String(timeSlot).split("-")[0].trim() : "09:00 AM"),
+        endTime: endTime || (timeSlot ? String(timeSlot).split("-")[1].trim() : "12:00 PM")
+      },
+      availableCount: results.filter((r) => r.availabilityStatus === "available").length,
+      workers: results
+    });
+  } catch (err) {
+    console.error("getAvailableWorkers error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+router9.post("/businesses/:businessId/assign-job", async (req, res) => {
+  try {
+    const { businessId } = req.params;
+    const {
+      workerId,
+      bookingId,
+      title,
+      serviceCategory,
+      customerName,
+      customerPhone,
+      customerEmail,
+      location,
+      scheduledDate,
+      scheduledStartTime,
+      scheduledEndTime,
+      durationMinutes,
+      rate,
+      notes
+    } = req.body;
+    if (!workerId || !title || !customerName || !scheduledDate) {
+      return res.status(400).json({ error: "Missing required assignment fields." });
+    }
+    const allBusinesses = await db.select().from(businesses);
+    const matchedBiz = allBusinesses.find((b) => b.id === businessId);
+    const bizName = matchedBiz?.businessName || (businessId.includes("spa") ? "Onyx Luxury Spa & Wellness" : "Glow Salon & Hair Studio");
+    const jobId = `job-wrk-${Date.now()}`;
+    const newRate = rate ? String(rate) : "85.00";
+    const [newJob] = await db.insert(workerJobs).values({
+      id: jobId,
+      workerId,
+      bookingId: bookingId || null,
+      businessId,
+      businessName: bizName,
+      title,
+      serviceCategory: serviceCategory || "On-Site Specialist Service",
+      customerName,
+      customerPhone: customerPhone || "+1 (555) 000-0000",
+      customerEmail: customerEmail || "customer@uspot.com",
+      location: location || "Client Location",
+      scheduledDate,
+      scheduledStartTime: scheduledStartTime || "10:00 AM",
+      scheduledEndTime: scheduledEndTime || "11:30 AM",
+      durationMinutes: Number(durationMinutes) || 90,
+      status: "scheduled",
+      rate: newRate,
+      tip: "0.00",
+      totalPayout: newRate,
+      notes: notes || "Assigned via Business Portal Availability Dispatcher"
+    }).returning();
+    res.json({
+      success: true,
+      job: newJob,
+      message: `Job #${newJob.id} successfully assigned to worker!`
+    });
+  } catch (err) {
+    console.error("assign-job error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+router9.get("/:workerId/dashboard", async (req, res) => {
+  try {
+    const { workerId } = req.params;
+    await ensureWorkerDemoData(workerId);
+    const jobs = await db.select().from(workerJobs).where(eq9(workerJobs.workerId, workerId));
+    const transactions = await db.select().from(workerTransactions).where(eq9(workerTransactions.workerId, workerId));
+    const todayStr = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+    const todayJobs = jobs.filter((j) => j.scheduledDate === todayStr);
+    const activeJobs = jobs.filter((j) => j.status === "in_progress");
+    const scheduledJobs = jobs.filter((j) => j.status === "scheduled");
+    const completedJobs = jobs.filter((j) => j.status === "completed");
+    let totalEarnings = 0;
+    let totalTips = 0;
+    let pendingPayouts = 0;
+    for (const tx of transactions) {
+      const amt = parseFloat(tx.amount) || 0;
+      if (tx.type === "job_payout" || tx.type === "bonus" || tx.type === "tip") {
+        totalEarnings += amt;
+      }
+      if (tx.type === "tip") {
+        totalTips += amt;
+      }
+      if (tx.status === "pending" || tx.status === "processing") {
+        pendingPayouts += amt;
+      }
+    }
+    const completedJobSum = completedJobs.reduce((acc, j) => acc + (parseFloat(j.totalPayout) || 0), 0);
+    const availableBalance = Math.max(0, completedJobSum - 300);
+    const totalHoursLogged = jobs.reduce((acc, j) => {
+      if (j.status === "completed" || j.status === "in_progress") {
+        return acc + (j.durationMinutes || 60) / 60;
+      }
+      return acc;
+    }, 0);
+    const averageJobPayout = completedJobs.length > 0 ? totalEarnings / completedJobs.length : 165;
+    const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    const weeklyEarnings = days.map((day, idx) => ({
+      day,
+      amount: [180, 225, 170, 210, 195, 0, 0][idx] || 0,
+      jobs: [1, 1, 1, 1, 1, 0, 0][idx] || 0
+    }));
+    const stats = {
+      todayJobsCount: todayJobs.length,
+      activeJobsCount: activeJobs.length,
+      scheduledJobsCount: scheduledJobs.length,
+      completedJobsCount: completedJobs.length,
+      totalHoursLogged: Math.round(totalHoursLogged * 10) / 10,
+      rating: 4.95,
+      totalEarnings,
+      availableBalance: availableBalance || 375,
+      pendingPayouts: pendingPayouts || 170,
+      averageJobPayout: Math.round(averageJobPayout * 100) / 100,
+      totalTips: totalTips || 75,
+      weeklyEarnings
+    };
+    const activeJob = activeJobs[0] || null;
+    const nextJob = scheduledJobs[0] || null;
+    res.json({
+      stats,
+      activeJob,
+      nextJob,
+      todayJobs,
+      recentJobs: jobs.slice(0, 5)
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+router9.get("/:workerId/jobs", async (req, res) => {
+  try {
+    const { workerId } = req.params;
+    const { status, search } = req.query;
+    await ensureWorkerDemoData(workerId);
+    let allJobs = await db.select().from(workerJobs).where(eq9(workerJobs.workerId, workerId)).orderBy(desc4(workerJobs.scheduledDate));
+    if (status && status !== "all") {
+      allJobs = allJobs.filter((j) => j.status === status);
+    }
+    if (search && typeof search === "string") {
+      const q = search.toLowerCase();
+      allJobs = allJobs.filter(
+        (j) => j.title.toLowerCase().includes(q) || j.customerName.toLowerCase().includes(q) || j.businessName.toLowerCase().includes(q) || j.location.toLowerCase().includes(q)
+      );
+    }
+    res.json(allJobs);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+router9.get("/:workerId/jobs/:jobId", async (req, res) => {
+  try {
+    const { workerId, jobId } = req.params;
+    const [job] = await db.select().from(workerJobs).where(and2(eq9(workerJobs.workerId, workerId), eq9(workerJobs.id, jobId)));
+    if (!job) {
+      return res.status(404).json({ error: "Job not found" });
+    }
+    res.json(job);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+router9.patch("/:workerId/jobs/:jobId/check-in", async (req, res) => {
+  try {
+    const { workerId, jobId } = req.params;
+    const { checkInNotes, checkInPhotos } = req.body;
+    const [updated] = await db.update(workerJobs).set({
+      status: "in_progress",
+      checkInTime: /* @__PURE__ */ new Date(),
+      checkInNotes: checkInNotes || "Worker arrived on site and verified arrival.",
+      checkInPhotos: checkInPhotos || [],
+      updatedAt: /* @__PURE__ */ new Date()
+    }).where(and2(eq9(workerJobs.workerId, workerId), eq9(workerJobs.id, jobId))).returning();
+    if (!updated) {
+      return res.status(404).json({ error: "Job not found" });
+    }
+    res.json({ success: true, job: updated });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+router9.patch("/:workerId/jobs/:jobId/check-out", async (req, res) => {
+  try {
+    const { workerId, jobId } = req.params;
+    const {
+      checkOutNotes,
+      customerSignOffName,
+      signature,
+      tip = 0,
+      rating = 5,
+      feedback
+    } = req.body;
+    const [existing] = await db.select().from(workerJobs).where(and2(eq9(workerJobs.workerId, workerId), eq9(workerJobs.id, jobId)));
+    if (!existing) {
+      return res.status(404).json({ error: "Job not found" });
+    }
+    const rateNum = parseFloat(existing.rate) || 0;
+    const tipNum = parseFloat(tip) || 0;
+    const totalPayoutNum = rateNum + tipNum;
+    const [updated] = await db.update(workerJobs).set({
+      status: "completed",
+      checkOutTime: /* @__PURE__ */ new Date(),
+      checkOutNotes: checkOutNotes || "Job completed to high quality standard.",
+      customerSignOffName: customerSignOffName || existing.customerName,
+      signature: signature || `${customerSignOffName || existing.customerName} (Verified Sign-Off)`,
+      tip: tipNum.toFixed(2),
+      totalPayout: totalPayoutNum.toFixed(2),
+      rating: rating || 5,
+      feedback: feedback || "Great service and prompt arrival.",
+      updatedAt: /* @__PURE__ */ new Date()
+    }).where(and2(eq9(workerJobs.workerId, workerId), eq9(workerJobs.id, jobId))).returning();
+    const txId = `tx-wrk-${Date.now()}`;
+    await db.insert(workerTransactions).values({
+      id: txId,
+      workerId,
+      jobId,
+      type: "job_payout",
+      amount: totalPayoutNum.toFixed(2),
+      status: "completed",
+      description: `Job payout for ${existing.title}`,
+      referenceNumber: `WRK-PAY-${Math.floor(1e5 + Math.random() * 9e5)}`,
+      payoutMethod: "Direct Deposit (ACH)",
+      date: (/* @__PURE__ */ new Date()).toISOString().split("T")[0]
+    });
+    res.json({ success: true, job: updated });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+router9.get("/:workerId/calendar", async (req, res) => {
+  try {
+    const { workerId } = req.params;
+    await ensureWorkerDemoData(workerId);
+    const jobs = await db.select().from(workerJobs).where(eq9(workerJobs.workerId, workerId));
+    res.json(jobs);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+router9.get("/:workerId/contracts", async (req, res) => {
+  try {
+    const { workerId } = req.params;
+    await ensureWorkerDemoData(workerId);
+    const contracts = await db.select().from(workerContracts).where(eq9(workerContracts.workerId, workerId));
+    res.json(contracts);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+router9.get("/:workerId/contracts/:contractId", async (req, res) => {
+  try {
+    const { workerId, contractId } = req.params;
+    const [contract] = await db.select().from(workerContracts).where(and2(eq9(workerContracts.workerId, workerId), eq9(workerContracts.id, contractId)));
+    if (!contract) {
+      return res.status(404).json({ error: "Contract not found" });
+    }
+    res.json(contract);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+router9.post("/:workerId/contracts/:contractId/sign", async (req, res) => {
+  try {
+    const { workerId, contractId } = req.params;
+    const { signature } = req.body;
+    const [updated] = await db.update(workerContracts).set({
+      status: "active",
+      signedAt: /* @__PURE__ */ new Date(),
+      signature: signature || "Signed Digitally",
+      updatedAt: /* @__PURE__ */ new Date()
+    }).where(and2(eq9(workerContracts.workerId, workerId), eq9(workerContracts.id, contractId))).returning();
+    res.json({ success: true, contract: updated });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+router9.get("/:workerId/earnings", async (req, res) => {
+  try {
+    const { workerId } = req.params;
+    await ensureWorkerDemoData(workerId);
+    const jobs = await db.select().from(workerJobs).where(eq9(workerJobs.workerId, workerId));
+    const transactions = await db.select().from(workerTransactions).where(eq9(workerTransactions.workerId, workerId)).orderBy(desc4(workerTransactions.createdAt));
+    let gross = 0;
+    let tips = 0;
+    for (const tx of transactions) {
+      const amt = parseFloat(tx.amount) || 0;
+      if (tx.type === "job_payout" || tx.type === "bonus" || tx.type === "tip") {
+        gross += amt;
+      }
+      if (tx.type === "tip") {
+        tips += amt;
+      }
+    }
+    const completed = jobs.filter((j) => j.status === "completed");
+    const totalHours = jobs.reduce((acc, j) => {
+      if (j.status === "completed" || j.status === "in_progress") {
+        return acc + (j.durationMinutes || 60) / 60;
+      }
+      return acc;
+    }, 0);
+    res.json({
+      totalEarnings: gross || 655,
+      availableBalance: 375,
+      averageJobPayout: completed.length ? Math.round(gross / completed.length * 100) / 100 : 165,
+      totalTips: tips || 75,
+      totalHoursWorked: Math.round(totalHours * 10) / 10,
+      recentPayouts: transactions.slice(0, 5)
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+router9.get("/:workerId/transactions", async (req, res) => {
+  try {
+    const { workerId } = req.params;
+    await ensureWorkerDemoData(workerId);
+    const transactions = await db.select().from(workerTransactions).where(eq9(workerTransactions.workerId, workerId)).orderBy(desc4(workerTransactions.createdAt));
+    res.json(transactions);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+router9.post("/:workerId/payout", async (req, res) => {
+  try {
+    const { workerId } = req.params;
+    const { amount, bankName, accountMasked } = req.body;
+    const txId = `tx-wrk-${Date.now()}`;
+    const [tx] = await db.insert(workerTransactions).values({
+      id: txId,
+      workerId,
+      type: "direct_deposit",
+      amount: parseFloat(amount || 300).toFixed(2),
+      status: "completed",
+      description: `Direct Deposit transfer to ${bankName || "Chase"} (${accountMasked || "\u2022\u2022\u2022\u2022 7712"})`,
+      referenceNumber: `ACH-${Math.floor(1e5 + Math.random() * 9e5)}`,
+      payoutMethod: `${bankName || "Bank Account"} (${accountMasked || "\u2022\u2022\u2022\u2022 7712"})`,
+      date: (/* @__PURE__ */ new Date()).toISOString().split("T")[0]
+    }).returning();
+    res.json({ success: true, transaction: tx });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+router9.get("/:workerId/schedule", async (req, res) => {
+  try {
+    const { workerId } = req.params;
+    await ensureWorkerDemoSchedule(workerId);
+    const schedules = await db.select().from(workerBusinessSchedules).where(eq9(workerBusinessSchedules.workerId, workerId)).orderBy(workerBusinessSchedules.dayOfWeek, workerBusinessSchedules.startTime);
+    res.json(schedules);
+  } catch (err) {
+    console.error("get schedule error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+router9.put("/:workerId/schedule", async (req, res) => {
+  try {
+    const { workerId } = req.params;
+    const { slots } = req.body;
+    if (!Array.isArray(slots)) {
+      return res.status(400).json({ error: "Slots array is required" });
+    }
+    await db.delete(workerBusinessSchedules).where(eq9(workerBusinessSchedules.workerId, workerId));
+    if (slots.length > 0) {
+      const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+      const valuesToInsert = slots.map((s, idx) => ({
+        id: s.id || `sch-${workerId}-${s.dayOfWeek || 0}-${Date.now()}-${idx}`,
+        workerId,
+        businessId: s.businessId,
+        businessName: s.businessName || "Business Partner",
+        dayOfWeek: Number(s.dayOfWeek) ?? 0,
+        dayName: s.dayName || DAY_NAMES[Number(s.dayOfWeek) || 0],
+        startTime: s.startTime || "09:00 AM",
+        endTime: s.endTime || "12:00 PM",
+        isAvailable: s.isAvailable !== false,
+        hourlyRate: s.hourlyRate ? String(s.hourlyRate) : "85.00",
+        notes: s.notes || null,
+        updatedAt: /* @__PURE__ */ new Date()
+      }));
+      await db.insert(workerBusinessSchedules).values(valuesToInsert);
+    }
+    const updated = await db.select().from(workerBusinessSchedules).where(eq9(workerBusinessSchedules.workerId, workerId)).orderBy(workerBusinessSchedules.dayOfWeek, workerBusinessSchedules.startTime);
+    res.json({ success: true, count: updated.length, schedule: updated });
+  } catch (err) {
+    console.error("update schedule error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+var worker_default = router9;
+
 // server/app.ts
 dotenv2.config();
 var app = express();
@@ -1682,11 +2844,12 @@ var routeMounts = [
   { prefix: "/customer/cards", router: cards_default },
   { prefix: "/bookings", router: bookings_default },
   { prefix: "/reviews", router: reviews_default },
-  { prefix: "/ledger", router: ledger_default }
+  { prefix: "/ledger", router: ledger_default },
+  { prefix: "/worker", router: worker_default }
 ];
-for (const { prefix, router: router9 } of routeMounts) {
-  app.use(`/api${prefix}`, router9);
-  app.use(prefix, router9);
+for (const { prefix, router: router10 } of routeMounts) {
+  app.use(`/api${prefix}`, router10);
+  app.use(prefix, router10);
 }
 app.use((err, req, res, next) => {
   console.error("API Error:", err);

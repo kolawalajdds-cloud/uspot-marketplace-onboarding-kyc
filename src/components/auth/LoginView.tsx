@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useDemo } from '../../context/DemoContext';
 import { UserProfile, NmiPaymentAccountData } from '../../types';
+import { getSeedUsers } from '../../data/seedUsers';
 import {
   Shield,
   Building2,
@@ -15,6 +16,7 @@ import {
   UserPlus,
   LogIn,
   AlertCircle,
+  Wrench,
 } from 'lucide-react';
 import { RegisterWizard } from './RegisterWizard';
 
@@ -24,11 +26,22 @@ interface LoginViewProps {
 }
 
 export const LoginView: React.FC<LoginViewProps> = ({ isModal = false, onClose }) => {
-  const { state, users, loginAsUser, currentUser, saveVendorBusiness, createUser, selectBusinessForVendor } = useDemo();
+  const {
+    state,
+    users,
+    loginAsUser,
+    currentUser,
+  } = useDemo();
+
+  // Use static preset accounts for quick access tiles (zero DB queries on page load)
+  const demoAccounts = React.useMemo(() => getSeedUsers(), []);
+  const accountsToDisplay = users.length > 0 ? users : demoAccounts;
+  const initialUser = accountsToDisplay[0];
+
   const [authMode, setAuthMode] = useState<'signin' | 'register'>('signin');
-  const [selectedUserId, setSelectedUserId] = useState<string>(currentUser?.id || users[0]?.id || 'user-customer');
-  const [selectedRole, setSelectedRole] = useState<string>(currentUser?.role || users[0]?.role || 'customer');
-  const [customEmail, setCustomEmail] = useState<string>(currentUser?.email || users[0]?.email || 'customer@uspot.com');
+  const [selectedUserId, setSelectedUserId] = useState<string>(currentUser?.id || initialUser?.id || '');
+  const [selectedRole, setSelectedRole] = useState<string>(currentUser?.role || initialUser?.role || 'business');
+  const [customEmail, setCustomEmail] = useState<string>(currentUser?.email || initialUser?.email || '');
   const [password, setPassword] = useState<string>('••••••••••••');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -46,11 +59,17 @@ export const LoginView: React.FC<LoginViewProps> = ({ isModal = false, onClose }
       color: 'from-blue-900 to-slate-900 border-blue-500/30 text-blue-400',
       badgeColor: 'bg-blue-900/80 text-blue-200 border-blue-700/50',
     },
+    worker: {
+      desc: 'Field worker & certified technician for assigned shifts, check-ins, earnings, and contracts.',
+      icon: Wrench,
+      color: 'from-blue-950 to-slate-900 border-blue-500/30 text-blue-400',
+      badgeColor: 'bg-blue-900/80 text-blue-200 border-blue-700/50',
+    },
     specialist: {
-      desc: 'Compliance & operations staff for reviewing documents, entity registry, and risk tiers.',
-      icon: Search,
-      color: 'from-amber-950 to-slate-900 border-amber-500/30 text-amber-400',
-      badgeColor: 'bg-amber-900/80 text-amber-200 border-amber-700/50',
+      desc: 'Field worker & certified technician for assigned shifts, check-ins, earnings, and contracts.',
+      icon: Wrench,
+      color: 'from-blue-950 to-slate-900 border-blue-500/30 text-blue-400',
+      badgeColor: 'bg-blue-900/80 text-blue-200 border-blue-700/50',
     },
     super_admin: {
       desc: 'Platform governance, KYC compliance review queue, profile details, and merchant approvals.',
@@ -72,10 +91,13 @@ export const LoginView: React.FC<LoginViewProps> = ({ isModal = false, onClose }
     setIsSubmitting(true);
     setErrorMessage(null);
     try {
-      const result = await loginAsUser(user.id);
+      const result = await loginAsUser(user.email || user.id, password);
       if (result && !result.success) {
         setErrorMessage(result.error || 'Failed to authenticate user.');
       } else {
+        if (user.role === 'worker' || user.role === 'specialist') {
+          window.history.pushState(null, '', '/worker/dashboard');
+        }
         if (onClose) onClose();
       }
     } catch (err: any) {
@@ -94,6 +116,9 @@ export const LoginView: React.FC<LoginViewProps> = ({ isModal = false, onClose }
       if (result && !result.success) {
         setErrorMessage(result.error || 'Invalid credentials or user not found.');
       } else {
+        if (result?.user && (result.user.role === 'worker' || result.user.role === 'specialist')) {
+          window.history.pushState(null, '', '/worker/dashboard');
+        }
         if (onClose) onClose();
       }
     } catch (err: any) {
@@ -253,7 +278,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ isModal = false, onClose }
               </form>
             </div>
 
-            {/* Quick Access Accounts (Dynamically loaded from Database) */}
+            {/* Quick Access Accounts (Presets for testing and evaluation) */}
             <div>
               <div className="flex items-center justify-between mb-3 px-1">
                 <div>
@@ -265,12 +290,12 @@ export const LoginView: React.FC<LoginViewProps> = ({ isModal = false, onClose }
                   </p>
                 </div>
                 <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
-                  {users.length} Active {users.length === 1 ? 'Account' : 'Accounts'}
+                  {accountsToDisplay.length} Active {accountsToDisplay.length === 1 ? 'Account' : 'Accounts'}
                 </span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5">
-                {users.map((user) => {
+                {accountsToDisplay.map((user) => {
                   const meta = roleDescriptions[user.role] || roleDescriptions.customer;
                   const isCurrent = currentUser?.id === user.id;
                   const isSelected = selectedUserId === user.id;
@@ -280,6 +305,9 @@ export const LoginView: React.FC<LoginViewProps> = ({ isModal = false, onClose }
                       (b.userId && b.userId === user.id) ||
                       (b.email && user.email && b.email.toLowerCase() === user.email.toLowerCase())
                   );
+                  const businessName =
+                    userBiz?.coreDetails?.businessName ||
+                    (user.role === 'business' || user.department ? user.department : null);
 
                   return (
                     <div
@@ -335,12 +363,12 @@ export const LoginView: React.FC<LoginViewProps> = ({ isModal = false, onClose }
                         </div>
 
                         {/* Business Badge if Vendor */}
-                        {userBiz && (
+                        {businessName && (
                           <div className={`mb-3 py-1.5 px-2.5 rounded-xl text-[11px] font-medium border flex items-center gap-1.5 ${
                             isSelected ? 'bg-slate-800 border-slate-700 text-slate-200' : 'bg-slate-50 border-slate-200 text-slate-700'
                           }`}>
                             <Building2 className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                            <span className="truncate font-bold">{userBiz.coreDetails?.businessName || 'Business'}</span>
+                            <span className="truncate font-bold">{businessName}</span>
                           </div>
                         )}
                       </div>

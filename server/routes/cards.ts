@@ -5,6 +5,38 @@ import { eq, and } from 'drizzle-orm';
 
 const router = Router();
 
+function mapCard(c: any) {
+  return {
+    id: c.id,
+    customer_id: c.customerId,
+    cardholder_name: c.cardholderName,
+    brand: c.brand,
+    last4: c.last4,
+    exp_month: c.expMonth,
+    exp_year: c.expYear,
+    is_default: c.isDefault,
+    billing_address: c.billingAddress,
+    created_at: c.createdAt ? new Date(c.createdAt).toISOString() : new Date().toISOString(),
+  };
+}
+
+// GET all saved cards (optionally filtered by ?customerId=)
+router.get('/', async (req, res) => {
+  try {
+    const { customerId } = req.query;
+    let query;
+    if (customerId) {
+      query = db.select().from(customerSavedCards).where(eq(customerSavedCards.customerId, String(customerId)));
+    } else {
+      query = db.select().from(customerSavedCards);
+    }
+    const cards = await query;
+    res.json(cards.map(mapCard));
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // GET all saved cards for a customer
 router.get('/customer/:customerId', async (req, res) => {
   try {
@@ -12,21 +44,7 @@ router.get('/customer/:customerId', async (req, res) => {
       .select()
       .from(customerSavedCards)
       .where(eq(customerSavedCards.customerId, req.params.customerId));
-    
-    // Map to frontend CustomerSavedCard interface
-    const mapped = cards.map((c) => ({
-      id: c.id,
-      customer_id: c.customerId,
-      cardholder_name: c.cardholderName,
-      brand: c.brand,
-      last4: c.last4,
-      exp_month: c.expMonth,
-      exp_year: c.expYear,
-      is_default: c.isDefault,
-      billing_address: c.billingAddress,
-      created_at: c.createdAt.toISOString(),
-    }));
-    res.json(mapped);
+    res.json(cards.map(mapCard));
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

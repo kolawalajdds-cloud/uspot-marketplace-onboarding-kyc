@@ -15,7 +15,7 @@ import { eq } from 'drizzle-orm';
 const router = Router();
 
 // Helper to fetch complete business object matching frontend Business interface
-async function getCompleteBusiness(businessId: string) {
+export async function getCompleteBusiness(businessId: string) {
   const [biz] = await db.select().from(businesses).where(eq(businesses.id, businessId));
   if (!biz) return null;
 

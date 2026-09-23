@@ -8,6 +8,7 @@ import {
   kycVerifications,
 } from '../db/schema';
 import { eq } from 'drizzle-orm';
+import { getCompleteBusiness } from './businesses';
 
 const router = Router();
 
@@ -37,8 +38,12 @@ router.get('/:id', async (req, res) => {
 // POST login/switch user
 router.post('/login', async (req, res) => {
   try {
-    const { email, username, identifier, role } = req.body;
+    const { email, username, identifier, role, password } = req.body;
     const term = (identifier || email || username || '').trim().toLowerCase();
+
+    if (!term && !role) {
+      return res.status(400).json({ error: 'Please enter your email or username.' });
+    }
 
     const allUsers = await db.select().from(users);
     let user = term
@@ -66,10 +71,12 @@ router.post('/login', async (req, res) => {
         (b.email && b.email.toLowerCase() === user.email.toLowerCase())
     );
 
+    const completeBiz = userBiz ? await getCompleteBusiness(userBiz.id) : null;
+
     res.json({
       success: true,
       user,
-      business: userBiz || null,
+      business: completeBiz,
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });

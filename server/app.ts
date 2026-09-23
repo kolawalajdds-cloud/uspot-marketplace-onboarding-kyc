@@ -10,6 +10,7 @@ import cardsRoutes from './routes/cards';
 import bookingsRoutes from './routes/bookings';
 import reviewsRoutes from './routes/reviews';
 import ledgerRoutes from './routes/ledger';
+import workerRoutes from './routes/worker';
 
 dotenv.config();
 
@@ -33,6 +34,7 @@ const routeMounts = [
   { prefix: '/bookings', router: bookingsRoutes },
   { prefix: '/reviews', router: reviewsRoutes },
   { prefix: '/ledger', router: ledgerRoutes },
+  { prefix: '/worker', router: workerRoutes },
 ];
 
 for (const { prefix, router } of routeMounts) {

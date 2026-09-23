@@ -45,7 +45,7 @@ export const AdminOverviewTab: React.FC<AdminOverviewTabProps> = ({ onNavigateTa
   const totalUsers = state.users.length;
   const customersCount = state.users.filter((u) => u.role === 'customer').length;
   const partnersCount = state.users.filter((u) => u.role === 'business').length;
-  const staffCount = state.users.filter((u) => u.role === 'specialist').length;
+  const staffCount = state.users.filter((u) => u.role === 'specialist' || u.role === 'worker').length;
 
   const handleCopy = (text: string, field: string) => {
     navigator.clipboard?.writeText(text);
@@ -518,7 +518,7 @@ export const AdminOverviewTab: React.FC<AdminOverviewTabProps> = ({ onNavigateTa
               </div>
               <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-center">
                 <span className="text-xs font-bold text-slate-900 block">{staffCount}</span>
-                <span className="text-[10px] text-slate-500 uppercase tracking-wide">Staff</span>
+                <span className="text-[10px] text-slate-500 uppercase tracking-wide">Workers</span>
               </div>
               <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-center">
                 <span className="text-xs font-bold text-indigo-600 block">100%</span>

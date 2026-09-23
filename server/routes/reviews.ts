@@ -5,6 +5,58 @@ import { eq, desc } from 'drizzle-orm';
 
 const router = Router();
 
+// Helper function to populate reviews with responses
+async function populateReviews(reviews: any[]) {
+  return Promise.all(
+    reviews.map(async (r) => {
+      const [resp] = await db
+        .select()
+        .from(reviewResponses)
+        .where(eq(reviewResponses.reviewId, r.id));
+
+      return {
+        id: r.id,
+        business_id: r.businessId,
+        business_name: r.businessName,
+        booking_id: r.bookingId || undefined,
+        service_id: r.serviceId || undefined,
+        service_name: r.serviceName || undefined,
+        customer_id: r.customerId || undefined,
+        customer_name: r.customerName,
+        customer_avatar: r.customerAvatar || undefined,
+        rating: r.rating,
+        review_text: r.reviewText,
+        media: (r.media as string[]) || [],
+        created_at: r.createdAt ? new Date(r.createdAt).toISOString() : new Date().toISOString(),
+        time_ago: r.timeAgo || 'Recently',
+        response_deadline: r.responseDeadline || undefined,
+        response: resp
+          ? {
+              text: resp.responseText,
+              responded_at: resp.respondedAt ? new Date(resp.respondedAt).toISOString() : new Date().toISOString(),
+              responded_time_ago: resp.respondedTimeAgo || 'Responded recently',
+              author_name: resp.authorName,
+            }
+          : undefined,
+      };
+    })
+  );
+}
+
+// GET all reviews
+router.get('/', async (req, res) => {
+  try {
+    const reviews = await db
+      .select()
+      .from(businessReviews)
+      .orderBy(desc(businessReviews.createdAt));
+    const populated = await populateReviews(reviews);
+    res.json(populated);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // GET all reviews for a business
 router.get('/business/:businessId', async (req, res) => {
   try {
@@ -14,41 +66,7 @@ router.get('/business/:businessId', async (req, res) => {
       .where(eq(businessReviews.businessId, req.params.businessId))
       .orderBy(desc(businessReviews.createdAt));
 
-    const populated = await Promise.all(
-      reviews.map(async (r) => {
-        const [resp] = await db
-          .select()
-          .from(reviewResponses)
-          .where(eq(reviewResponses.reviewId, r.id));
-
-        return {
-          id: r.id,
-          business_id: r.businessId,
-          business_name: r.businessName,
-          booking_id: r.bookingId || undefined,
-          service_id: r.serviceId || undefined,
-          service_name: r.serviceName || undefined,
-          customer_id: r.customerId || undefined,
-          customer_name: r.customerName,
-          customer_avatar: r.customerAvatar || undefined,
-          rating: r.rating,
-          review_text: r.reviewText,
-          media: (r.media as string[]) || [],
-          created_at: r.createdAt.toISOString(),
-          time_ago: r.timeAgo || 'Recently',
-          response_deadline: r.responseDeadline || undefined,
-          response: resp
-            ? {
-                text: resp.responseText,
-                responded_at: resp.respondedAt.toISOString(),
-                responded_time_ago: resp.respondedTimeAgo || 'Responded recently',
-                author_name: resp.authorName,
-              }
-            : undefined,
-        };
-      })
-    );
-
+    const populated = await populateReviews(reviews);
     res.json(populated);
   } catch (error: any) {
     res.status(500).json({ error: error.message });

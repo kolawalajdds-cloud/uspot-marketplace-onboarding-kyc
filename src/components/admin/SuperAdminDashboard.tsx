@@ -6,6 +6,7 @@ import { AdminAssetsTab, BusinessAssetsSubTab } from './tabs/AdminAssetsTab';
 import { AdminBusinessManagementTab } from './tabs/AdminBusinessManagementTab';
 import { AdminConfigurationTab } from './tabs/AdminConfigurationTab';
 import { AdminPaymentTab } from './tabs/AdminPaymentTab';
+import { AdminSupportTicketsTab } from './tabs/AdminSupportTicketsTab';
 import {
   LayoutDashboard,
   Users,
@@ -495,7 +496,7 @@ export const SuperAdminDashboard: React.FC = () => {
                         activeNav === 'users-staff' ? 'bg-blue-600' : 'bg-slate-500'
                       }`}
                     />
-                    <span>Staff</span>
+                    <span>Workers</span>
                   </button>
                 </div>
               )}
@@ -1416,13 +1417,17 @@ export const SuperAdminDashboard: React.FC = () => {
             <AdminPaymentTab onSaveSuccess={(rate) => showToast(`Payment percentage updated to ${rate}% successfully!`)} />
           )}
 
-          {/* 6. Module Placeholders for Secondary Nav */}
-          {['plans', 'bookings', 'support', 'subscription', 'content'].includes(activeNav) && (
+          {/* 6. Support & Inquiries Management Desk */}
+          {activeNav === 'support' && (
+            <AdminSupportTicketsTab />
+          )}
+
+          {/* 7. Module Placeholders for Secondary Nav */}
+          {['plans', 'bookings', 'subscription', 'content'].includes(activeNav) && (
             <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-12 text-center space-y-4 animate-in fade-in">
               <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-600 flex items-center justify-center mx-auto shadow-2xs">
                 {activeNav === 'plans' && <Tag className="w-6 h-6" />}
                 {activeNav === 'bookings' && <Calendar className="w-6 h-6" />}
-                {activeNav === 'support' && <LifeBuoy className="w-6 h-6" />}
                 {activeNav === 'subscription' && <ShieldCheck className="w-6 h-6" />}
                 {activeNav === 'content' && <FileText className="w-6 h-6" />}
               </div>

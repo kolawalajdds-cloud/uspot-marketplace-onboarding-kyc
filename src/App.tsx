@@ -4,11 +4,54 @@ import { Navbar } from './components/Navbar';
 import { SuperAdminDashboard } from './components/admin/SuperAdminDashboard';
 import { BusinessPortal } from './components/vendor/BusinessPortal';
 import { CustomerPortal } from './components/customer/CustomerPortal';
-import { SpecialistPortal } from './components/specialist/SpecialistPortal';
+import { WorkerPortal } from './components/worker/WorkerPortal';
 import { LoginView } from './components/auth/LoginView';
 
 const MainLayout: React.FC = () => {
   const { currentUser } = useDemo();
+  const [currentPath, setCurrentPath] = React.useState(() =>
+    typeof window !== 'undefined' ? window.location.pathname.toLowerCase() : '/'
+  );
+
+  React.useEffect(() => {
+    const handleLocationChange = () => {
+      setCurrentPath(window.location.pathname.toLowerCase());
+    };
+    window.addEventListener('popstate', handleLocationChange);
+    return () => window.removeEventListener('popstate', handleLocationChange);
+  }, []);
+
+  // Worker public auth routes: /worker/login and /worker/onboarding can be visited by unauthenticated users
+  const isWorkerAuthRoute =
+    currentPath.startsWith('/worker/login') || currentPath.startsWith('/worker/onboarding');
+
+  if (isWorkerAuthRoute) {
+    return (
+      <div className="h-full w-full bg-[#F8FAFC] text-slate-900 font-sans selection:bg-blue-600 selection:text-white overflow-hidden">
+        <WorkerPortal />
+      </div>
+    );
+  }
+
+  // If no user is logged in, show the login view
+  if (!currentUser) {
+    return (
+      <div className="h-full w-full bg-[#F8FAFC] text-slate-900 flex flex-col font-sans overflow-y-auto">
+        <div className="flex-1 flex items-center justify-center">
+          <LoginView />
+        </div>
+      </div>
+    );
+  }
+
+  // When logged in as worker, render WorkerPortal
+  if (currentUser.role === 'worker' || currentUser.role === 'specialist' || currentPath.startsWith('/worker')) {
+    return (
+      <div className="h-full w-full bg-[#F8FAFC] text-slate-900 font-sans selection:bg-blue-600 selection:text-white overflow-hidden">
+        <WorkerPortal />
+      </div>
+    );
+  }
 
   if (!currentUser) {
     return (
@@ -34,15 +77,6 @@ const MainLayout: React.FC = () => {
     return (
       <div className="h-full w-full bg-white text-slate-900 font-sans selection:bg-slate-900 selection:text-white overflow-y-auto">
         <CustomerPortal />
-      </div>
-    );
-  }
-
-  // When logged in as staff / specialist, render the dedicated SpecialistPortal matching the image
-  if (currentUser.role === 'specialist') {
-    return (
-      <div className="h-full w-full bg-[#FBFBFB] text-slate-900 font-sans selection:bg-slate-900 selection:text-white overflow-y-auto">
-        <SpecialistPortal />
       </div>
     );
   }

@@ -384,8 +384,17 @@ export function computeRiskTier(
   return 'Low';
 }
 
-export type UserRole = 'super_admin' | 'business' | 'customer' | 'specialist';
-export type UserRoleLabel = 'Superadmin' | 'Super Admin' | 'Business' | 'Business (Salon)' | 'Business (Spa)' | 'Customer' | 'Specalist' | 'Staff';
+export type UserRole = 'super_admin' | 'business' | 'customer' | 'worker' | 'specialist';
+export type UserRoleLabel =
+  | 'Superadmin'
+  | 'Super Admin'
+  | 'Business'
+  | 'Business (Salon)'
+  | 'Business (Spa)'
+  | 'Customer'
+  | 'Specalist'
+  | 'Staff'
+  | 'Worker';
 
 export interface UserProfile {
   id: string;
@@ -406,6 +415,32 @@ export interface UserProfile {
   department?: string;
   primaryServiceCategory?: string;
   yearsOfExperience?: number | string;
+  hourlyRate?: number | string;
+  rating?: number | string;
+  payoutBankName?: string;
+  payoutAccountMasked?: string;
+  payoutRoutingNumber?: string;
+  skills?: string[];
+  bio?: string;
+  availabilityStatus?: WorkerAvailabilityStatus;
+  statusNote?: string;
+  documents?: WorkerDocument[];
+}
+
+export type WorkerAvailabilityStatus = 'available' | 'busy' | 'break' | 'offline';
+
+export interface WorkerDocument {
+  id: string;
+  name: string;
+  type: 'id_card' | 'license' | 'insurance' | 'certification' | 'background_check' | 'other';
+  documentNumber?: string;
+  issuingAuthority?: string;
+  issueDate?: string;
+  expiryDate?: string;
+  status: 'verified' | 'pending' | 'rejected' | 'expired';
+  fileUrl?: string;
+  notes?: string;
+  createdAt: string;
 }
 
 export type PaymentStatus = 'paid' | 'pending' | 'failed' | 'refunded';
@@ -660,5 +695,189 @@ export interface CustomerSavedCard {
   };
   created_at: string;
 }
+
+// ============================================================================
+// WORKER PORTAL TYPES
+// ============================================================================
+export type WorkerJobStatus = 'scheduled' | 'accepted' | 'en_route' | 'in_progress' | 'completed' | 'cancelled';
+
+export interface WorkerJob {
+  id: string;
+  workerId: string;
+  bookingId?: string;
+  businessId?: string;
+  businessName: string;
+  title: string;
+  serviceCategory?: string;
+  customerName: string;
+  customerPhone?: string;
+  customerEmail?: string;
+  location: string;
+  scheduledDate: string;
+  scheduledStartTime: string;
+  scheduledEndTime: string;
+  durationMinutes: number;
+  status: WorkerJobStatus;
+  rate: number;
+  tip: number;
+  totalPayout: number;
+  notes?: string;
+  acceptedAt?: string;
+  enRouteAt?: string;
+  checkInTime?: string;
+  checkInNotes?: string;
+  checkInPhotos?: string[];
+  checkOutTime?: string;
+  checkOutNotes?: string;
+  customerSignOffName?: string;
+  signature?: string;
+  rating?: number;
+  feedback?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type WorkerContractType = 'independent_contractor' | 'w2_hourly' | 'master_service_agreement';
+export type WorkerContractStatus = 'active' | 'pending_signature' | 'expired' | 'terminated';
+
+export interface WorkerContract {
+  id: string;
+  workerId: string;
+  businessId?: string;
+  businessName: string;
+  title: string;
+  contractType: WorkerContractType;
+  status: WorkerContractStatus;
+  hourlyRate: number;
+  commissionPercentage: number;
+  startDate: string;
+  endDate?: string;
+  terms: string;
+  signedAt?: string;
+  signature?: string;
+  createdAt?: string;
+}
+
+export type WorkerTransactionType = 'job_payout' | 'tip' | 'bonus' | 'direct_deposit' | 'withholding';
+export type WorkerTransactionStatus = 'completed' | 'pending' | 'processing';
+
+export interface WorkerTransaction {
+  id: string;
+  workerId: string;
+  jobId?: string;
+  type: WorkerTransactionType;
+  amount: number;
+  status: WorkerTransactionStatus;
+  description: string;
+  referenceNumber: string;
+  payoutMethod: string;
+  date: string;
+  createdAt?: string;
+}
+
+export interface WorkerStats {
+  todayJobsCount: number;
+  activeJobsCount: number;
+  scheduledJobsCount: number;
+  completedJobsCount: number;
+  totalHoursLogged: number;
+  rating: number;
+  totalEarnings: number;
+  availableBalance: number;
+  pendingPayouts: number;
+  averageJobPayout: number;
+  totalTips: number;
+  weeklyEarnings: { day: string; amount: number; jobs: number }[];
+}
+
+export interface WorkerBusinessSchedule {
+  id: string;
+  workerId: string;
+  businessId: string;
+  businessName: string;
+  dayOfWeek: number; // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+  dayName: string;
+  startTime: string; // e.g. '09:00 AM'
+  endTime: string;   // e.g. '12:00 PM'
+  isAvailable: boolean;
+  hourlyRate?: string | number;
+  notes?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface AvailableWorkerResult {
+  worker: {
+    id: string;
+    fullName: string;
+    email: string;
+    phone?: string;
+    avatar?: string;
+    role: string;
+  };
+  contract: {
+    id: string;
+    businessId?: string;
+    businessName: string;
+    title: string;
+    hourlyRate: string | number;
+    status: string;
+    contractType?: string;
+  };
+  availabilityStatus: 'available' | 'busy_other_business' | 'busy_job' | 'off_duty';
+  availabilityMessage: string;
+  matchedScheduleSlot?: WorkerBusinessSchedule | null;
+  conflictingBusinessName?: string;
+  conflictingJob?: WorkerJob | null;
+  assignedJobsCountToday: number;
+  daySchedules?: WorkerBusinessSchedule[];
+}
+
+// ============================================================================
+// SUPPORT TICKETS & CHAT THREADS
+// ============================================================================
+export type TicketCategory =
+  | 'Job & Site Issue'
+  | 'Payment & Compensation'
+  | 'App Bug & Technical'
+  | 'Account & KYC'
+  | 'Client Dispute'
+  | 'General Inquiry';
+
+export type TicketPriority = 'low' | 'medium' | 'high' | 'urgent';
+export type TicketStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
+
+export interface TicketMessage {
+  id: string;
+  ticketId: string;
+  senderId: string;
+  senderName: string;
+  senderRole: 'worker' | 'business' | 'super_admin' | 'specialist';
+  content: string;
+  timestamp: string;
+  attachments?: string[];
+}
+
+export interface SupportTicket {
+  id: string;
+  ticketNumber: string; // e.g. "TICK-8041"
+  userId: string;
+  userName: string;
+  userRole: 'worker' | 'business' | 'super_admin' | 'specialist';
+  userEmail?: string;
+  businessId?: string;
+  businessName?: string;
+  jobId?: string;
+  jobTitle?: string;
+  title: string;
+  category: TicketCategory;
+  priority: TicketPriority;
+  status: TicketStatus;
+  createdAt: string;
+  updatedAt: string;
+  messages: TicketMessage[];
+}
+
+
 
 

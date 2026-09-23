@@ -84,8 +84,8 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
 
   // Partners list from demo context
   const partnerUsers = users.filter((u) => u.role === 'business');
-  // Staff list from demo context
-  const staffUsers = users.filter((u) => u.role === 'specialist');
+  // Staff / Worker list from demo context
+  const staffUsers = users.filter((u) => u.role === 'specialist' || u.role === 'worker');
 
   // Apply customer filters
   const handleApplyFilters = () => {
@@ -239,8 +239,8 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <UserCheck className="w-4 h-4 text-amber-600" />
-            <span>Staff</span>
+            <UserCheck className="w-4 h-4 text-blue-600" />
+            <span>Workers</span>
             <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-200/70 text-slate-700 font-mono">
               {staffUsers.length}
             </span>
@@ -708,16 +708,16 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
         <div id="staff-view-container" className="space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Staff & Specialists</h1>
+              <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Workers & On-site Specialists</h1>
               <p className="text-xs text-slate-500 mt-1">
-                KYC compliance officers, operations specialists, and support administrators.
+                Field workers, on-site specialists, and certified service contractors.
               </p>
             </div>
             <div className="relative w-full sm:w-72">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
               <input
                 type="text"
-                placeholder="Search staff..."
+                placeholder="Search workers..."
                 value={staffSearch}
                 onChange={(e) => setStaffSearch(e.target.value)}
                 className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800"
@@ -754,15 +754,50 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                           </div>
                           <div>
                             <span className="font-bold text-slate-900 block leading-tight">{s.fullName}</span>
-                            <span className="text-[11px] text-slate-500 font-mono">@{s.username}</span>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <span className="text-[11px] text-slate-500 font-mono">@{s.username}</span>
+                              {s.availabilityStatus && (
+                                <span
+                                  className={`px-1.5 py-0.2 rounded-full text-[9px] font-black uppercase flex items-center gap-1 ${
+                                    s.availabilityStatus === 'available'
+                                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                      : s.availabilityStatus === 'busy'
+                                      ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                      : s.availabilityStatus === 'break'
+                                      ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                                      : 'bg-slate-100 text-slate-600 border border-slate-200'
+                                  }`}
+                                >
+                                  <span
+                                    className={`w-1 h-1 rounded-full ${
+                                      s.availabilityStatus === 'available'
+                                        ? 'bg-emerald-500'
+                                        : s.availabilityStatus === 'busy'
+                                        ? 'bg-blue-500'
+                                        : s.availabilityStatus === 'break'
+                                        ? 'bg-amber-500'
+                                        : 'bg-slate-400'
+                                    }`}
+                                  />
+                                  <span>{s.availabilityStatus}</span>
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </td>
 
                       <td className="py-3.5 px-4">
-                        <span className="px-2.5 py-1 rounded-md bg-amber-50 text-amber-800 font-bold text-[11px] border border-amber-200/60">
-                          {s.department || 'KYC Compliance'}
-                        </span>
+                        <div>
+                          <span className="px-2.5 py-1 rounded-md bg-amber-50 text-amber-800 font-bold text-[11px] border border-amber-200/60 inline-block">
+                            {s.department || 'KYC Compliance'}
+                          </span>
+                          {s.skills && s.skills.length > 0 && (
+                            <span className="text-[10px] text-slate-500 font-medium block mt-1">
+                              {s.skills.slice(0, 2).join(', ')}{s.skills.length > 2 ? ` +${s.skills.length - 2}` : ''}
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       <td className="py-3.5 px-4">
@@ -786,8 +821,13 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                         </button>
                       </td>
 
-                      <td className="py-3.5 px-4 font-mono text-[11px] text-slate-600">
-                        {s.timezone}
+                      <td className="py-3.5 px-4">
+                        <span className="font-mono text-[11px] text-slate-600 block">{s.timezone}</span>
+                        {s.documents && s.documents.length > 0 && (
+                          <span className="text-[10px] text-emerald-700 font-bold mt-0.5 inline-block">
+                            {s.documents.length} Docs Verified
+                          </span>
+                        )}
                       </td>
 
                       <td className="py-3.5 px-5 text-right">
