@@ -22,12 +22,13 @@ const MainLayout: React.FC = () => {
   }, []);
 
   // Handle all worker routes under dedicated domain: /worker, /worker/login, /worker/onboarding, /worker/dashboard, etc.
-  if (currentPath.startsWith('/worker')) {
-    // If not logged in and not already on /worker/login or /worker/onboarding, redirect to /worker/login
+  if (currentPath.startsWith('/worker') || currentPath.startsWith('/onboarding')) {
+    // If not logged in and not already on /worker/login or /worker/onboarding or /onboarding, redirect to /worker/login
     if (
       !currentUser &&
       !currentPath.startsWith('/worker/login') &&
-      !currentPath.startsWith('/worker/onboarding')
+      !currentPath.startsWith('/worker/onboarding') &&
+      !currentPath.startsWith('/onboarding')
     ) {
       if (typeof window !== 'undefined') {
         window.history.replaceState({ page: 'login' }, '', '/worker/login');

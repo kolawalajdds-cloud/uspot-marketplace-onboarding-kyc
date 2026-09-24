@@ -61,8 +61,8 @@ export const WorkerPortal: React.FC = () => {
   // Parse initial route from window.location.pathname
   const getSubpageFromPath = (): string => {
     const path = window.location.pathname.toLowerCase();
-    if (path.includes('/worker/login')) return 'login';
-    if (path.includes('/worker/onboarding')) return 'onboarding';
+    if (path.includes('/worker/login') || path === '/login') return 'login';
+    if (path.includes('/worker/onboarding') || path.includes('/onboarding')) return 'onboarding';
 
     // If user is not authenticated as a worker, all other subpages default to dedicated /worker/login
     if (!currentUser || (currentUser.role !== 'worker' && currentUser.role !== 'specialist')) {
@@ -160,7 +160,12 @@ export const WorkerPortal: React.FC = () => {
     const isWorker = currentUser && (currentUser.role === 'worker' || currentUser.role === 'specialist');
 
     if (!isWorker) {
-      if (path !== '/worker/login' && path !== '/worker/onboarding') {
+      if (
+        path !== '/worker/login' &&
+        path !== '/worker/onboarding' &&
+        path !== '/login' &&
+        !path.includes('/onboarding')
+      ) {
         window.history.replaceState({ page: 'login' }, '', '/worker/login');
         setActivePage('login');
       }

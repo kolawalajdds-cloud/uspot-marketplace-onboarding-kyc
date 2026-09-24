@@ -25,7 +25,6 @@ export const WorkerAuthLoginPage: React.FC<WorkerAuthLoginPageProps> = ({
   const [rememberMe, setRememberMe] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [showContactModal, setShowContactModal] = useState(false);
 
   // Guarantee that browser URL is {baseURL}/worker/login
   React.useEffect(() => {
@@ -67,50 +66,6 @@ export const WorkerAuthLoginPage: React.FC<WorkerAuthLoginPageProps> = ({
 
   return (
     <div className="min-h-screen bg-white flex flex-col font-sans text-slate-900 selection:bg-slate-100">
-      {/* Top Header Bar matching reference */}
-      <header className="w-full px-6 sm:px-12 py-5 flex items-center justify-between border-b border-transparent">
-        {/* Brand Logo */}
-        <div
-          onClick={() => {
-            window.location.href = '/';
-          }}
-          className="text-2xl font-black tracking-tight text-black cursor-pointer select-none"
-        >
-          URSPOT
-        </div>
-
-        {/* Top Right Navigation */}
-        <div className="flex items-center gap-6 sm:gap-8">
-          <button
-            type="button"
-            onClick={() => setShowContactModal(true)}
-            className="text-sm font-medium text-slate-600 hover:text-black transition-colors cursor-pointer"
-          >
-            Support
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowContactModal(true)}
-            className="text-sm font-medium text-slate-600 hover:text-black transition-colors cursor-pointer"
-          >
-            Security
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowContactModal(true)}
-            className="text-sm font-medium text-slate-600 hover:text-black transition-colors cursor-pointer"
-          >
-            Help
-          </button>
-          <button
-            type="button"
-            onClick={() => onNavigate('login')}
-            className="px-6 py-2 rounded-full bg-black text-white text-sm font-semibold hover:bg-neutral-800 transition-colors shadow-sm cursor-pointer"
-          >
-            Login
-          </button>
-        </div>
-      </header>
 
       {/* Main Login Content */}
       <main className="flex-1 flex flex-col items-center justify-center px-4 py-8 sm:py-12">
@@ -298,41 +253,7 @@ export const WorkerAuthLoginPage: React.FC<WorkerAuthLoginPageProps> = ({
         </div>
       </main>
 
-      {/* Support / Contact Modal */}
-      {showContactModal && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-slate-200 text-left">
-            <h3 className="text-base font-bold text-slate-900">Worker Portal Support</h3>
-            <p className="text-xs text-slate-500 mt-1">
-              For assistance with worker credentials or shift assignment, contact operations:
-            </p>
-            <div className="mt-4 p-3 bg-slate-50 rounded-xl space-y-1.5 text-xs text-slate-700 font-medium">
-              <div>Email: support@uspot.com</div>
-              <div>Hotline: +1 (800) 555-SPOT</div>
-              <div>Hours: 24/7 Operations Desk</div>
-            </div>
-            <div className="mt-5 flex gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowContactModal(false);
-                  onNavigate('onboarding');
-                }}
-                className="flex-1 py-2 rounded-lg bg-black text-white text-xs font-semibold hover:bg-neutral-800"
-              >
-                Register as Worker
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowContactModal(false)}
-                className="px-4 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+
     </div>
   );
 };

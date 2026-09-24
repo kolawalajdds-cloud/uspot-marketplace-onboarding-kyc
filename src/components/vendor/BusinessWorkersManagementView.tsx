@@ -18,10 +18,12 @@ import {
   ChevronRight,
   Briefcase,
   Layers,
+  FileText,
 } from 'lucide-react';
 import { Business, Booking, AvailableWorkerResult, WorkerBusinessSchedule } from '../../types';
 import { workerService } from '../../services/api/marketplaceApi';
 import { useDemo } from '../../context/DemoContext';
+import { BusinessContractsManagementView } from './BusinessContractsManagementView';
 
 interface BusinessWorkersManagementViewProps {
   business: Business;
@@ -37,7 +39,7 @@ export const BusinessWorkersManagementView: React.FC<BusinessWorkersManagementVi
   onSelectBooking,
 }) => {
   const { users } = useDemo();
-  const [activeTab, setActiveTab] = useState<'checker' | 'roster' | 'matrix'>('checker');
+  const [activeTab, setActiveTab] = useState<'checker' | 'roster' | 'matrix' | 'contracts'>('checker');
 
   // Availability Checker State
   const [targetDate, setTargetDate] = useState<string>(() => {
@@ -295,6 +297,18 @@ export const BusinessWorkersManagementView: React.FC<BusinessWorkersManagementVi
             >
               <Calendar className="w-3.5 h-3.5 text-emerald-600" />
               <span>Matrix</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('contracts')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                activeTab === 'contracts'
+                  ? 'bg-white text-slate-900 shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5 text-purple-600" />
+              <span>Contracts & E-Sign</span>
             </button>
           </div>
         </div>
@@ -745,6 +759,20 @@ export const BusinessWorkersManagementView: React.FC<BusinessWorkersManagementVi
             </table>
           </div>
         </div>
+      )}
+
+      {/* ===================================================================== */}
+      {/* TAB 4: CONTRACTS & ELECTRONIC SIGNATURES                             */}
+      {/* ===================================================================== */}
+      {activeTab === 'contracts' && (
+        <BusinessContractsManagementView
+          business={business as any}
+          rosterWorkers={availableWorkers.map((res) => ({
+            id: res.worker.id,
+            name: res.worker.fullName,
+            email: res.worker.email,
+          }))}
+        />
       )}
 
       {/* ========================================================================= */}

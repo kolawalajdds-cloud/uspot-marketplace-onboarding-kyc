@@ -878,6 +878,114 @@ export interface SupportTicket {
   messages: TicketMessage[];
 }
 
+// ============================================================================
+// E-SIGNATURE WORKFLOW DATA MODELS
+// ============================================================================
 
+export type ESignatureContractStatus =
+  | 'DRAFT'
+  | 'SENT_FOR_SIGNATURE'
+  | 'VIEWED'
+  | 'CONSENTED'
+  | 'AUTHENTICATED'
+  | 'SIGNATURE_CAPTURED'
+  | 'SIGNED'
+  | 'COMPLETED';
 
+export type ESignatureType = 'draw' | 'upload';
 
+export interface ESignatureData {
+  type: ESignatureType;
+  data: string; // Original Data URL (canvas PNG or raw uploaded file)
+  processedData?: string; // Transparent PNG after image processing
+  createdAt: string;
+}
+
+export type AuditEventType =
+  | 'CONTRACT_CREATED'
+  | 'CONTRACT_ASSIGNED'
+  | 'SIGNATURE_REQUEST_SENT'
+  | 'CONTRACT_OPENED'
+  | 'CONTRACT_REVIEWED'
+  | 'ELECTRONIC_CONSENT_PROVIDED'
+  | 'AUTHENTICATION_INITIATED'
+  | 'AUTHENTICATION_SUCCESSFUL'
+  | 'SIGNATURE_CAPTURED'
+  | 'SIGNATURE_CONFIRMED'
+  | 'CONTRACT_SIGNED'
+  | 'SIGNED_PDF_GENERATED'
+  | 'DOCUMENT_HASH_GENERATED'
+  | 'SIGNING_COMPLETED';
+
+export interface AuditEvent {
+  id: string;
+  contractId: string;
+  event: AuditEventType;
+  userId: string;
+  userName?: string;
+  userRole?: string;
+  timestamp: string;
+  ipAddress: string;
+  userAgent: string;
+  status: 'SUCCESS' | 'PENDING' | 'FAILED';
+  description: string;
+}
+
+export interface CertificateOfCompletion {
+  certificateId: string;
+  contractId: string;
+  contractTitle: string;
+  businessId: string;
+  businessName: string;
+  signerId: string;
+  signerName: string;
+  signerEmail: string;
+  signerRole: string;
+  signedAt: string;
+  authMethod: string;
+  ipAddress: string;
+  userAgent: string;
+  documentHash: string; // Real SHA-256
+  status: 'COMPLETED';
+}
+
+export interface ESignatureContract {
+  id: string;
+  title: string;
+  contractType: WorkerContractType | 'Commission' | 'Salary' | 'Hourly';
+  businessId: string;
+  businessName: string;
+  businessLogo?: string;
+  businessEmail: string;
+  businessPhone: string;
+  businessAddress: string;
+  workerId: string;
+  workerName: string;
+  workerEmail: string;
+  workerPhone: string;
+  reportingTo: string;
+  primaryLocation: string;
+  location: string;
+  payAmount: string;
+  hourlyRate?: number;
+  frequency: 'Monthly' | 'Weekly' | 'Bi-weekly';
+  commissionRate?: string;
+  startDate: string;
+  endDate: string;
+  slaTerms: string;
+  status: ESignatureContractStatus;
+  createdAt: string;
+  assignedAt?: string;
+  viewedAt?: string;
+  consentAt?: string;
+  consentAgreed?: boolean;
+  authenticatedAt?: string;
+  authMethod?: 'mock_otp' | 'passkey' | 'mfa';
+  signatureCapturedAt?: string;
+  signedAt?: string;
+  signature?: ESignatureData;
+  documentHash?: string;
+  signedPdfDataUrl?: string;
+  certificate?: CertificateOfCompletion;
+  auditTrail: AuditEvent[];
+}

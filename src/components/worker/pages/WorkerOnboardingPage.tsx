@@ -151,51 +151,6 @@ export const WorkerOnboardingPage: React.FC<WorkerOnboardingPageProps> = ({
 
   return (
     <div className="min-h-screen bg-white flex flex-col font-sans text-slate-900 selection:bg-slate-100">
-      {/* Top Header Bar matching reference */}
-      <header className="w-full px-6 sm:px-12 py-5 flex items-center justify-between border-b border-transparent">
-        {/* Brand Logo */}
-        <div
-          onClick={() => {
-            window.location.href = '/';
-          }}
-          className="text-2xl font-black tracking-tight text-black cursor-pointer select-none"
-        >
-          URSPOT
-        </div>
-
-        {/* Top Right Navigation */}
-        <div className="flex items-center gap-6 sm:gap-8">
-          <button
-            type="button"
-            onClick={() => onNavigate('login')}
-            className="text-sm font-medium text-slate-600 hover:text-black transition-colors cursor-pointer"
-          >
-            Support
-          </button>
-          <button
-            type="button"
-            onClick={() => onNavigate('login')}
-            className="text-sm font-medium text-slate-600 hover:text-black transition-colors cursor-pointer"
-          >
-            Security
-          </button>
-          <button
-            type="button"
-            onClick={() => onNavigate('login')}
-            className="text-sm font-medium text-slate-600 hover:text-black transition-colors cursor-pointer"
-          >
-            Help
-          </button>
-          <button
-            type="button"
-            onClick={() => onNavigate('login')}
-            className="px-6 py-2 rounded-full bg-black text-white text-sm font-semibold hover:bg-neutral-800 transition-colors shadow-sm cursor-pointer"
-          >
-            Login
-          </button>
-        </div>
-      </header>
-
       {/* Main Wizard Content Area */}
       <main className="flex-1 flex flex-col items-center justify-center px-4 py-8 sm:py-12">
         <div className="max-w-xl w-full">
